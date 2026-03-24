@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
-import { PDFParse } from "pdf-parse";
 import { createWorker } from "tesseract.js";
 import { z } from "zod";
 
@@ -54,6 +53,7 @@ const bankSchema = z.array(
 );
 
 export async function extractPdfTextFromBuffer(buffer: Buffer) {
+  const { PDFParse } = await import("pdf-parse");
   const parser = new PDFParse({ data: buffer });
   const parsed = await parser.getText();
   await parser.destroy();
