@@ -67,9 +67,12 @@ export async function extractPdfText(filePath: string) {
 
 export async function runOcrFallback(filePath: string) {
   const worker = await createWorker(env.OCR_LANG);
-  const result = await worker.recognize(filePath);
-  await worker.terminate();
-  return result.data.text.trim();
+  try {
+    const result = await worker.recognize(filePath);
+    return result.data.text.trim();
+  } finally {
+    await worker.terminate();
+  }
 }
 
 export async function extractStructuredData(params: {
@@ -110,7 +113,12 @@ export async function extractStructuredData(params: {
   }
 
   if (params.filePath) {
-    const ocrText = await runOcrFallback(params.filePath);
+    let ocrText = "";
+    try {
+      ocrText = await runOcrFallback(params.filePath);
+    } catch {
+      ocrText = "";
+    }
     const ocrType = classifyDocument(params.fileName, `${params.sourceHint ?? ""} ${nativeText}\n${ocrText}`);
     const ocrStructured = await tryClaudeExtraction(params.fileName, ocrText, "ocr-fallback", ocrType);
 

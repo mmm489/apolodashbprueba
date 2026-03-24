@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 import { ingestPdfBuffer } from "@/lib/ingestion/service";
 
+export const runtime = "nodejs";
+
 export async function POST(request: Request) {
   const formData = await request.formData();
   const entries = formData.getAll("files");
@@ -11,27 +13,40 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No se han recibido archivos para procesar." }, { status: 400 });
   }
 
-  const processed = await Promise.all(
-    files.map(async (file) => {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const result = await ingestPdfBuffer({
-        fileName: file.name,
-        sourcePath: `/uploads/${file.name}`,
-        pdfBuffer: buffer,
-      });
+  const processed = await Promise.all(files.map(processSingleFile));
 
-      return {
-        fileName: file.name,
-        duplicated: result.duplicated,
-        status: result.document.status,
-        documentType: result.document.documentType,
-      };
-    }),
-  );
+  const hasErrors = processed.some((item) => item.status === "error");
 
   return NextResponse.json({
-    ok: true,
+    ok: !hasErrors,
     uploaded: processed.length,
     processed,
-  });
+  }, { status: hasErrors ? 207 : 200 });
+}
+
+async function processSingleFile(file: File) {
+  try {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const result = await ingestPdfBuffer({
+      fileName: file.name,
+      sourcePath: `/uploads/${file.name}`,
+      pdfBuffer: buffer,
+    });
+
+    return {
+      fileName: file.name,
+      duplicated: result.duplicated,
+      status: result.document.status,
+      documentType: result.document.documentType,
+    };
+  } catch (error) {
+    console.error(`Upload ingestion failed for ${file.name}:`, error);
+    return {
+      fileName: file.name,
+      duplicated: false,
+      status: "error",
+      documentType: "unknown",
+      error: error instanceof Error ? error.message : "Error desconocido al procesar el archivo",
+    };
+  }
 }

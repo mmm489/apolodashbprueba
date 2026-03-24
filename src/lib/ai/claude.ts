@@ -18,21 +18,26 @@ export async function askClaudeForStructuredData(prompt: string) {
     return null;
   }
 
-  const response = await client.messages.create({
-    model: "claude-3-5-sonnet-latest",
-    max_tokens: 1200,
-    system:
-      "Eres un analista financiero de una heladeria. Devuelve solo JSON valido siguiendo el esquema pedido y no inventes datos ausentes.",
-    messages: [
-      {
-        role: "user",
-        content: prompt,
-      },
-    ],
-  });
+  try {
+    const response = await client.messages.create({
+      model: "claude-3-5-sonnet-latest",
+      max_tokens: 1200,
+      system:
+        "Eres un analista financiero de una heladeria. Devuelve solo JSON valido siguiendo el esquema pedido y no inventes datos ausentes.",
+      messages: [
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+    });
 
-  const textBlock = response.content.find((item) => item.type === "text");
-  return textBlock && "text" in textBlock ? textBlock.text : null;
+    const textBlock = response.content.find((item) => item.type === "text");
+    return textBlock && "text" in textBlock ? textBlock.text : null;
+  } catch (error) {
+    console.error("Claude structured-data request failed:", error);
+    return null;
+  }
 }
 
 export async function askClaudeFromPdf(fileName: string, pdfBase64: string, prompt: string) {
@@ -41,33 +46,37 @@ export async function askClaudeFromPdf(fileName: string, pdfBase64: string, prom
     return null;
   }
 
-  const response = await client.messages.create({
-    model: "claude-3-5-sonnet-latest",
-    max_tokens: 1400,
-    system:
-      "Eres un analista financiero de una heladeria. Devuelve solo JSON valido siguiendo el esquema pedido y no inventes datos ausentes.",
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "document",
-            source: {
-              type: "base64",
-              media_type: "application/pdf",
-              data: pdfBase64,
+  try {
+    const response = await client.messages.create({
+      model: "claude-3-5-sonnet-latest",
+      max_tokens: 1400,
+      system:
+        "Eres un analista financiero de una heladeria. Devuelve solo JSON valido siguiendo el esquema pedido y no inventes datos ausentes.",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "document",
+              source: {
+                type: "base64",
+                media_type: "application/pdf",
+                data: pdfBase64,
+              },
             },
-            title: fileName,
-          },
-          {
-            type: "text",
-            text: prompt,
-          },
-        ],
-      } as never,
-    ],
-  });
+            {
+              type: "text",
+              text: `Nombre del archivo: ${fileName}\n\n${prompt}`,
+            },
+          ],
+        } as never,
+      ],
+    });
 
-  const textBlock = response.content.find((item) => item.type === "text");
-  return textBlock && "text" in textBlock ? textBlock.text : null;
+    const textBlock = response.content.find((item) => item.type === "text");
+    return textBlock && "text" in textBlock ? textBlock.text : null;
+  } catch (error) {
+    console.error("Claude PDF request failed:", error);
+    return null;
+  }
 }

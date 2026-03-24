@@ -11,6 +11,7 @@ type UploadResult = {
     duplicated: boolean;
     status: string;
     documentType: string;
+    error?: string;
   }>;
   error?: string;
 };
@@ -138,6 +139,7 @@ export function UploadPanel() {
                       <p className="text-[11px] text-slate-500">
                         {item.duplicated ? "Ya existia" : "Nuevo"} | {item.documentType}
                       </p>
+                      {item.error ? <p className="mt-1 text-[11px] text-rose-600">{item.error}</p> : null}
                     </div>
                   </div>
                   <span className={`rounded-lg px-2 py-1 text-[11px] font-semibold uppercase tracking-wider ${
