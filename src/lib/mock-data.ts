@@ -5,6 +5,7 @@ import type {
   HourlySalesEntry,
   InvoiceRecord,
   PayrollRecord,
+  ProductSaleRecord,
   SalesReport,
   TelegramMessage,
   TelegramUser,
@@ -125,6 +126,15 @@ export const mockPayrolls: PayrollRecord[] = [
     grossAmount: 1375,
     netAmount: 1220,
   },
+];
+
+export const mockProductSales: ProductSaleRecord[] = [
+  { id: "prod_1", salesReportId: "sale_1", businessDate: "2026-03-20", productCode: "99", productName: "POT M", units: 7, amount: 30.86 },
+  { id: "prod_2", salesReportId: "sale_1", businessDate: "2026-03-20", productCode: "100", productName: "POT S", units: 7, amount: 25.13 },
+  { id: "prod_3", salesReportId: "sale_2", businessDate: "2026-03-21", productCode: "154", productName: "XOCOLATA & XURROS", units: 5, amount: 26.81 },
+  { id: "prod_4", salesReportId: "sale_2", businessDate: "2026-03-21", productCode: "152", productName: "PACK 3 XURROS SUCRE", units: 6, amount: 18 },
+  { id: "prod_5", salesReportId: "sale_3", businessDate: "2026-03-22", productCode: "46", productName: "CAFE AMB LLET", units: 7, amount: 14.31 },
+  { id: "prod_6", salesReportId: "sale_3", businessDate: "2026-03-22", productCode: "97", productName: "CUCURUTXO S", units: 4, amount: 14.36 },
 ];
 
 export const mockBankTransactions: BankTransaction[] = [

@@ -8,6 +8,7 @@ import {
   mockHourlySales,
   mockInvoices,
   mockPayrolls,
+  mockProductSales,
   mockSalesReports,
   mockTelegramMessages,
   mockTelegramUsers,
@@ -20,6 +21,7 @@ import type {
   HourlySalesEntry,
   InvoiceRecord,
   PayrollRecord,
+  ProductSaleRecord,
   SalesReport,
   TelegramMessage,
   TelegramUser,
@@ -85,6 +87,24 @@ export async function listInvoices() {
     taxAmount: toNumber(row.tax_amount),
     category: String(row.category),
   })) satisfies InvoiceRecord[];
+}
+
+export async function listProductSales() {
+  if (!hasDatabase()) {
+    return mockProductSales;
+  }
+
+  const sql = getSql();
+  const rows = await sql`SELECT id, sales_report_id, business_date, product_code, product_name, units, amount FROM product_sales ORDER BY business_date DESC LIMIT 500`;
+  return rows.map((row) => ({
+    id: String(row.id),
+    salesReportId: String(row.sales_report_id),
+    businessDate: String(row.business_date),
+    productCode: String(row.product_code),
+    productName: String(row.product_name),
+    units: toNumber(row.units),
+    amount: toNumber(row.amount),
+  })) satisfies ProductSaleRecord[];
 }
 
 export async function listPayrolls() {
@@ -284,6 +304,15 @@ export async function persistExtraction(documentId: string, result: ExtractionRe
       VALUES (${data.id}, ${documentId}, ${data.businessDate}, ${data.totalSales}, ${data.orderCount}, ${data.averageTicket}, ${JSON.stringify(data.paymentMix)})
       ON CONFLICT (id) DO NOTHING
     `;
+    if (result.auxiliaryData?.productSales?.length) {
+      for (const item of result.auxiliaryData.productSales) {
+        await sql`
+          INSERT INTO product_sales (id, sales_report_id, business_date, product_code, product_name, units, amount)
+          VALUES (${item.id}, ${data.id}, ${item.businessDate}, ${item.productCode}, ${item.productName}, ${item.units}, ${item.amount})
+          ON CONFLICT (id) DO NOTHING
+        `;
+      }
+    }
     return;
   }
 

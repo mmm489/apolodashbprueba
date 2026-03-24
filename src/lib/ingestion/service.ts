@@ -6,6 +6,7 @@ import { buildDocumentHash } from "@/lib/utils";
 
 import { classifyDocument } from "./classifier";
 import { extractStructuredData } from "./extractor";
+import { isSpreadsheetFile, parseSpreadsheetSalesReport } from "./spreadsheet-parser";
 
 export async function ingestPdf(filePath: string) {
   const fileName = path.basename(filePath);
@@ -37,18 +38,20 @@ export async function ingestPdfBuffer(input: {
     fileName: input.fileName,
     sourcePath: input.sourcePath,
     contentHash,
-    documentType: classifyDocument(input.fileName, input.sourcePath),
+    documentType: isSpreadsheetFile(input.fileName) ? "sales_report" : classifyDocument(input.fileName, input.sourcePath),
     status: "processing",
     confidence: 0,
     extractorVersion: "v1",
   });
 
-  const extraction = await extractStructuredData({
-    filePath: input.filePath,
-    fileName: input.fileName,
-    pdfBuffer: input.pdfBuffer,
-    sourceHint: input.sourcePath,
-  });
+  const extraction = isSpreadsheetFile(input.fileName)
+    ? parseSpreadsheetSalesReport(input.fileName, input.pdfBuffer)
+    : await extractStructuredData({
+        filePath: input.filePath,
+        fileName: input.fileName,
+        pdfBuffer: input.pdfBuffer,
+        sourceHint: input.sourcePath,
+      });
   await persistExtraction(document.id, extraction);
 
   return {

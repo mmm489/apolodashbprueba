@@ -29,6 +29,16 @@ export interface SalesReport {
   paymentMix: Record<string, number>;
 }
 
+export interface ProductSaleRecord {
+  id: string;
+  salesReportId: string;
+  businessDate: string;
+  productCode: string;
+  productName: string;
+  units: number;
+  amount: number;
+}
+
 export interface HourlySalesEntry {
   id: string;
   businessDate: string;
@@ -139,6 +149,8 @@ export interface FinancialWorkspace {
     outflows: number;
     net: number;
   };
+  productSales: ProductSaleRecord[];
+  topProducts: Array<{ productName: string; units: number; amount: number }>;
 }
 
 export interface ExtractionResult {
@@ -153,6 +165,9 @@ export interface ExtractionResult {
     | BankTransaction[]
     | HourlySalesEntry[]
     | Record<string, unknown>;
+  auxiliaryData?: {
+    productSales?: ProductSaleRecord[];
+  };
 }
 
 export interface ChatAnswer {

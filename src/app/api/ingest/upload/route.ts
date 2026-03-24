@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   const files = entries.filter((entry): entry is File => entry instanceof File);
 
   if (!files.length) {
-    return NextResponse.json({ error: "No se han recibido PDFs." }, { status: 400 });
+    return NextResponse.json({ error: "No se han recibido archivos para procesar." }, { status: 400 });
   }
 
   const processed = await Promise.all(

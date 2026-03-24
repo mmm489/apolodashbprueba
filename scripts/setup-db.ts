@@ -3,7 +3,15 @@ import { schemaSql } from "@/lib/schema";
 
 async function main() {
   const sql = getSql();
-  await sql.query(schemaSql);
+  const statements = schemaSql
+    .split(";")
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+
+  for (const statement of statements) {
+    await sql.query(`${statement};`);
+  }
+
   console.log("Database schema created successfully.");
 }
 

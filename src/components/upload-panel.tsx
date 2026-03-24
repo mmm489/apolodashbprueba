@@ -34,7 +34,12 @@ export function UploadPanel() {
       return;
     }
 
-    setFiles(Array.from(fileList).filter((file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")));
+    setFiles(
+      Array.from(fileList).filter((file) => {
+        const lower = file.name.toLowerCase();
+        return lower.endsWith(".pdf") || lower.endsWith(".xls") || lower.endsWith(".xlsx");
+      }),
+    );
     setResult(null);
   }
 
@@ -73,11 +78,11 @@ export function UploadPanel() {
         <div className="flex size-12 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
           <FileUp className="size-6" />
         </div>
-        <p className="mt-4 text-[15px] font-semibold text-slate-800">Arrastra PDFs o pulsa para subirlos</p>
+        <p className="mt-4 text-[15px] font-semibold text-slate-800">Arrastra PDFs o Excels de ventas</p>
         <p className="mt-1.5 max-w-sm text-[13px] leading-relaxed text-slate-500">
-          Sube facturas, informes de ventas, nominas o extractos bancarios para procesarlos.
+          Sube facturas, informes de ventas en PDF o Excel, nominas o extractos bancarios para procesarlos.
         </p>
-        <input id="pdf-upload" type="file" accept="application/pdf" multiple className="hidden" onChange={(event) => onFilesSelected(event.target.files)} />
+        <input id="pdf-upload" type="file" accept=".pdf,.xls,.xlsx,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple className="hidden" onChange={(event) => onFilesSelected(event.target.files)} />
       </label>
 
       {/* Batch info */}
@@ -131,7 +136,7 @@ export function UploadPanel() {
                     <div>
                       <p className="text-[13px] font-medium text-slate-800">{item.fileName}</p>
                       <p className="text-[11px] text-slate-500">
-                        {item.duplicated ? "Ya existia" : "Nuevo"} · {item.documentType}
+                        {item.duplicated ? "Ya existia" : "Nuevo"} | {item.documentType}
                       </p>
                     </div>
                   </div>

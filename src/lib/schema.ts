@@ -31,6 +31,16 @@ CREATE TABLE IF NOT EXISTS hourly_sales (
   order_count INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS product_sales (
+  id TEXT PRIMARY KEY,
+  sales_report_id TEXT REFERENCES sales_reports(id) ON DELETE CASCADE,
+  business_date DATE NOT NULL,
+  product_code TEXT NOT NULL,
+  product_name TEXT NOT NULL,
+  units NUMERIC(12,2) NOT NULL,
+  amount NUMERIC(12,2) NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS invoices (
   id TEXT PRIMARY KEY,
   document_id TEXT REFERENCES documents(id) ON DELETE CASCADE,

@@ -7,6 +7,7 @@ import {
   listHourlySales,
   listInvoices,
   listPayrolls,
+  listProductSales,
   listSalesReports,
   listTelegramMessages,
   listTelegramUsers,
@@ -56,7 +57,7 @@ export async function getFinancialWorkspace(input?: {
   to?: string;
 }): Promise<FinancialWorkspace> {
   const filter = resolveDateFilter(input);
-  const [documents, salesReports, hourlySales, invoices, payrolls, bankTransactions, alerts, telegramUsers, telegramMessages] =
+  const [documents, salesReports, hourlySales, invoices, payrolls, bankTransactions, productSales, alerts, telegramUsers, telegramMessages] =
     await Promise.all([
       listDocuments(),
       listSalesReports(),
@@ -64,6 +65,7 @@ export async function getFinancialWorkspace(input?: {
       listInvoices(),
       listPayrolls(),
       listBankTransactions(),
+      listProductSales(),
       listAlerts(),
       listTelegramUsers(),
       listTelegramMessages(),
@@ -79,6 +81,7 @@ export async function getFinancialWorkspace(input?: {
   const scopedPayrolls = payrolls.filter((item) => item.payPeriod >= payPeriodStart && item.payPeriod <= payPeriodEnd);
   const scopedBank = bankTransactions.filter((item) => isDateInRange(item.bookedAt, fromDate, toDate));
   const scopedHourly = hourlySales.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
+  const scopedProductSales = productSales.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
   const scopedDocuments = documents.filter((item) => isDateInRange(item.createdAt, fromDate, toDate));
 
   const totalSales = scopedSales.reduce((sum, item) => sum + item.totalSales, 0);
@@ -115,6 +118,22 @@ export async function getFinancialWorkspace(input?: {
     .map(([label, amount]) => ({ label, amount }))
     .sort((a, b) => b.amount - a.amount);
 
+  const topProducts = Object.values(
+    scopedProductSales.reduce<Record<string, { productName: string; units: number; amount: number }>>((acc, item) => {
+      const key = item.productName.toLowerCase();
+      if (!acc[key]) {
+        acc[key] = {
+          productName: item.productName,
+          units: 0,
+          amount: 0,
+        };
+      }
+      acc[key].units += item.units;
+      acc[key].amount += item.amount;
+      return acc;
+    }, {}),
+  ).sort((a, b) => b.units - a.units);
+
   return {
     filter,
     snapshot: {
@@ -147,6 +166,8 @@ export async function getFinancialWorkspace(input?: {
     invoices: scopedInvoices,
     payrolls: scopedPayrolls,
     bankTransactions: scopedBank,
+    productSales: scopedProductSales,
+    topProducts,
     totalsByCategory,
     cashFlowSummary: {
       inflows: bankInflows,

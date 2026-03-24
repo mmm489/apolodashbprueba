@@ -14,7 +14,6 @@ import {
   Menu,
   Search,
   Settings,
-  UploadCloud,
   X,
 } from "lucide-react";
 
