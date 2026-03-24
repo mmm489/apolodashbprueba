@@ -96,6 +96,13 @@ export async function extractStructuredData(params: {
     if (structured) {
       return structured;
     }
+
+    if (initialType === "invoice") {
+      const heuristicInvoice = tryHeuristicInvoiceExtraction(params.fileName, nativeText);
+      if (heuristicInvoice) {
+        return heuristicInvoice;
+      }
+    }
   }
 
   const visionStructured =
@@ -147,6 +154,43 @@ export async function extractStructuredData(params: {
       fileName: params.fileName,
       extractedTextPreview: (nativeText || "Sin contenido legible").slice(0, 500),
     },
+  };
+}
+
+function tryHeuristicInvoiceExtraction(fileName: string, documentText: string): ExtractionResult | null {
+  const lines = documentText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const supplierName = inferSupplierName(lines, fileName);
+  const issueDate = findFirstDate(documentText);
+  const totalAmount = findLabeledAmount(documentText, [
+    "total factura",
+    "importe total",
+    "total a pagar",
+    "total",
+  ]);
+  const taxAmount = findLabeledAmount(documentText, ["iva", "vat", "impuestos", "tax"]) ?? 0;
+
+  if (!supplierName || !issueDate || totalAmount == null) {
+    return null;
+  }
+
+  return {
+    documentType: "invoice",
+    confidence: 0.72,
+    strategy: "native-text",
+    summary: `Factura detectada para ${supplierName}`,
+    normalizedData: {
+      id: randomUUID(),
+      supplierName,
+      issueDate,
+      dueDate: null,
+      totalAmount,
+      taxAmount,
+      category: inferInvoiceCategory(supplierName, documentText),
+    } satisfies InvoiceRecord,
   };
 }
 
@@ -275,4 +319,86 @@ function normalizeByType(documentType: ExtractionResult["documentType"], payload
   }
 
   return (payload as Record<string, unknown>) ?? {};
+}
+
+function inferSupplierName(lines: string[], fileName: string) {
+  const joined = lines.join(" ").toLowerCase();
+  if (joined.includes("amazon")) {
+    return "Amazon";
+  }
+
+  const blackList = ["factura", "invoice", "fecha", "date", "pedido", "order", "cliente", "vat", "iva"];
+  const candidate = lines.find((line) => {
+    const lower = line.toLowerCase();
+    return (
+      lower.length > 3 &&
+      lower.length < 80 &&
+      /[a-záéíóúàèìòù]/i.test(lower) &&
+      !blackList.some((word) => lower.includes(word))
+    );
+  });
+
+  if (candidate) {
+    return candidate.replace(/\s{2,}/g, " ").trim();
+  }
+
+  return fileName.replace(/\.[^.]+$/, "");
+}
+
+function findFirstDate(text: string) {
+  const match = text.match(/\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b/);
+  if (!match) {
+    return null;
+  }
+
+  const [day, month, year] = match[1].split(/[/-]/);
+  const normalizedYear = year.length === 2 ? `20${year}` : year;
+  return `${normalizedYear}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+}
+
+function findLabeledAmount(text: string, labels: string[]) {
+  for (const label of labels) {
+    const regex = new RegExp(`${escapeRegExp(label)}[^\\d]{0,20}(\\d{1,3}(?:[.\\s]\\d{3})*(?:,\\d{2})|\\d+(?:,\\d{2}))`, "i");
+    const match = text.match(regex);
+    if (match) {
+      const amount = parseEuroNumber(match[1]);
+      if (amount != null) {
+        return amount;
+      }
+    }
+  }
+
+  const amounts = [...text.matchAll(/\b(\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})|\d+(?:,\d{2}))\b/g)]
+    .map((match) => parseEuroNumber(match[1]))
+    .filter((value): value is number => value != null);
+
+  if (!amounts.length) {
+    return null;
+  }
+
+  return Math.max(...amounts);
+}
+
+function parseEuroNumber(value: string) {
+  const normalized = value.replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function inferInvoiceCategory(supplierName: string, text: string) {
+  const sample = `${supplierName} ${text}`.toLowerCase();
+  if (sample.includes("amazon") || sample.includes("envase") || sample.includes("pack")) {
+    return "envases";
+  }
+  if (sample.includes("leche") || sample.includes("nata") || sample.includes("chocolate") || sample.includes("ingred")) {
+    return "materia_prima";
+  }
+  if (sample.includes("limpieza")) {
+    return "limpieza";
+  }
+  return "otros";
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
