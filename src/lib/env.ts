@@ -7,7 +7,10 @@ const env = {
   APP_URL: process.env.APP_URL ?? "http://localhost:3000",
   ONEDRIVE_INPUT_DIR: process.env.ONEDRIVE_INPUT_DIR,
   OCR_LANG: process.env.OCR_LANG ?? "spa",
-  ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL ?? "claude-3-7-sonnet-20250219",
+  ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL ?? "claude-3-5-haiku-20241022",
+  ANTHROPIC_FALLBACK_MODELS:
+    process.env.ANTHROPIC_FALLBACK_MODELS ??
+    "claude-3-5-sonnet-20241022,claude-3-7-sonnet-20250219",
   MICROSOFT_TENANT_ID: process.env.MICROSOFT_TENANT_ID,
   MICROSOFT_CLIENT_ID: process.env.MICROSOFT_CLIENT_ID,
   MICROSOFT_CLIENT_SECRET: process.env.MICROSOFT_CLIENT_SECRET,
