@@ -133,7 +133,13 @@ export function UploadPanel() {
               {result.processed.map((item) => (
                 <div key={item.fileName} className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-slate-50/50 p-3 transition hover:bg-white">
                   <div className="flex items-center gap-2">
-                    <CheckCircle2 className="size-4 text-emerald-500" />
+                    {item.status === "validated" ? (
+                      <CheckCircle2 className="size-4 text-emerald-500" />
+                    ) : item.status === "error" ? (
+                      <XCircle className="size-4 text-rose-500" />
+                    ) : (
+                      <LoaderCircle className="size-4 text-amber-500" />
+                    )}
                     <div>
                       <p className="text-[13px] font-medium text-slate-800">{item.fileName}</p>
                       <p className="text-[11px] text-slate-500">
@@ -143,7 +149,11 @@ export function UploadPanel() {
                     </div>
                   </div>
                   <span className={`rounded-lg px-2 py-1 text-[11px] font-semibold uppercase tracking-wider ${
-                    item.status === "validated" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+                    item.status === "validated"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : item.status === "error"
+                        ? "bg-rose-50 text-rose-700"
+                        : "bg-amber-50 text-amber-700"
                   }`}>
                     {item.status}
                   </span>

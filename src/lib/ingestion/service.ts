@@ -1,7 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { createDocument, findDocumentByHash, persistExtraction } from "@/lib/repositories";
+import {
+  createDocument,
+  findDocumentByHash,
+  persistExtraction,
+  updateDocumentProcessingState,
+} from "@/lib/repositories";
 import { buildDocumentHash } from "@/lib/utils";
 
 import { classifyDocument } from "./classifier";
@@ -54,13 +59,30 @@ export async function ingestPdfBuffer(input: {
       });
   await persistExtraction(document.id, extraction);
 
+  const finalStatus = extraction.confidence >= 0.6 ? "validated" : "error";
+  const errorMessage =
+    finalStatus === "error"
+      ? extraction.documentType === "unknown"
+        ? "No se pudo clasificar el documento con suficiente confianza."
+        : "No se pudo extraer el documento con suficiente confianza."
+      : null;
+
+  await updateDocumentProcessingState({
+    documentId: document.id,
+    documentType: extraction.documentType,
+    status: finalStatus,
+    confidence: extraction.confidence,
+    errorMessage,
+  });
+
   return {
     duplicated: false,
     document: {
       ...document,
       documentType: extraction.documentType,
-      status: extraction.confidence >= 0.6 ? "validated" : "error",
+      status: finalStatus,
       confidence: extraction.confidence,
+      errorMessage,
     },
     extraction,
   };

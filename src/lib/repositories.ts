@@ -290,6 +290,29 @@ export async function createDocument(input: {
   return document;
 }
 
+export async function updateDocumentProcessingState(input: {
+  documentId: string;
+  documentType: DocumentRecord["documentType"];
+  status: DocumentRecord["status"];
+  confidence: number;
+  errorMessage?: string | null;
+}) {
+  if (!hasDatabase()) {
+    return;
+  }
+
+  const sql = getSql();
+  await sql`
+    UPDATE documents
+    SET
+      document_type = ${input.documentType},
+      status = ${input.status},
+      confidence = ${input.confidence},
+      error_message = ${input.errorMessage ?? null}
+    WHERE id = ${input.documentId}
+  `;
+}
+
 export async function persistExtraction(documentId: string, result: ExtractionResult) {
   if (!hasDatabase()) {
     return;
