@@ -20,7 +20,7 @@ export async function askClaudeForStructuredData(prompt: string) {
 
   try {
     const response = await client.messages.create({
-      model: "claude-3-5-sonnet-latest",
+      model: env.ANTHROPIC_MODEL,
       max_tokens: 1200,
       system:
         "Eres un analista financiero de una heladeria. Devuelve solo JSON valido siguiendo el esquema pedido y no inventes datos ausentes.",
@@ -48,7 +48,7 @@ export async function askClaudeFromPdf(fileName: string, pdfBase64: string, prom
 
   try {
     const response = await client.messages.create({
-      model: "claude-3-5-sonnet-latest",
+      model: env.ANTHROPIC_MODEL,
       max_tokens: 1400,
       system:
         "Eres un analista financiero de una heladeria. Devuelve solo JSON valido siguiendo el esquema pedido y no inventes datos ausentes.",
