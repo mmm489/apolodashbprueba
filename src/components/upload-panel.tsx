@@ -35,10 +35,11 @@ export function UploadPanel() {
       return;
     }
 
+    const allowedExtensions = [".pdf", ".xls", ".xlsx", ".jpg", ".jpeg", ".png", ".webp"];
     setFiles(
       Array.from(fileList).filter((file) => {
         const lower = file.name.toLowerCase();
-        return lower.endsWith(".pdf") || lower.endsWith(".xls") || lower.endsWith(".xlsx");
+        return allowedExtensions.some((ext) => lower.endsWith(ext));
       }),
     );
     setResult(null);
@@ -88,11 +89,11 @@ export function UploadPanel() {
         <div className="flex size-12 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
           <FileUp className="size-6" />
         </div>
-        <p className="mt-4 text-[15px] font-semibold text-slate-800">Arrastra PDFs o Excels de ventas</p>
+        <p className="mt-4 text-[15px] font-semibold text-slate-800">Arrastra documentos o fotos de facturas</p>
         <p className="mt-1.5 max-w-sm text-[13px] leading-relaxed text-slate-500">
-          Sube facturas, informes de ventas en PDF o Excel, nominas o extractos bancarios para procesarlos.
+          Sube facturas, informes de ventas en PDF, Excel o imagen (JPG, PNG), nominas o extractos bancarios para procesarlos.
         </p>
-        <input id="pdf-upload" type="file" accept=".pdf,.xls,.xlsx,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple className="hidden" onChange={(event) => onFilesSelected(event.target.files)} />
+        <input id="pdf-upload" type="file" accept=".pdf,.xls,.xlsx,.jpg,.jpeg,.png,.webp,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png,image/webp" multiple className="hidden" onChange={(event) => onFilesSelected(event.target.files)} />
       </label>
 
       {/* Batch info */}

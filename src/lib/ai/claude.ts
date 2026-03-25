@@ -40,6 +40,49 @@ export async function askClaudeForStructuredData(prompt: string) {
   }
 }
 
+export type VisionMediaType = "application/pdf" | "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+
+export async function askClaudeFromImage(fileName: string, imageBase64: string, mediaType: VisionMediaType, prompt: string) {
+  const client = getAnthropicClient();
+  if (!client) {
+    return null;
+  }
+
+  try {
+    const source = mediaType === "application/pdf"
+      ? { type: "base64" as const, media_type: mediaType, data: imageBase64 }
+      : { type: "base64" as const, media_type: mediaType, data: imageBase64 };
+
+    const contentBlock = mediaType === "application/pdf"
+      ? { type: "document" as const, source }
+      : { type: "image" as const, source };
+
+    const response = await createMessageWithFallback(client, {
+      max_tokens: 1400,
+      system:
+        "Eres un analista financiero de una heladeria. Devuelve solo JSON valido siguiendo el esquema pedido y no inventes datos ausentes.",
+      messages: [
+        {
+          role: "user",
+          content: [
+            contentBlock,
+            {
+              type: "text",
+              text: `Nombre del archivo: ${fileName}\n\n${prompt}`,
+            },
+          ],
+        } as never,
+      ],
+    });
+
+    const textBlock = response.content.find((item) => item.type === "text");
+    return textBlock && "text" in textBlock ? textBlock.text : null;
+  } catch (error) {
+    console.error("Claude vision request failed:", error);
+    return null;
+  }
+}
+
 export async function askClaudeFromPdf(fileName: string, pdfBase64: string, prompt: string) {
   const client = getAnthropicClient();
   if (!client) {

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -10,6 +12,6 @@ export function toNumber(value: unknown, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-export function buildDocumentHash(fileName: string, content: string) {
-  return `${fileName}:${content.length}:${content.slice(0, 64)}`;
+export function buildDocumentHash(content: Buffer | string) {
+  return createHash("sha256").update(content).digest("hex");
 }

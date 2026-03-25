@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { createWorker } from "tesseract.js";
 import { z } from "zod";
 
-import { askClaudeForStructuredData, askClaudeFromPdf } from "@/lib/ai/claude";
+import { askClaudeForStructuredData, askClaudeFromImage, askClaudeFromPdf, type VisionMediaType } from "@/lib/ai/claude";
 import { env } from "@/lib/env";
 import { classifyDocument } from "@/lib/ingestion/classifier";
 import type { BankTransaction, ExtractionResult, HourlySalesEntry, InvoiceRecord, PayrollRecord, SalesReport } from "@/lib/types";
@@ -153,6 +153,69 @@ export async function extractStructuredData(params: {
       extractedTextPreview: (nativeText || "Sin contenido legible").slice(0, 500),
     },
   };
+}
+
+export async function extractStructuredDataFromImage(params: {
+  fileName: string;
+  imageBuffer: Buffer;
+  mediaType: VisionMediaType;
+  sourceHint?: string;
+}): Promise<ExtractionResult> {
+  const initialType = classifyDocument(params.fileName, params.sourceHint ?? "");
+
+  const prompt = [
+    "Analiza esta imagen de un documento financiero de una heladeria.",
+    `Tipo previsto: ${initialType}.`,
+    params.sourceHint ? `Ruta/carpeta de origen: ${params.sourceHint}.` : "",
+    "Extrae todos los datos estructurados que puedas: proveedor, fechas, importes, IVA, categorias, etc.",
+    "Si falta algun dato, usa null o valores conservadores, nunca inventes importes.",
+    'Devuelve JSON con forma { "documentType": "...", "confidence": 0.0-1.0, "summary": "...", "normalizedData": ... }.',
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const response = await askClaudeFromImage(
+    params.fileName,
+    params.imageBuffer.toString("base64"),
+    params.mediaType,
+    prompt,
+  );
+
+  if (!response) {
+    return {
+      documentType: initialType,
+      confidence: 0.4,
+      strategy: "claude-vision",
+      summary: "No se pudo analizar la imagen; revisar el documento.",
+      normalizedData: { fileName: params.fileName },
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(response) as {
+      documentType?: ExtractionResult["documentType"];
+      confidence?: number;
+      summary?: string;
+      normalizedData?: unknown;
+    };
+
+    const type = parsed.documentType ?? initialType;
+    return {
+      documentType: type,
+      confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0.8,
+      strategy: "claude-vision",
+      summary: parsed.summary ?? `Documento ${params.fileName} procesado desde imagen`,
+      normalizedData: normalizeByType(type, parsed.normalizedData),
+    } satisfies ExtractionResult;
+  } catch {
+    return {
+      documentType: initialType,
+      confidence: 0.4,
+      strategy: "claude-vision",
+      summary: "No se pudo estructurar la respuesta de vision; revisar el documento.",
+      normalizedData: { fileName: params.fileName, rawResponse: response.slice(0, 500) },
+    };
+  }
 }
 
 function tryHeuristicInvoiceExtraction(

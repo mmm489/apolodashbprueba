@@ -11,9 +11,26 @@ import {
 } from "@/lib/repositories";
 import { buildDocumentHash } from "@/lib/utils";
 
+import type { VisionMediaType } from "@/lib/ai/claude";
+
 import { classifyDocument } from "./classifier";
-import { extractStructuredData } from "./extractor";
+import { extractStructuredData, extractStructuredDataFromImage } from "./extractor";
 import { isSpreadsheetFile, parseSpreadsheetSalesReport } from "./spreadsheet-parser";
+
+const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
+
+export function isImageFile(fileName: string) {
+  const lower = fileName.toLowerCase();
+  return IMAGE_EXTENSIONS.some((ext) => lower.endsWith(ext));
+}
+
+function getImageMediaType(fileName: string): VisionMediaType {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".webp")) return "image/webp";
+  return "image/jpeg";
+}
 
 export async function ingestPdf(filePath: string) {
   const fileName = path.basename(filePath);
@@ -32,7 +49,7 @@ export async function ingestPdfBuffer(input: {
   pdfBuffer: Buffer;
   filePath?: string;
 }) {
-  const contentHash = buildDocumentHash(input.fileName, input.pdfBuffer.toString("base64").slice(0, 2048));
+  const contentHash = buildDocumentHash(input.pdfBuffer);
   const existing = await findDocumentByHash(contentHash);
   if (existing) {
     return {
@@ -45,26 +62,33 @@ export async function ingestPdfBuffer(input: {
     fileName: input.fileName,
     sourcePath: input.sourcePath,
     contentHash,
-    documentType: isSpreadsheetFile(input.fileName) ? "sales_report" : classifyDocument(input.fileName, input.sourcePath),
+    documentType: isSpreadsheetFile(input.fileName) ? "sales_report" : isImageFile(input.fileName) ? "invoice" : classifyDocument(input.fileName, input.sourcePath),
     status: "processing",
     confidence: 0,
     extractorVersion: "v1",
   });
 
   const tempFilePath =
-    !isSpreadsheetFile(input.fileName) && !input.filePath
+    !isSpreadsheetFile(input.fileName) && !isImageFile(input.fileName) && !input.filePath
       ? await writeTemporaryUpload(input.fileName, input.pdfBuffer)
       : null;
 
   try {
     const extraction = isSpreadsheetFile(input.fileName)
       ? parseSpreadsheetSalesReport(input.fileName, input.pdfBuffer)
-      : await extractStructuredData({
-          filePath: input.filePath ?? tempFilePath ?? undefined,
-          fileName: input.fileName,
-          pdfBuffer: input.pdfBuffer,
-          sourceHint: input.sourcePath,
-        });
+      : isImageFile(input.fileName)
+        ? await extractStructuredDataFromImage({
+            fileName: input.fileName,
+            imageBuffer: input.pdfBuffer,
+            mediaType: getImageMediaType(input.fileName),
+            sourceHint: input.sourcePath,
+          })
+        : await extractStructuredData({
+            filePath: input.filePath ?? tempFilePath ?? undefined,
+            fileName: input.fileName,
+            pdfBuffer: input.pdfBuffer,
+            sourceHint: input.sourcePath,
+          });
     await persistExtraction(document.id, extraction);
 
     const finalStatus = extraction.confidence >= 0.6 ? "validated" : "error";
