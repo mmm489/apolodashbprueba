@@ -363,12 +363,22 @@ async function _persistExtractionInner(sql: ReturnType<typeof getSql>, documentI
   }
 
   if (result.documentType === "invoice") {
-    const data = result.normalizedData as InvoiceRecord;
-    if (!data.supplierName || !data.issueDate || data.totalAmount == null) return;
-    const id = data.id || randomUUID();
+    const raw = result.normalizedData as Record<string, unknown>;
+    const supplierName = raw.supplierName ?? raw.supplier_name;
+    const issueDate = raw.issueDate ?? raw.issue_date;
+    const totalAmount = raw.totalAmount ?? raw.total_amount;
+    if (!supplierName || !issueDate || totalAmount == null) {
+      console.warn("[persistExtraction] Skipping invoice - missing required fields:", { supplierName, issueDate, totalAmount });
+      return;
+    }
+    const id = raw.id ? String(raw.id) : randomUUID();
+    const dueDate = raw.dueDate ?? raw.due_date ?? null;
+    const taxAmount = Number(raw.taxAmount ?? raw.tax_amount ?? 0);
+    const category = String(raw.category ?? "otros");
+    console.log(`[persistExtraction] Inserting invoice: ${supplierName}, ${issueDate}, ${totalAmount} EUR`);
     await sql`
       INSERT INTO invoices (id, document_id, supplier_name, issue_date, due_date, total_amount, tax_amount, category)
-      VALUES (${id}, ${documentId}, ${data.supplierName}, ${data.issueDate}, ${data.dueDate ?? null}, ${data.totalAmount}, ${data.taxAmount ?? 0}, ${data.category ?? "otros"})
+      VALUES (${id}, ${documentId}, ${String(supplierName)}, ${String(issueDate)}, ${dueDate ? String(dueDate) : null}, ${Number(totalAmount)}, ${taxAmount}, ${category})
       ON CONFLICT (id) DO NOTHING
     `;
     return;
