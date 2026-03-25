@@ -137,16 +137,23 @@ async function createMessageWithFallback(
   const models = getCandidateModels();
   let lastError: unknown = null;
 
+  console.log(`[Claude] Trying models: ${models.join(", ")}`);
+
   for (const model of models) {
     try {
-      return await client.messages.create({
+      console.log(`[Claude] Attempting model: ${model}`);
+      const result = await client.messages.create({
         model,
         ...params,
       });
+      console.log(`[Claude] Success with model: ${model}`);
+      return result;
     } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      const status = (error as { status?: number }).status;
+      console.warn(`[Claude] Model ${model} failed (status=${status}): ${errMsg.slice(0, 200)}`);
       lastError = error;
       if (isModelNotFound(error)) {
-        console.warn(`Anthropic model unavailable, trying fallback: ${model}`);
         continue;
       }
 
@@ -154,7 +161,7 @@ async function createMessageWithFallback(
     }
   }
 
-  throw lastError ?? new Error("No se pudo completar la solicitud a Anthropic.");
+  throw lastError ?? new Error("Todos los modelos de Claude fallaron. Verifica ANTHROPIC_API_KEY.");
 }
 
 function isModelNotFound(error: unknown) {
