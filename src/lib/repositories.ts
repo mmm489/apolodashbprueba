@@ -353,9 +353,11 @@ export async function persistExtraction(documentId: string, result: ExtractionRe
 
   if (result.documentType === "invoice") {
     const data = result.normalizedData as InvoiceRecord;
+    if (!data.supplierName || !data.issueDate || data.totalAmount == null) return;
+    const id = data.id || randomUUID();
     await sql`
       INSERT INTO invoices (id, document_id, supplier_name, issue_date, due_date, total_amount, tax_amount, category)
-      VALUES (${data.id}, ${documentId}, ${data.supplierName}, ${data.issueDate}, ${data.dueDate ?? null}, ${data.totalAmount}, ${data.taxAmount}, ${data.category})
+      VALUES (${id}, ${documentId}, ${data.supplierName}, ${data.issueDate}, ${data.dueDate ?? null}, ${data.totalAmount}, ${data.taxAmount ?? 0}, ${data.category ?? "otros"})
       ON CONFLICT (id) DO NOTHING
     `;
     return;

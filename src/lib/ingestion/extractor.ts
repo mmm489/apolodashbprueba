@@ -337,40 +337,54 @@ async function tryClaudePdfExtraction(
   }
 }
 
+function coercePayload(payload: unknown): Record<string, unknown> {
+  if (!payload || typeof payload !== "object") return {};
+  const raw = payload as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    // Convert snake_case keys from Claude to camelCase expected by Zod schemas
+    const camel = key.replace(/_([a-z])/g, (_, c) => (c as string).toUpperCase());
+    out[camel] = value;
+  }
+  return out;
+}
+
 function normalizeByType(documentType: ExtractionResult["documentType"], payload: unknown) {
+  const coerced = Array.isArray(payload) ? payload.map(coercePayload) : coercePayload(payload);
+
   if (documentType === "sales_report") {
-    return {
-      id: randomUUID(),
-      ...salesSchema.parse(payload),
-    } satisfies SalesReport;
+    const result = salesSchema.safeParse(coerced);
+    if (result.success) {
+      return { id: randomUUID(), ...result.data } satisfies SalesReport;
+    }
   }
 
   if (documentType === "invoice") {
-    return {
-      id: randomUUID(),
-      ...invoiceSchema.parse(payload),
-    } satisfies InvoiceRecord;
+    const result = invoiceSchema.safeParse(coerced);
+    if (result.success) {
+      return { id: randomUUID(), ...result.data } satisfies InvoiceRecord;
+    }
   }
 
   if (documentType === "payroll") {
-    return {
-      id: randomUUID(),
-      ...payrollSchema.parse(payload),
-    } satisfies PayrollRecord;
+    const result = payrollSchema.safeParse(coerced);
+    if (result.success) {
+      return { id: randomUUID(), ...result.data } satisfies PayrollRecord;
+    }
   }
 
   if (documentType === "hourly_report") {
-    return hourlySchema.parse(payload).map((item) => ({
-      id: randomUUID(),
-      ...item,
-    })) satisfies HourlySalesEntry[];
+    const result = hourlySchema.safeParse(coerced);
+    if (result.success) {
+      return result.data.map((item) => ({ id: randomUUID(), ...item })) satisfies HourlySalesEntry[];
+    }
   }
 
   if (documentType === "bank_statement") {
-    return bankSchema.parse(payload).map((item) => ({
-      id: randomUUID(),
-      ...item,
-    })) satisfies BankTransaction[];
+    const result = bankSchema.safeParse(coerced);
+    if (result.success) {
+      return result.data.map((item) => ({ id: randomUUID(), ...item })) satisfies BankTransaction[];
+    }
   }
 
   return (payload as Record<string, unknown>) ?? {};
