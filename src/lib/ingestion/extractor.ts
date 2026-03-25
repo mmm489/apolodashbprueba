@@ -170,12 +170,13 @@ export async function extractStructuredDataFromImage(params: {
     };
 
     const type = parsed.documentType ?? initialType;
+    const dataPayload = parsed.normalizedData ?? extractDataFields(parsed as Record<string, unknown>);
     return {
       documentType: type,
       confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0.8,
       strategy: "claude-vision",
       summary: parsed.summary ?? `Documento ${params.fileName} procesado desde imagen`,
-      normalizedData: normalizeByType(type, parsed.normalizedData),
+      normalizedData: normalizeByType(type, dataPayload),
     } satisfies ExtractionResult;
   } catch {
     return {
@@ -290,7 +291,10 @@ async function tryClaudeExtraction(
     const type = parsed.documentType ?? documentType;
     const confidence = typeof parsed.confidence === "number" ? parsed.confidence : 0.75;
     const summary = parsed.summary ?? `Documento ${fileName} procesado`;
-    const normalizedData = normalizeByType(type, parsed.normalizedData);
+    // Claude may nest data in normalizedData or put fields at root level
+    const dataPayload = parsed.normalizedData ?? extractDataFields(parsed);
+    console.log("[Extractor] dataPayload for normalizeByType:", JSON.stringify(dataPayload).slice(0, 300));
+    const normalizedData = normalizeByType(type, dataPayload);
 
     return {
       documentType: type,
@@ -339,12 +343,13 @@ async function tryClaudePdfExtraction(
     };
 
     const type = parsed.documentType ?? documentType;
+    const dataPayload = parsed.normalizedData ?? extractDataFields(parsed);
     return {
       documentType: type,
       confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0.8,
       strategy,
       summary: parsed.summary ?? `Documento ${fileName} procesado desde PDF`,
-      normalizedData: normalizeByType(type, parsed.normalizedData),
+      normalizedData: normalizeByType(type, dataPayload),
     } satisfies ExtractionResult;
   } catch (error) {
     console.error("[Extractor] Failed to parse Claude PDF response:", response.slice(0, 500), error);
@@ -499,6 +504,18 @@ function inferInvoiceCategory(supplierName: string, text: string) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Extract data fields from Claude response when they're at root level instead of nested in normalizedData */
+function extractDataFields(parsed: Record<string, unknown>): Record<string, unknown> {
+  const metaKeys = new Set(["documentType", "document_type", "confidence", "summary", "normalizedData", "normalized_data"]);
+  const data: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (!metaKeys.has(key)) {
+      data[key] = value;
+    }
+  }
+  return data;
 }
 
 function cleanJsonResponse(raw: string): string {
