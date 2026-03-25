@@ -49,6 +49,7 @@ async function processSingleFile(file: File) {
       duplicated: result.duplicated,
       status: result.document.status,
       documentType: result.document.documentType,
+      error: result.document.errorMessage ?? undefined,
     };
   } catch (error) {
     console.error(`Upload ingestion failed for ${file.name}:`, error);

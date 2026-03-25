@@ -59,6 +59,9 @@ export default async function DocumentosPage({
                     </span>
                   </div>
                 </div>
+                {document.errorMessage ? (
+                  <p className="mt-2 text-[12px] text-rose-600">{document.errorMessage}</p>
+                ) : null}
               </div>
             ))}
           </div>

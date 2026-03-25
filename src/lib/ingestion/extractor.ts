@@ -91,17 +91,15 @@ export async function extractStructuredData(params: {
 
   const initialType = classifyDocument(params.fileName, `${params.sourceHint ?? ""} ${nativeText}`);
 
-  if (nativeText.length > 120) {
+  if (nativeText.length > 30) {
     const structured = await tryClaudeExtraction(params.fileName, nativeText, "native-text", initialType);
     if (structured) {
       return structured;
     }
 
-    if (initialType === "invoice") {
-      const heuristicInvoice = tryHeuristicInvoiceExtraction(params.fileName, nativeText);
-      if (heuristicInvoice) {
-        return heuristicInvoice;
-      }
+    const heuristicInvoice = tryHeuristicInvoiceExtraction(params.fileName, nativeText, initialType);
+    if (heuristicInvoice) {
+      return heuristicInvoice;
     }
   }
 
@@ -157,7 +155,11 @@ export async function extractStructuredData(params: {
   };
 }
 
-function tryHeuristicInvoiceExtraction(fileName: string, documentText: string): ExtractionResult | null {
+function tryHeuristicInvoiceExtraction(
+  fileName: string,
+  documentText: string,
+  initialType: ExtractionResult["documentType"],
+): ExtractionResult | null {
   const lines = documentText
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -173,7 +175,7 @@ function tryHeuristicInvoiceExtraction(fileName: string, documentText: string): 
   ]);
   const taxAmount = findLabeledAmount(documentText, ["iva", "vat", "impuestos", "tax"]) ?? 0;
 
-  if (!supplierName || !issueDate || totalAmount == null) {
+  if (!looksLikeInvoice(fileName, documentText, initialType) || !supplierName || !issueDate || totalAmount == null) {
     return null;
   }
 
@@ -192,6 +194,33 @@ function tryHeuristicInvoiceExtraction(fileName: string, documentText: string): 
       category: inferInvoiceCategory(supplierName, documentText),
     } satisfies InvoiceRecord,
   };
+}
+
+function looksLikeInvoice(
+  fileName: string,
+  documentText: string,
+  initialType: ExtractionResult["documentType"],
+) {
+  if (initialType === "invoice") {
+    return true;
+  }
+
+  const sample = `${fileName}\n${documentText}`.toLowerCase();
+  const invoiceSignals = [
+    "amazon",
+    "factura",
+    "invoice",
+    "iva",
+    "vat",
+    "base imponible",
+    "importe total",
+    "total a pagar",
+    "supplier",
+    "proveedor",
+  ];
+
+  const matches = invoiceSignals.filter((signal) => sample.includes(signal));
+  return matches.length >= 2;
 }
 
 async function tryClaudeExtraction(

@@ -19,7 +19,16 @@ export function classifyDocument(fileName: string, text: string): DocumentType {
     return "sales_report";
   }
 
-  if (sample.includes("factura") || sample.includes("iva") || sample.includes("proveedor")) {
+  if (
+    sample.includes("factura") ||
+    sample.includes("invoice") ||
+    sample.includes("iva") ||
+    sample.includes("proveedor") ||
+    sample.includes("amazon") ||
+    sample.includes("base imponible") ||
+    sample.includes("importe total") ||
+    sample.includes("total a pagar")
+  ) {
     return "invoice";
   }
 

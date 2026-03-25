@@ -1,4 +1,6 @@
-import { readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 import {
@@ -49,41 +51,63 @@ export async function ingestPdfBuffer(input: {
     extractorVersion: "v1",
   });
 
-  const extraction = isSpreadsheetFile(input.fileName)
-    ? parseSpreadsheetSalesReport(input.fileName, input.pdfBuffer)
-    : await extractStructuredData({
-        filePath: input.filePath,
-        fileName: input.fileName,
-        pdfBuffer: input.pdfBuffer,
-        sourceHint: input.sourcePath,
-      });
-  await persistExtraction(document.id, extraction);
-
-  const finalStatus = extraction.confidence >= 0.6 ? "validated" : "error";
-  const errorMessage =
-    finalStatus === "error"
-      ? extraction.documentType === "unknown"
-        ? "No se pudo clasificar el documento con suficiente confianza."
-        : "No se pudo extraer el documento con suficiente confianza."
+  const tempFilePath =
+    !isSpreadsheetFile(input.fileName) && !input.filePath
+      ? await writeTemporaryUpload(input.fileName, input.pdfBuffer)
       : null;
 
-  await updateDocumentProcessingState({
-    documentId: document.id,
-    documentType: extraction.documentType,
-    status: finalStatus,
-    confidence: extraction.confidence,
-    errorMessage,
-  });
+  try {
+    const extraction = isSpreadsheetFile(input.fileName)
+      ? parseSpreadsheetSalesReport(input.fileName, input.pdfBuffer)
+      : await extractStructuredData({
+          filePath: input.filePath ?? tempFilePath ?? undefined,
+          fileName: input.fileName,
+          pdfBuffer: input.pdfBuffer,
+          sourceHint: input.sourcePath,
+        });
+    await persistExtraction(document.id, extraction);
 
-  return {
-    duplicated: false,
-    document: {
-      ...document,
+    const finalStatus = extraction.confidence >= 0.6 ? "validated" : "error";
+    const errorMessage =
+      finalStatus === "error"
+        ? extraction.documentType === "unknown"
+          ? "No se pudo clasificar el documento con suficiente confianza."
+          : "No se pudo extraer el documento con suficiente confianza."
+        : null;
+
+    await updateDocumentProcessingState({
+      documentId: document.id,
       documentType: extraction.documentType,
       status: finalStatus,
       confidence: extraction.confidence,
       errorMessage,
-    },
-    extraction,
-  };
+    });
+
+    return {
+      duplicated: false,
+      document: {
+        ...document,
+        documentType: extraction.documentType,
+        status: finalStatus,
+        confidence: extraction.confidence,
+        errorMessage,
+      },
+      extraction,
+    };
+  } finally {
+    if (tempFilePath) {
+      await rm(tempFilePath, { force: true }).catch(() => undefined);
+    }
+  }
+}
+
+async function writeTemporaryUpload(fileName: string, buffer: Buffer) {
+  const tempDir = path.join(os.tmpdir(), "apolo-dashboard-uploads");
+  await mkdir(tempDir, { recursive: true });
+
+  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const tempFilePath = path.join(tempDir, `${randomUUID()}-${safeName}`);
+  await writeFile(tempFilePath, buffer);
+
+  return tempFilePath;
 }
