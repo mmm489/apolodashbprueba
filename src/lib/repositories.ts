@@ -330,6 +330,7 @@ export async function persistExtraction(documentId: string, result: ExtractionRe
 }
 
 async function _persistExtractionInner(sql: ReturnType<typeof getSql>, documentId: string, result: ExtractionResult) {
+  console.log(`[_persistExtractionInner] type=${result.documentType}, data=${JSON.stringify(result.normalizedData).slice(0, 400)}`);
 
   if (result.documentType === "sales_report") {
     const data = result.normalizedData as SalesReport;
