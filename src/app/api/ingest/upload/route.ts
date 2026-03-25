@@ -51,13 +51,9 @@ async function processSingleFile(file: File) {
       documentType: result.document.documentType,
       confidence: result.document.confidence,
       error: result.document.errorMessage ?? undefined,
-      _debug: result.extraction ? {
-        strategy: result.extraction.strategy,
-        summary: result.extraction.summary,
-        extractionType: result.extraction.documentType,
-        normalizedDataKeys: Object.keys(result.extraction.normalizedData ?? {}),
-        normalizedDataPreview: JSON.stringify(result.extraction.normalizedData).slice(0, 500),
-      } : "no extraction",
+      _debug: result.extraction
+        ? `${result.extraction.documentType}|${result.extraction.strategy}|${Object.keys(result.extraction.normalizedData ?? {}).join(",")}`
+        : "no-extraction",
     };
   } catch (error) {
     console.error(`Upload ingestion failed for ${file.name}:`, error);

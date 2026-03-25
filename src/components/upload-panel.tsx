@@ -63,7 +63,12 @@ export function UploadPanel() {
         });
 
         const text = await response.text();
-        const payload = text ? (JSON.parse(text) as UploadResult) : { error: "La respuesta del servidor llego vacia." };
+        let payload: UploadResult;
+        try {
+          payload = text ? (JSON.parse(text) as UploadResult) : { error: "La respuesta del servidor llego vacia." };
+        } catch {
+          payload = { ok: false, error: `Respuesta inesperada del servidor (status ${response.status}): ${text.slice(0, 200)}` };
+        }
 
         setResult(payload);
 
