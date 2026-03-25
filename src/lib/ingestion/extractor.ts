@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
-import { createWorker } from "tesseract.js";
 import { z } from "zod";
 
 import { askClaudeForStructuredData, askClaudeFromImage, askClaudeFromPdf, type VisionMediaType } from "@/lib/ai/claude";
@@ -66,12 +65,18 @@ export async function extractPdfText(filePath: string) {
 }
 
 export async function runOcrFallback(filePath: string) {
-  const worker = await createWorker(env.OCR_LANG);
   try {
-    const result = await worker.recognize(filePath);
-    return result.data.text.trim();
-  } finally {
-    await worker.terminate();
+    const { createWorker } = await import("tesseract.js");
+    const worker = await createWorker(env.OCR_LANG);
+    try {
+      const result = await worker.recognize(filePath);
+      return result.data.text.trim();
+    } finally {
+      await worker.terminate();
+    }
+  } catch {
+    console.warn("OCR fallback unavailable (tesseract.js not supported in this environment)");
+    return "";
   }
 }
 
