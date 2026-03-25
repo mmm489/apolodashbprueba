@@ -319,7 +319,17 @@ export async function persistExtraction(documentId: string, result: ExtractionRe
   }
 
   const sql = getSql();
-  console.log(`[persistExtraction] docId=${documentId}, type=${result.documentType}, confidence=${result.confidence}, hasData=${!!result.normalizedData}`);
+  console.log(`[persistExtraction] docId=${documentId}, type=${result.documentType}, confidence=${result.confidence}`);
+  console.log(`[persistExtraction] normalizedData keys:`, Object.keys(result.normalizedData ?? {}));
+
+  try {
+    await _persistExtractionInner(sql, documentId, result);
+  } catch (error) {
+    console.error(`[persistExtraction] FAILED for doc ${documentId}:`, error instanceof Error ? error.message : error);
+  }
+}
+
+async function _persistExtractionInner(sql: ReturnType<typeof getSql>, documentId: string, result: ExtractionResult) {
 
   if (result.documentType === "sales_report") {
     const data = result.normalizedData as SalesReport;
