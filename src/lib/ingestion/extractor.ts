@@ -74,22 +74,28 @@ export async function extractStructuredData(params: {
   let nativeText = "";
   try {
     nativeText = pdfBuffer ? await extractPdfTextFromBuffer(pdfBuffer) : "";
-  } catch {
+  } catch (error) {
+    console.error("[Extractor] PDF text extraction failed:", error instanceof Error ? error.message : error);
     nativeText = "";
   }
 
   const initialType = classifyDocument(params.fileName, `${params.sourceHint ?? ""} ${nativeText}`);
+  console.log(`[Extractor] File: ${params.fileName}, nativeText length: ${nativeText.length}, initialType: ${initialType}`);
 
   if (nativeText.length > 30) {
     const structured = await tryClaudeExtraction(params.fileName, nativeText, "native-text", initialType);
     if (structured) {
+      console.log(`[Extractor] Claude text extraction succeeded: type=${structured.documentType}, confidence=${structured.confidence}`);
       return structured;
     }
+    console.log("[Extractor] Claude text extraction returned null, trying heuristic...");
 
     const heuristicInvoice = tryHeuristicInvoiceExtraction(params.fileName, nativeText, initialType);
     if (heuristicInvoice) {
+      console.log("[Extractor] Heuristic invoice extraction succeeded");
       return heuristicInvoice;
     }
+    console.log("[Extractor] Heuristic extraction also failed, trying PDF vision...");
   }
 
   const visionStructured =
