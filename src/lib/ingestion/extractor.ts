@@ -4,7 +4,6 @@ import { readFile } from "node:fs/promises";
 import { z } from "zod";
 
 import { askClaudeForStructuredData, askClaudeFromImage, askClaudeFromPdf, type VisionMediaType } from "@/lib/ai/claude";
-import { env } from "@/lib/env";
 import { classifyDocument } from "@/lib/ingestion/classifier";
 import type { BankTransaction, ExtractionResult, HourlySalesEntry, InvoiceRecord, PayrollRecord, SalesReport } from "@/lib/types";
 
@@ -64,21 +63,6 @@ export async function extractPdfText(filePath: string) {
   return extractPdfTextFromBuffer(buffer);
 }
 
-export async function runOcrFallback(filePath: string) {
-  try {
-    const { createWorker } = await import("tesseract.js");
-    const worker = await createWorker(env.OCR_LANG);
-    try {
-      const result = await worker.recognize(filePath);
-      return result.data.text.trim();
-    } finally {
-      await worker.terminate();
-    }
-  } catch {
-    console.warn("OCR fallback unavailable (tesseract.js not supported in this environment)");
-    return "";
-  }
-}
 
 export async function extractStructuredData(params: {
   filePath?: string;
@@ -120,32 +104,6 @@ export async function extractStructuredData(params: {
 
   if (visionStructured) {
     return visionStructured;
-  }
-
-  if (params.filePath) {
-    let ocrText = "";
-    try {
-      ocrText = await runOcrFallback(params.filePath);
-    } catch {
-      ocrText = "";
-    }
-    const ocrType = classifyDocument(params.fileName, `${params.sourceHint ?? ""} ${nativeText}\n${ocrText}`);
-    const ocrStructured = await tryClaudeExtraction(params.fileName, ocrText, "ocr-fallback", ocrType);
-
-    if (ocrStructured) {
-      return ocrStructured;
-    }
-
-    return {
-      documentType: initialType,
-      confidence: 0.4,
-      strategy: "ocr-fallback",
-      summary: "No se pudo estructurar automaticamente; revisar el documento.",
-      normalizedData: {
-        fileName: params.fileName,
-        extractedTextPreview: (nativeText || ocrText || "Sin contenido legible").slice(0, 500),
-      },
-    };
   }
 
   return {

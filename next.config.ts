@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "2mb",
     },
   },
-  serverExternalPackages: ["tesseract.js", "pdf-parse"],
+  serverExternalPackages: ["pdf-parse"],
   turbopack: {},
 };
 
