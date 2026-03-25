@@ -12,7 +12,15 @@ export function isSpreadsheetFile(fileName: string) {
 export function parseSpreadsheetSalesReport(fileName: string, buffer: Buffer): ExtractionResult {
   const workbook = XLSX.read(buffer, { type: "buffer" });
   const sheetName = workbook.SheetNames[0];
+  if (!sheetName) {
+    throw new Error("El Excel no contiene ninguna hoja.");
+  }
+
   const sheet = workbook.Sheets[sheetName];
+  if (!sheet) {
+    throw new Error("No se pudo leer la hoja principal del Excel.");
+  }
+
   const rows = XLSX.utils.sheet_to_json<Array<string | number | null>>(sheet, {
     header: 1,
     blankrows: false,
@@ -22,7 +30,11 @@ export function parseSpreadsheetSalesReport(fileName: string, buffer: Buffer): E
   const saleDate = extractSaleDate(rows) ?? fallbackDateFromFileName(fileName) ?? new Date().toISOString().slice(0, 10);
   const itemRows = rows
     .map((row) => row.map((cell) => (cell ?? "").toString().trim()))
-    .filter((row) => row[0] && /^\d+$/.test(row[0]) && row[2] && row[4]);
+    .filter((row) => row[0] && /^\d+$/.test(row[0]) && row[2] && row[4] && row[6]);
+
+  if (!itemRows.length) {
+    throw new Error("No se encontraron lineas de venta validas en el Excel.");
+  }
 
   const productSales: ProductSaleRecord[] = itemRows.map((row) => ({
     id: randomUUID(),
@@ -78,5 +90,12 @@ function fallbackDateFromFileName(fileName: string) {
 }
 
 function toNumber(value: string) {
-  return Number(value.replace(",", "."));
+  const normalized = value.replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  const parsed = Number(normalized);
+
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`No se pudo convertir el valor numerico "${value}".`);
+  }
+
+  return parsed;
 }

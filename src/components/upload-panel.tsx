@@ -50,21 +50,30 @@ export function UploadPanel() {
     }
 
     startTransition(async () => {
-      const formData = new FormData();
-      files.forEach((file) => {
-        formData.append("files", file);
-      });
+      try {
+        const formData = new FormData();
+        files.forEach((file) => {
+          formData.append("files", file);
+        });
 
-      const response = await fetch("/api/ingest/upload", {
-        method: "POST",
-        body: formData,
-      });
+        const response = await fetch("/api/ingest/upload", {
+          method: "POST",
+          body: formData,
+        });
 
-      const payload = (await response.json()) as UploadResult;
-      setResult(payload);
+        const text = await response.text();
+        const payload = text ? (JSON.parse(text) as UploadResult) : { error: "La respuesta del servidor llego vacia." };
 
-      if (response.ok) {
-        setFiles([]);
+        setResult(payload);
+
+        if (response.ok) {
+          setFiles([]);
+        }
+      } catch (error) {
+        setResult({
+          ok: false,
+          error: error instanceof Error ? error.message : "Error inesperado al subir y analizar los documentos.",
+        });
       }
     });
   }
@@ -92,7 +101,7 @@ export function UploadPanel() {
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Lote actual</p>
             <p className="mt-1 text-[15px] font-semibold text-slate-900">
-              {files.length ? `${files.length} PDF${files.length > 1 ? "s" : ""}` : "Ningun archivo seleccionado"}
+              {files.length ? `${files.length} archivo${files.length > 1 ? "s" : ""}` : "Ningun archivo seleccionado"}
             </p>
             <p className="text-[12px] text-slate-500">{files.length ? totalSizeLabel : "Selecciona documentos para analizarlos."}</p>
           </div>

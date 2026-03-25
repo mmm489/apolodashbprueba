@@ -5,23 +5,34 @@ import { ingestPdfBuffer } from "@/lib/ingestion/service";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const formData = await request.formData();
-  const entries = formData.getAll("files");
-  const files = entries.filter((entry): entry is File => entry instanceof File);
+  try {
+    const formData = await request.formData();
+    const entries = formData.getAll("files");
+    const files = entries.filter((entry): entry is File => entry instanceof File);
 
-  if (!files.length) {
-    return NextResponse.json({ error: "No se han recibido archivos para procesar." }, { status: 400 });
+    if (!files.length) {
+      return NextResponse.json({ error: "No se han recibido archivos para procesar." }, { status: 400 });
+    }
+
+    const processed = await Promise.all(files.map(processSingleFile));
+
+    const hasErrors = processed.some((item) => item.status === "error");
+
+    return NextResponse.json({
+      ok: !hasErrors,
+      uploaded: processed.length,
+      processed,
+    }, { status: hasErrors ? 207 : 200 });
+  } catch (error) {
+    console.error("Upload ingestion request failed:", error);
+    return NextResponse.json(
+      {
+        ok: false,
+        error: error instanceof Error ? error.message : "Error inesperado al analizar los documentos.",
+      },
+      { status: 500 },
+    );
   }
-
-  const processed = await Promise.all(files.map(processSingleFile));
-
-  const hasErrors = processed.some((item) => item.status === "error");
-
-  return NextResponse.json({
-    ok: !hasErrors,
-    uploaded: processed.length,
-    processed,
-  }, { status: hasErrors ? 207 : 200 });
 }
 
 async function processSingleFile(file: File) {
