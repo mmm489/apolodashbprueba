@@ -319,6 +319,7 @@ export async function persistExtraction(documentId: string, result: ExtractionRe
   }
 
   const sql = getSql();
+  console.log(`[persistExtraction] docId=${documentId}, type=${result.documentType}, confidence=${result.confidence}, hasData=${!!result.normalizedData}`);
 
   if (result.documentType === "sales_report") {
     const data = result.normalizedData as SalesReport;

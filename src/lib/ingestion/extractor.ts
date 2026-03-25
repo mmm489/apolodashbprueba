@@ -379,6 +379,20 @@ function normalizeByType(documentType: ExtractionResult["documentType"], payload
     if (result.success) {
       return { id: randomUUID(), ...result.data } satisfies InvoiceRecord;
     }
+    console.warn("[normalizeByType] Invoice Zod validation failed:", JSON.stringify(result.error.issues), "Payload:", JSON.stringify(coerced).slice(0, 300));
+    // Try to salvage partial data
+    const raw = coerced as Record<string, unknown>;
+    if (raw.supplierName && raw.totalAmount != null) {
+      return {
+        id: randomUUID(),
+        supplierName: String(raw.supplierName),
+        issueDate: String(raw.issueDate ?? "unknown"),
+        dueDate: raw.dueDate ? String(raw.dueDate) : null,
+        totalAmount: Number(raw.totalAmount),
+        taxAmount: Number(raw.taxAmount ?? 0),
+        category: String(raw.category ?? "otros"),
+      } satisfies InvoiceRecord;
+    }
   }
 
   if (documentType === "payroll") {
