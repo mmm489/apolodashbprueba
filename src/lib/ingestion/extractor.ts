@@ -155,7 +155,8 @@ export async function extractStructuredDataFromImage(params: {
   }
 
   try {
-    const parsed = JSON.parse(response) as {
+    const cleaned = cleanJsonResponse(response);
+    const parsed = JSON.parse(cleaned) as {
       documentType?: ExtractionResult["documentType"];
       confidence?: number;
       summary?: string;
@@ -266,11 +267,14 @@ async function tryClaudeExtraction(
 
   const response = await askClaudeForStructuredData(prompt);
   if (!response) {
+    console.warn("[Extractor] Claude returned no response for text extraction");
     return null;
   }
 
   try {
-    const parsed = JSON.parse(response) as {
+    const cleaned = cleanJsonResponse(response);
+    console.log("[Extractor] Claude text response (first 300 chars):", cleaned.slice(0, 300));
+    const parsed = JSON.parse(cleaned) as {
       documentType?: ExtractionResult["documentType"];
       confidence?: number;
       summary?: string;
@@ -289,7 +293,8 @@ async function tryClaudeExtraction(
       summary,
       normalizedData,
     } satisfies ExtractionResult;
-  } catch {
+  } catch (error) {
+    console.error("[Extractor] Failed to parse Claude text response:", response.slice(0, 500), error);
     return null;
   }
 }
@@ -313,11 +318,14 @@ async function tryClaudePdfExtraction(
 
   const response = await askClaudeFromPdf(fileName, pdfBuffer.toString("base64"), prompt);
   if (!response) {
+    console.warn("[Extractor] Claude returned no response for PDF vision extraction");
     return null;
   }
 
   try {
-    const parsed = JSON.parse(response) as {
+    const cleaned = cleanJsonResponse(response);
+    console.log("[Extractor] Claude PDF response (first 300 chars):", cleaned.slice(0, 300));
+    const parsed = JSON.parse(cleaned) as {
       documentType?: ExtractionResult["documentType"];
       confidence?: number;
       summary?: string;
@@ -332,7 +340,8 @@ async function tryClaudePdfExtraction(
       summary: parsed.summary ?? `Documento ${fileName} procesado desde PDF`,
       normalizedData: normalizeByType(type, parsed.normalizedData),
     } satisfies ExtractionResult;
-  } catch {
+  } catch (error) {
+    console.error("[Extractor] Failed to parse Claude PDF response:", response.slice(0, 500), error);
     return null;
   }
 }
@@ -470,4 +479,14 @@ function inferInvoiceCategory(supplierName: string, text: string) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function cleanJsonResponse(raw: string): string {
+  // Strip markdown code fences that Claude sometimes wraps around JSON
+  const fenced = raw.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+  if (fenced) return fenced[1].trim();
+  // Try to extract raw JSON object/array
+  const jsonStart = raw.search(/[{[]/);
+  if (jsonStart >= 0) return raw.slice(jsonStart);
+  return raw;
 }
