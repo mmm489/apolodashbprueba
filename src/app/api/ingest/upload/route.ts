@@ -51,10 +51,13 @@ async function processSingleFile(file: File) {
       documentType: result.document.documentType,
       confidence: result.document.confidence,
       error: result.document.errorMessage ?? undefined,
-      extraction: result.extraction ? {
+      _debug: result.extraction ? {
         strategy: result.extraction.strategy,
         summary: result.extraction.summary,
-      } : undefined,
+        extractionType: result.extraction.documentType,
+        normalizedDataKeys: Object.keys(result.extraction.normalizedData ?? {}),
+        normalizedDataPreview: JSON.stringify(result.extraction.normalizedData).slice(0, 500),
+      } : "no extraction",
     };
   } catch (error) {
     console.error(`Upload ingestion failed for ${file.name}:`, error);
