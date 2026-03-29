@@ -52,6 +52,17 @@ CREATE TABLE IF NOT EXISTS invoices (
   category TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS invoice_lines (
+  id TEXT PRIMARY KEY,
+  invoice_id TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  description TEXT NOT NULL,
+  quantity NUMERIC(12,3) NOT NULL DEFAULT 1,
+  unit_price NUMERIC(12,4) NOT NULL DEFAULT 0,
+  amount NUMERIC(12,2) NOT NULL,
+  vat_rate NUMERIC(5,2) NOT NULL DEFAULT 0,
+  vat_amount NUMERIC(12,2) NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS payrolls (
   id TEXT PRIMARY KEY,
   document_id TEXT REFERENCES documents(id) ON DELETE CASCADE,

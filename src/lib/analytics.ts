@@ -5,6 +5,7 @@ import {
   listBankTransactions,
   listDocuments,
   listHourlySales,
+  listInvoiceLines,
   listInvoices,
   listPayrolls,
   listProductSales,
@@ -12,7 +13,7 @@ import {
   listTelegramMessages,
   listTelegramUsers,
 } from "@/lib/repositories";
-import type { ChatAnswer, DateFilter, DatePreset, FinancialWorkspace } from "@/lib/types";
+import type { ChatAnswer, DateFilter, DatePreset, FinancialWorkspace, InvoiceLineRecord, InvoiceRecord } from "@/lib/types";
 
 export function resolveDateFilter(input?: {
   preset?: string;
@@ -230,6 +231,124 @@ export async function answerBusinessQuestion(question: string): Promise<ChatAnsw
     answer:
       "Puedo ayudarte con ventas, mejores horas, gastos, nominas, banco y margen. Prueba una pregunta mas concreta para responderte con cifras.",
     sources: ["daily_kpis"],
+  };
+}
+
+export interface ExpenseRow {
+  invoiceId: string;
+  supplierName: string;
+  issueDate: string;
+  category: string;
+  lineDescription: string;
+  quantity: number;
+  unitPrice: number;
+  lineAmount: number;
+  vatRate: number;
+  vatAmount: number;
+  invoiceTotal: number;
+}
+
+export interface ExpensesWorkspace {
+  filter: DateFilter;
+  rows: ExpenseRow[];
+  suppliers: string[];
+  categories: string[];
+  totals: { totalGross: number; totalVat: number; totalNet: number; lineCount: number; invoiceCount: number };
+}
+
+export async function getExpensesWorkspace(input?: {
+  preset?: string;
+  from?: string;
+  to?: string;
+  supplier?: string;
+  product?: string;
+  category?: string;
+}): Promise<ExpensesWorkspace> {
+  const filter = resolveDateFilter(input);
+  const [invoices, invoiceLines] = await Promise.all([listInvoices(), listInvoiceLines()]);
+
+  const fromDate = startOfDaySafe(filter.from);
+  const toDate = endOfDaySafe(filter.to);
+
+  const scopedInvoices = invoices.filter((inv) => isDateInRange(inv.issueDate, fromDate, toDate));
+
+  // Build lookup
+  const invoiceMap = new Map<string, InvoiceRecord>();
+  for (const inv of scopedInvoices) invoiceMap.set(inv.id, inv);
+
+  // Build expense rows - one per line item
+  let rows: ExpenseRow[] = [];
+
+  // Invoices WITH lines
+  const invoicesWithLines = new Set<string>();
+  for (const line of invoiceLines) {
+    const inv = invoiceMap.get(line.invoiceId);
+    if (!inv) continue;
+    invoicesWithLines.add(inv.id);
+    rows.push({
+      invoiceId: inv.id,
+      supplierName: inv.supplierName,
+      issueDate: inv.issueDate,
+      category: inv.category,
+      lineDescription: line.description,
+      quantity: line.quantity,
+      unitPrice: line.unitPrice,
+      lineAmount: line.amount,
+      vatRate: line.vatRate,
+      vatAmount: line.vatAmount,
+      invoiceTotal: inv.totalAmount,
+    });
+  }
+
+  // Invoices WITHOUT lines - show as single row
+  for (const inv of scopedInvoices) {
+    if (invoicesWithLines.has(inv.id)) continue;
+    rows.push({
+      invoiceId: inv.id,
+      supplierName: inv.supplierName,
+      issueDate: inv.issueDate,
+      category: inv.category,
+      lineDescription: "(factura completa)",
+      quantity: 1,
+      unitPrice: inv.totalAmount,
+      lineAmount: inv.totalAmount,
+      vatRate: inv.taxAmount > 0 && inv.totalAmount > 0 ? (inv.taxAmount / (inv.totalAmount - inv.taxAmount)) * 100 : 0,
+      vatAmount: inv.taxAmount,
+      invoiceTotal: inv.totalAmount,
+    });
+  }
+
+  // Apply filters
+  const supplierFilter = input?.supplier?.toLowerCase().trim() ?? "";
+  const productFilter = input?.product?.toLowerCase().trim() ?? "";
+  const categoryFilter = input?.category?.toLowerCase().trim() ?? "";
+
+  if (supplierFilter) rows = rows.filter((r) => r.supplierName.toLowerCase().includes(supplierFilter));
+  if (productFilter) rows = rows.filter((r) => r.lineDescription.toLowerCase().includes(productFilter));
+  if (categoryFilter) rows = rows.filter((r) => r.category.toLowerCase() === categoryFilter);
+
+  // Sort by date desc then supplier
+  rows.sort((a, b) => b.issueDate.localeCompare(a.issueDate) || a.supplierName.localeCompare(b.supplierName));
+
+  const allSuppliers = [...new Set(scopedInvoices.map((inv) => inv.supplierName))].sort();
+  const allCategories = [...new Set(scopedInvoices.map((inv) => inv.category))].sort();
+
+  const totalGross = rows.reduce((sum, r) => sum + r.lineAmount, 0);
+  const totalVat = rows.reduce((sum, r) => sum + r.vatAmount, 0);
+  const uniqueInvoices = new Set(rows.map((r) => r.invoiceId)).size;
+
+  return {
+    filter,
+    rows,
+    suppliers: allSuppliers,
+    categories: allCategories,
+    totals: {
+      totalGross,
+      totalVat,
+      totalNet: totalGross - totalVat,
+      lineCount: rows.length,
+      invoiceCount: uniqueInvoices,
+    },
   };
 }
 

@@ -19,6 +19,7 @@ import type {
   DocumentRecord,
   ExtractionResult,
   HourlySalesEntry,
+  InvoiceLineRecord,
   InvoiceRecord,
   PayrollRecord,
   ProductSaleRecord,
@@ -87,6 +88,23 @@ export async function listInvoices() {
     taxAmount: toNumber(row.tax_amount),
     category: String(row.category),
   })) satisfies InvoiceRecord[];
+}
+
+export async function listInvoiceLines() {
+  if (!hasDatabase()) return [];
+
+  const sql = getSql();
+  const rows = await sql`SELECT id, invoice_id, description, quantity, unit_price, amount, vat_rate, vat_amount FROM invoice_lines ORDER BY invoice_id`;
+  return rows.map((row) => ({
+    id: String(row.id),
+    invoiceId: String(row.invoice_id),
+    description: String(row.description),
+    quantity: toNumber(row.quantity),
+    unitPrice: toNumber(row.unit_price),
+    amount: toNumber(row.amount),
+    vatRate: toNumber(row.vat_rate),
+    vatAmount: toNumber(row.vat_amount),
+  })) satisfies InvoiceLineRecord[];
 }
 
 export async function listProductSales() {
@@ -382,6 +400,19 @@ async function _persistExtractionInner(sql: ReturnType<typeof getSql>, documentI
       VALUES (${id}, ${documentId}, ${String(supplierName)}, ${String(issueDate)}, ${dueDate ? String(dueDate) : null}, ${Number(totalAmount)}, ${taxAmount}, ${category})
       ON CONFLICT (id) DO NOTHING
     `;
+    // Persist invoice line items
+    const lineItems = (raw._lineItems ?? raw.lineItems ?? raw.line_items ?? []) as Array<Record<string, unknown>>;
+    for (const line of lineItems) {
+      const desc = line.description ?? line.descripcion ?? "";
+      if (!desc) continue;
+      const lineId = randomUUID();
+      await sql`
+        INSERT INTO invoice_lines (id, invoice_id, description, quantity, unit_price, amount, vat_rate, vat_amount)
+        VALUES (${lineId}, ${id}, ${String(desc)}, ${Number(line.quantity ?? 1)}, ${Number(line.unitPrice ?? line.unit_price ?? 0)}, ${Number(line.amount ?? 0)}, ${Number(line.vatRate ?? line.vat_rate ?? 0)}, ${Number(line.vatAmount ?? line.vat_amount ?? 0)})
+        ON CONFLICT (id) DO NOTHING
+      `;
+    }
+    console.log(`[persistExtraction] Inserted ${lineItems.length} invoice lines`);
     return;
   }
 

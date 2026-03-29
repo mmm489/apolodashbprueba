@@ -57,6 +57,17 @@ export interface InvoiceRecord {
   category: string;
 }
 
+export interface InvoiceLineRecord {
+  id: string;
+  invoiceId: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  amount: number;
+  vatRate: number;
+  vatAmount: number;
+}
+
 export interface PayrollRecord {
   id: string;
   employeeName: string;
@@ -167,6 +178,7 @@ export interface ExtractionResult {
     | Record<string, unknown>;
   auxiliaryData?: {
     productSales?: ProductSaleRecord[];
+    invoiceLines?: InvoiceLineRecord[];
   };
 }
 

@@ -15,6 +15,15 @@ const salesSchema = z.object({
   paymentMix: z.record(z.string(), z.number()),
 });
 
+const invoiceLineSchema = z.object({
+  description: z.string(),
+  quantity: z.coerce.number().default(1),
+  unitPrice: z.coerce.number().default(0),
+  amount: z.coerce.number(),
+  vatRate: z.coerce.number().default(0),
+  vatAmount: z.coerce.number().default(0),
+});
+
 const invoiceSchema = z.object({
   supplierName: z.string(),
   issueDate: z.string(),
@@ -22,6 +31,7 @@ const invoiceSchema = z.object({
   totalAmount: z.coerce.number(),
   taxAmount: z.coerce.number().default(0),
   category: z.string().default("otros"),
+  lineItems: z.array(invoiceLineSchema).optional().default([]),
 });
 
 const payrollSchema = z.object({
@@ -133,7 +143,7 @@ export async function extractStructuredDataFromImage(params: {
   const initialType = classifyDocument(params.fileName, params.sourceHint ?? "");
 
   const invoiceHint = initialType === "invoice"
-    ? 'Para facturas, normalizedData debe tener: { "supplierName": string, "issueDate": "YYYY-MM-DD", "dueDate": "YYYY-MM-DD" | null, "totalAmount": number, "taxAmount": number, "category": "materia_prima" | "envases" | "limpieza" | "otros" }.'
+    ? 'Para facturas, normalizedData debe tener: { "supplierName": string, "issueDate": "YYYY-MM-DD", "dueDate": "YYYY-MM-DD" | null, "totalAmount": number, "taxAmount": number, "category": "materia_prima" | "envases" | "limpieza" | "otros", "lineItems": [{ "description": string, "quantity": number, "unitPrice": number, "amount": number, "vatRate": number, "vatAmount": number }] }. Incluye TODAS las lineas/productos de la factura en lineItems.'
     : "";
   const prompt = [
     "Analiza esta imagen de un documento financiero de una heladeria.",
@@ -268,7 +278,7 @@ async function tryClaudeExtraction(
   documentType = classifyDocument(fileName, documentText),
 ) {
   const invoiceHint = documentType === "invoice"
-    ? 'Para facturas, normalizedData debe tener: { "supplierName": string, "issueDate": "YYYY-MM-DD", "dueDate": "YYYY-MM-DD" | null, "totalAmount": number, "taxAmount": number, "category": "materia_prima" | "envases" | "limpieza" | "otros" }.'
+    ? 'Para facturas, normalizedData debe tener: { "supplierName": string, "issueDate": "YYYY-MM-DD", "dueDate": "YYYY-MM-DD" | null, "totalAmount": number, "taxAmount": number, "category": "materia_prima" | "envases" | "limpieza" | "otros", "lineItems": [{ "description": string, "quantity": number, "unitPrice": number, "amount": number, "vatRate": number, "vatAmount": number }] }. Incluye TODAS las lineas/productos de la factura en lineItems.'
     : "";
   const prompt = [
     "Clasifica y estructura este documento de heladeria.",
@@ -325,7 +335,7 @@ async function tryClaudePdfExtraction(
   documentType: ExtractionResult["documentType"],
 ) {
   const invoiceHint = documentType === "invoice"
-    ? 'Para facturas, normalizedData debe tener: { "supplierName": string, "issueDate": "YYYY-MM-DD", "dueDate": "YYYY-MM-DD" | null, "totalAmount": number, "taxAmount": number, "category": "materia_prima" | "envases" | "limpieza" | "otros" }.'
+    ? 'Para facturas, normalizedData debe tener: { "supplierName": string, "issueDate": "YYYY-MM-DD", "dueDate": "YYYY-MM-DD" | null, "totalAmount": number, "taxAmount": number, "category": "materia_prima" | "envases" | "limpieza" | "otros", "lineItems": [{ "description": string, "quantity": number, "unitPrice": number, "amount": number, "vatRate": number, "vatAmount": number }] }. Incluye TODAS las lineas/productos de la factura en lineItems.'
     : "";
   const prompt = [
     "Clasifica y estructura este documento PDF de heladeria.",
@@ -394,12 +404,14 @@ function normalizeByType(documentType: ExtractionResult["documentType"], payload
   if (documentType === "invoice") {
     const result = invoiceSchema.safeParse(coerced);
     if (result.success) {
-      return { id: randomUUID(), ...result.data } satisfies InvoiceRecord;
+      const { lineItems, ...invoiceFields } = result.data;
+      return { id: randomUUID(), ...invoiceFields, _lineItems: lineItems } as InvoiceRecord & { _lineItems?: unknown[] };
     }
     console.warn("[normalizeByType] Invoice Zod validation failed:", JSON.stringify(result.error.issues), "Payload:", JSON.stringify(coerced).slice(0, 300));
     // Try to salvage partial data
     const raw = coerced as Record<string, unknown>;
     if (raw.supplierName && raw.totalAmount != null) {
+      const rawLines = Array.isArray(raw.lineItems) ? raw.lineItems : [];
       return {
         id: randomUUID(),
         supplierName: String(raw.supplierName),
@@ -408,7 +420,8 @@ function normalizeByType(documentType: ExtractionResult["documentType"], payload
         totalAmount: Number(raw.totalAmount),
         taxAmount: Number(raw.taxAmount ?? 0),
         category: String(raw.category ?? "otros"),
-      } satisfies InvoiceRecord;
+        _lineItems: rawLines,
+      } as InvoiceRecord & { _lineItems?: unknown[] };
     }
   }
 

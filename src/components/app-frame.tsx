@@ -12,6 +12,7 @@ import {
   Landmark,
   LayoutDashboard,
   Menu,
+  Receipt,
   Search,
   Settings,
   X,
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { href: "/", label: "Dashboard", section: "General", icon: LayoutDashboard },
   { href: "/finanzas", label: "Finanzas", section: "General", icon: Building2 },
+  { href: "/gastos", label: "Gastos", section: "General", icon: Receipt },
   { href: "/tesoreria", label: "Tesoreria", section: "General", icon: Landmark },
   { href: "/documentos", label: "Documentos", section: "Sistema", icon: FileText },
 ];
