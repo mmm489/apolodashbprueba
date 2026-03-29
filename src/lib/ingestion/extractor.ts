@@ -261,10 +261,13 @@ function looksLikeInvoice(
     "iva",
     "vat",
     "base imponible",
+    "base imposable",
     "importe total",
+    "import total",
     "total a pagar",
     "supplier",
     "proveedor",
+    "proveïdor",
   ];
 
   const matches = invoiceSignals.filter((signal) => sample.includes(signal));

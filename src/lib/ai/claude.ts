@@ -23,7 +23,7 @@ export async function askClaudeForStructuredData(prompt: string) {
     const response = await createMessageWithFallback(client, {
       max_tokens: 1200,
       system:
-        "Eres un analista financiero de una heladeria. Devuelve solo JSON valido siguiendo el esquema pedido y no inventes datos ausentes.",
+        "Eres un analista financiero de una heladeria en Cataluña. Los documentos pueden estar en castellano, catalan, ingles u otros idiomas. Devuelve solo JSON valido siguiendo el esquema pedido y no inventes datos ausentes.",
       messages: [
         {
           role: "user",
@@ -60,7 +60,7 @@ export async function askClaudeFromImage(fileName: string, imageBase64: string, 
     const response = await createMessageWithFallback(client, {
       max_tokens: 1400,
       system:
-        "Eres un analista financiero de una heladeria. Devuelve solo JSON valido siguiendo el esquema pedido y no inventes datos ausentes.",
+        "Eres un analista financiero de una heladeria en Cataluña. Los documentos pueden estar en castellano, catalan, ingles u otros idiomas. Devuelve solo JSON valido siguiendo el esquema pedido y no inventes datos ausentes.",
       messages: [
         {
           role: "user",
@@ -93,7 +93,7 @@ export async function askClaudeFromPdf(fileName: string, pdfBase64: string, prom
     const response = await createMessageWithFallback(client, {
       max_tokens: 1400,
       system:
-        "Eres un analista financiero de una heladeria. Devuelve solo JSON valido siguiendo el esquema pedido y no inventes datos ausentes.",
+        "Eres un analista financiero de una heladeria en Cataluña. Los documentos pueden estar en castellano, catalan, ingles u otros idiomas. Devuelve solo JSON valido siguiendo el esquema pedido y no inventes datos ausentes.",
       messages: [
         {
           role: "user",
