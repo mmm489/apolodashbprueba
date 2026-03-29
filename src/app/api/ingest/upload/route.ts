@@ -52,7 +52,12 @@ async function processSingleFile(file: File) {
       confidence: result.document.confidence,
       error: result.document.errorMessage ?? undefined,
       _debug: result.extraction
-        ? `${result.extraction.documentType}|${result.extraction.strategy}|${Object.keys(result.extraction.normalizedData ?? {}).join(",")}`
+        ? {
+            type: result.extraction.documentType,
+            strategy: result.extraction.strategy,
+            keys: Object.keys(result.extraction.normalizedData ?? {}),
+            data: JSON.stringify(result.extraction.normalizedData).slice(0, 600),
+          }
         : "no-extraction",
     };
   } catch (error) {
