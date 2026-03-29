@@ -99,8 +99,8 @@ export function AppFrame({
                     "group flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all duration-200",
                     collapsed && "justify-center px-0",
                     active
-                      ? "bg-indigo-500/20 text-white shadow-sm shadow-indigo-500/10"
-                      : "text-slate-300 hover:bg-white/10 hover:text-white",
+                      ? "bg-indigo-500/25 text-white shadow-sm shadow-indigo-500/10"
+                      : "text-white/70 hover:bg-white/10 hover:text-white",
                   )}
                 >
                   <Icon className={cn("size-[18px] shrink-0", active && "text-indigo-300")} />
