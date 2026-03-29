@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 
 import { z } from "zod";
 
-import { askClaudeForStructuredData, askClaudeFromImage, askClaudeFromPdf, type VisionMediaType } from "@/lib/ai/claude";
+import { askClaudeForStructuredData, askClaudeFromImage, askClaudeFromPdf, extractInvoiceFromPdf, extractInvoiceFromText, type VisionMediaType } from "@/lib/ai/claude";
 import { classifyDocument } from "@/lib/ingestion/classifier";
 import type { BankTransaction, ExtractionResult, HourlySalesEntry, InvoiceRecord, PayrollRecord, SalesReport } from "@/lib/types";
 
@@ -91,6 +91,37 @@ export async function extractStructuredData(params: {
 
   const initialType = classifyDocument(params.fileName, `${params.sourceHint ?? ""} ${nativeText}`);
   console.log(`[Extractor] File: ${params.fileName}, nativeText length: ${nativeText.length}, initialType: ${initialType}`);
+
+  // For invoices, use tool_use for guaranteed field names
+  if (initialType === "invoice" || looksLikeInvoice(params.fileName, nativeText, initialType)) {
+    const toolResult = nativeText.length > 30
+      ? await extractInvoiceFromText(nativeText)
+      : pdfBuffer
+        ? await extractInvoiceFromPdf(params.fileName, pdfBuffer.toString("base64"))
+        : null;
+
+    if (toolResult && toolResult.supplierName && toolResult.totalAmount != null) {
+      console.log(`[Extractor] Tool-use invoice extraction succeeded: ${toolResult.supplierName}`);
+      const lineItems = Array.isArray(toolResult.lineItems) ? toolResult.lineItems : [];
+      return {
+        documentType: "invoice",
+        confidence: 0.95,
+        strategy: nativeText.length > 30 ? "native-text" : "claude-vision",
+        summary: `Factura de ${toolResult.supplierName} por ${toolResult.totalAmount} EUR`,
+        normalizedData: {
+          id: randomUUID(),
+          supplierName: String(toolResult.supplierName),
+          issueDate: String(toolResult.issueDate ?? "unknown"),
+          dueDate: toolResult.dueDate ? String(toolResult.dueDate) : null,
+          totalAmount: Number(toolResult.totalAmount),
+          taxAmount: Number(toolResult.taxAmount ?? 0),
+          category: String(toolResult.category ?? "otros"),
+          _lineItems: lineItems,
+        } as InvoiceRecord & { _lineItems?: unknown[] },
+      };
+    }
+    console.log("[Extractor] Tool-use invoice extraction failed, falling back to generic...");
+  }
 
   if (nativeText.length > 30) {
     const structured = await tryClaudeExtraction(params.fileName, nativeText, "native-text", initialType);

@@ -123,6 +123,102 @@ export async function askClaudeFromPdf(fileName: string, pdfBase64: string, prom
   }
 }
 
+const invoiceTool = {
+  name: "save_invoice" as const,
+  description: "Guarda los datos estructurados de una factura de proveedor",
+  input_schema: {
+    type: "object" as const,
+    required: ["supplierName", "issueDate", "totalAmount"],
+    properties: {
+      supplierName: { type: "string", description: "Nombre del proveedor/emisor" },
+      issueDate: { type: "string", description: "Fecha de emision en formato YYYY-MM-DD" },
+      dueDate: { type: ["string", "null"], description: "Fecha de vencimiento YYYY-MM-DD o null" },
+      totalAmount: { type: "number", description: "Importe total de la factura con IVA incluido" },
+      taxAmount: { type: "number", description: "Importe total del IVA" },
+      category: { type: "string", enum: ["materia_prima", "envases", "limpieza", "suministros", "otros"], description: "Categoria del gasto" },
+      lineItems: {
+        type: "array",
+        description: "Lineas de detalle de la factura",
+        items: {
+          type: "object",
+          required: ["description", "amount"],
+          properties: {
+            description: { type: "string" },
+            quantity: { type: "number" },
+            unitPrice: { type: "number" },
+            amount: { type: "number" },
+            vatRate: { type: "number" },
+            vatAmount: { type: "number" },
+          },
+        },
+      },
+    },
+  },
+};
+
+export async function extractInvoiceFromPdf(fileName: string, pdfBase64: string) {
+  const client = getAnthropicClient();
+  if (!client) return null;
+
+  try {
+    const response = await createMessageWithFallback(client, {
+      max_tokens: 4096,
+      system: "Eres un analista financiero. Extrae los datos de la factura usando la herramienta save_invoice. Si no puedes extraer algun campo obligatorio, usa tu mejor estimacion basada en el documento. No inventes importes.",
+      tools: [invoiceTool],
+      tool_choice: { type: "tool" as const, name: "save_invoice" },
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "document",
+              source: { type: "base64", media_type: "application/pdf" as const, data: pdfBase64 },
+            },
+            { type: "text", text: `Extrae todos los datos de esta factura: ${fileName}` },
+          ],
+        } as never,
+      ],
+    });
+
+    const toolBlock = response.content.find((b) => b.type === "tool_use");
+    if (toolBlock && "input" in toolBlock) {
+      console.log("[Claude] Tool use invoice extraction succeeded");
+      return toolBlock.input as Record<string, unknown>;
+    }
+    return null;
+  } catch (error) {
+    console.error("Claude tool-use invoice extraction failed:", error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
+export async function extractInvoiceFromText(text: string) {
+  const client = getAnthropicClient();
+  if (!client) return null;
+
+  try {
+    const response = await createMessageWithFallback(client, {
+      max_tokens: 4096,
+      system: "Eres un analista financiero. Extrae los datos de la factura usando la herramienta save_invoice. Si no puedes extraer algun campo obligatorio, usa tu mejor estimacion basada en el documento. No inventes importes.",
+      tools: [invoiceTool],
+      tool_choice: { type: "tool" as const, name: "save_invoice" },
+      messages: [
+        { role: "user", content: `Extrae todos los datos de esta factura:\n\n${text.slice(0, 12000)}` },
+      ],
+    });
+
+    const toolBlock = response.content.find((b) => b.type === "tool_use");
+    if (toolBlock && "input" in toolBlock) {
+      console.log("[Claude] Tool use text invoice extraction succeeded");
+      return toolBlock.input as Record<string, unknown>;
+    }
+    return null;
+  } catch (error) {
+    console.error("Claude tool-use text invoice extraction failed:", error instanceof Error ? error.message : error);
+    return null;
+  }
+}
+
 function getCandidateModels() {
   return [
     env.ANTHROPIC_MODEL,
