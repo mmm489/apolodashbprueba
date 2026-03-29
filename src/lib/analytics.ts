@@ -248,9 +248,30 @@ export interface ExpenseRow {
   invoiceTotal: number;
 }
 
+export interface InvoiceSummary {
+  id: string;
+  supplierName: string;
+  issueDate: string;
+  totalAmount: number;
+  taxAmount: number;
+  category: string;
+  lineCount: number;
+  lines: ExpenseRow[];
+}
+
+export interface ProductSpend {
+  description: string;
+  totalAmount: number;
+  totalQuantity: number;
+  occurrences: number;
+  suppliers: string[];
+}
+
 export interface ExpensesWorkspace {
   filter: DateFilter;
   rows: ExpenseRow[];
+  invoices: InvoiceSummary[];
+  products: ProductSpend[];
   suppliers: string[];
   categories: string[];
   totals: { totalGross: number; totalVat: number; totalNet: number; lineCount: number; invoiceCount: number };
@@ -337,9 +358,58 @@ export async function getExpensesWorkspace(input?: {
   const totalVat = rows.reduce((sum, r) => sum + r.vatAmount, 0);
   const uniqueInvoices = new Set(rows.map((r) => r.invoiceId)).size;
 
+  // Build invoice summaries with their lines
+  const invoiceSummaries: InvoiceSummary[] = [];
+  const invoiceRowsMap = new Map<string, ExpenseRow[]>();
+  for (const row of rows) {
+    const arr = invoiceRowsMap.get(row.invoiceId) ?? [];
+    arr.push(row);
+    invoiceRowsMap.set(row.invoiceId, arr);
+  }
+  for (const inv of scopedInvoices) {
+    const lines = invoiceRowsMap.get(inv.id);
+    if (!lines) continue;
+    invoiceSummaries.push({
+      id: inv.id,
+      supplierName: inv.supplierName,
+      issueDate: inv.issueDate,
+      totalAmount: inv.totalAmount,
+      taxAmount: inv.taxAmount,
+      category: inv.category,
+      lineCount: lines.length,
+      lines,
+    });
+  }
+  invoiceSummaries.sort((a, b) => b.issueDate.localeCompare(a.issueDate));
+
+  // Aggregate products across all invoices
+  const productMap = new Map<string, ProductSpend>();
+  for (const row of rows) {
+    if (row.lineDescription === "(factura completa)") continue;
+    const key = row.lineDescription.toLowerCase().trim();
+    const existing = productMap.get(key);
+    if (existing) {
+      existing.totalAmount += row.lineAmount;
+      existing.totalQuantity += row.quantity;
+      existing.occurrences += 1;
+      if (!existing.suppliers.includes(row.supplierName)) existing.suppliers.push(row.supplierName);
+    } else {
+      productMap.set(key, {
+        description: row.lineDescription,
+        totalAmount: row.lineAmount,
+        totalQuantity: row.quantity,
+        occurrences: 1,
+        suppliers: [row.supplierName],
+      });
+    }
+  }
+  const products = [...productMap.values()].sort((a, b) => b.totalAmount - a.totalAmount);
+
   return {
     filter,
     rows,
+    invoices: invoiceSummaries,
+    products,
     suppliers: allSuppliers,
     categories: allCategories,
     totals: {
