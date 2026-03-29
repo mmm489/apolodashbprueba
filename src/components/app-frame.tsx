@@ -96,17 +96,17 @@ export function AppFrame({
                   href={item.href}
                   onClick={() => setMobileOpen(false)}
                   className={cn(
-                    "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all duration-200",
+                    "group flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all duration-200",
                     collapsed && "justify-center px-0",
                     active
-                      ? "bg-indigo-500/15 text-indigo-400"
-                      : "text-slate-400 hover:bg-white/[0.05] hover:text-slate-200",
+                      ? "bg-indigo-500/20 text-white shadow-sm shadow-indigo-500/10"
+                      : "text-slate-400 hover:bg-white/10 hover:text-white",
                   )}
                 >
-                  <Icon className={cn("size-[18px] shrink-0", active && "text-indigo-400")} />
+                  <Icon className={cn("size-[18px] shrink-0", active && "text-indigo-300")} />
                   {!collapsed && <span>{item.label}</span>}
                   {active && !collapsed && (
-                    <span className="ml-auto size-1.5 rounded-full bg-indigo-400" />
+                    <span className="ml-auto size-1.5 rounded-full bg-indigo-300" />
                   )}
                 </Link>
               );
