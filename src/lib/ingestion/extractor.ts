@@ -394,6 +394,53 @@ function coercePayload(payload: unknown): Record<string, unknown> {
   return out;
 }
 
+/** Flatten Claude's varied invoice structures into our expected flat shape */
+function flattenInvoicePayload(raw: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...raw };
+
+  // supplierName: vendor.name, seller.name, provider, supplierName, etc.
+  if (!out.supplierName) {
+    const vendor = out.vendor as Record<string, unknown> | undefined;
+    const seller = out.seller as Record<string, unknown> | undefined;
+    out.supplierName = vendor?.name ?? seller?.name ?? out.provider ?? out.providerName ?? out.emisor ?? out.companyName ?? null;
+  }
+
+  // issueDate: invoiceDate, date, fechaEmision, etc.
+  if (!out.issueDate) {
+    out.issueDate = out.invoiceDate ?? out.date ?? out.fechaEmision ?? out.fecha ?? null;
+  }
+
+  // totalAmount: totals.total, total, grandTotal, importeTotal, etc.
+  if (out.totalAmount == null) {
+    const totals = out.totals as Record<string, unknown> | undefined;
+    out.totalAmount = totals?.total ?? totals?.grandTotal ?? totals?.totalAmount ?? out.total ?? out.grandTotal ?? out.importeTotal ?? null;
+  }
+
+  // taxAmount: totals.tax, totals.vat, totalTax, iva, etc.
+  if (out.taxAmount == null) {
+    const totals = out.totals as Record<string, unknown> | undefined;
+    out.taxAmount = totals?.tax ?? totals?.vat ?? totals?.taxAmount ?? totals?.totalTax ?? out.tax ?? out.vat ?? out.iva ?? out.totalTax ?? 0;
+  }
+
+  // dueDate
+  if (!out.dueDate) {
+    out.dueDate = out.paymentDueDate ?? out.fechaVencimiento ?? null;
+  }
+
+  // lineItems might be nested
+  if (!out.lineItems && Array.isArray((out.serviceDetails as Record<string, unknown>)?.items)) {
+    out.lineItems = (out.serviceDetails as Record<string, unknown>).items;
+  }
+  if (!out.lineItems && Array.isArray(out.items)) {
+    out.lineItems = out.items;
+  }
+  if (!out.lineItems && Array.isArray(out.lines)) {
+    out.lineItems = out.lines;
+  }
+
+  return out;
+}
+
 function normalizeByType(documentType: ExtractionResult["documentType"], payload: unknown) {
   const coerced = Array.isArray(payload) ? payload.map(coercePayload) : coercePayload(payload);
 
@@ -405,24 +452,24 @@ function normalizeByType(documentType: ExtractionResult["documentType"], payload
   }
 
   if (documentType === "invoice") {
-    const result = invoiceSchema.safeParse(coerced);
+    const flat = flattenInvoicePayload(coerced as Record<string, unknown>);
+    const result = invoiceSchema.safeParse(flat);
     if (result.success) {
       const { lineItems, ...invoiceFields } = result.data;
       return { id: randomUUID(), ...invoiceFields, _lineItems: lineItems } as InvoiceRecord & { _lineItems?: unknown[] };
     }
-    console.warn("[normalizeByType] Invoice Zod validation failed:", JSON.stringify(result.error.issues), "Payload:", JSON.stringify(coerced).slice(0, 300));
+    console.warn("[normalizeByType] Invoice Zod validation failed:", JSON.stringify(result.error.issues), "Payload:", JSON.stringify(flat).slice(0, 300));
     // Try to salvage partial data
-    const raw = coerced as Record<string, unknown>;
-    if (raw.supplierName && raw.totalAmount != null) {
-      const rawLines = Array.isArray(raw.lineItems) ? raw.lineItems : [];
+    if (flat.supplierName && flat.totalAmount != null) {
+      const rawLines = Array.isArray(flat.lineItems) ? flat.lineItems : [];
       return {
         id: randomUUID(),
-        supplierName: String(raw.supplierName),
-        issueDate: String(raw.issueDate ?? "unknown"),
-        dueDate: raw.dueDate ? String(raw.dueDate) : null,
-        totalAmount: Number(raw.totalAmount),
-        taxAmount: Number(raw.taxAmount ?? 0),
-        category: String(raw.category ?? "otros"),
+        supplierName: String(flat.supplierName),
+        issueDate: String(flat.issueDate ?? "unknown"),
+        dueDate: flat.dueDate ? String(flat.dueDate) : null,
+        totalAmount: Number(flat.totalAmount),
+        taxAmount: Number(flat.taxAmount ?? 0),
+        category: String(flat.category ?? "otros"),
         _lineItems: rawLines,
       } as InvoiceRecord & { _lineItems?: unknown[] };
     }
