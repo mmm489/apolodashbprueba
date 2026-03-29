@@ -183,7 +183,7 @@ export async function extractStructuredDataFromImage(params: {
       normalizedData?: unknown;
     };
 
-    const type = parsed.documentType ?? initialType;
+    const type = normalizeDocumentType(parsed.documentType ?? "", initialType);
     const dataPayload = parsed.normalizedData ?? extractDataFields(parsed as Record<string, unknown>);
     return {
       documentType: type,
@@ -306,7 +306,7 @@ async function tryClaudeExtraction(
       normalizedData?: unknown;
     };
 
-    const type = parsed.documentType ?? documentType;
+    const type = normalizeDocumentType(parsed.documentType ?? "", documentType);
     const confidence = typeof parsed.confidence === "number" ? parsed.confidence : 0.75;
     const summary = parsed.summary ?? `Documento ${fileName} procesado`;
     // Claude may nest data in normalizedData or put fields at root level
@@ -364,7 +364,7 @@ async function tryClaudePdfExtraction(
       normalizedData?: unknown;
     };
 
-    const type = parsed.documentType ?? documentType;
+    const type = normalizeDocumentType(parsed.documentType ?? "", documentType);
     const dataPayload = parsed.normalizedData ?? extractDataFields(parsed);
     return {
       documentType: type,
@@ -532,6 +532,17 @@ function escapeRegExp(value: string) {
 }
 
 /** Extract data fields from Claude response when they're at root level instead of nested in normalizedData */
+/** Map Claude's free-form documentType to our enum */
+function normalizeDocumentType(type: string, fallback: ExtractionResult["documentType"]): ExtractionResult["documentType"] {
+  const lower = type.toLowerCase().replace(/[\s_-]/g, "");
+  if (lower.includes("invoice") || lower.includes("factura") || lower.includes("bill") || lower.includes("receipt")) return "invoice";
+  if (lower.includes("sales") || lower.includes("venta")) return "sales_report";
+  if (lower.includes("payroll") || lower.includes("nomina")) return "payroll";
+  if (lower.includes("bank") || lower.includes("extracto")) return "bank_statement";
+  if (lower.includes("hourly") || lower.includes("hora")) return "hourly_report";
+  return fallback;
+}
+
 function extractDataFields(parsed: Record<string, unknown>): Record<string, unknown> {
   const metaKeys = new Set(["documentType", "document_type", "confidence", "summary", "normalizedData", "normalized_data"]);
   const data: Record<string, unknown> = {};

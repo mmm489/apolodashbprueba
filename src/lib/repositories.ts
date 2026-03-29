@@ -383,6 +383,7 @@ async function _persistExtractionInner(sql: ReturnType<typeof getSql>, documentI
 
   if (result.documentType === "invoice") {
     const raw = result.normalizedData as Record<string, unknown>;
+    console.log("[persistExtraction] invoice raw keys:", Object.keys(raw), "raw snippet:", JSON.stringify(raw).slice(0, 500));
     const supplierName = raw.supplierName ?? raw.supplier_name;
     const issueDate = raw.issueDate ?? raw.issue_date;
     const totalAmount = raw.totalAmount ?? raw.total_amount;
