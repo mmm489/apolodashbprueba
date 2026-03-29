@@ -19,9 +19,9 @@ const invoiceSchema = z.object({
   supplierName: z.string(),
   issueDate: z.string(),
   dueDate: z.string().nullable().optional(),
-  totalAmount: z.number(),
-  taxAmount: z.number(),
-  category: z.string(),
+  totalAmount: z.coerce.number(),
+  taxAmount: z.coerce.number().default(0),
+  category: z.string().default("otros"),
 });
 
 const payrollSchema = z.object({
@@ -132,13 +132,17 @@ export async function extractStructuredDataFromImage(params: {
 }): Promise<ExtractionResult> {
   const initialType = classifyDocument(params.fileName, params.sourceHint ?? "");
 
+  const invoiceHint = initialType === "invoice"
+    ? 'Para facturas, normalizedData debe tener: { "supplierName": string, "issueDate": "YYYY-MM-DD", "dueDate": "YYYY-MM-DD" | null, "totalAmount": number, "taxAmount": number, "category": "materia_prima" | "envases" | "limpieza" | "otros" }.'
+    : "";
   const prompt = [
     "Analiza esta imagen de un documento financiero de una heladeria.",
     `Tipo previsto: ${initialType}.`,
     params.sourceHint ? `Ruta/carpeta de origen: ${params.sourceHint}.` : "",
     "Extrae todos los datos estructurados que puedas: proveedor, fechas, importes, IVA, categorias, etc.",
     "Si falta algun dato, usa null o valores conservadores, nunca inventes importes.",
-    'Devuelve JSON con forma { "documentType": "...", "confidence": 0.0-1.0, "summary": "...", "normalizedData": ... }.',
+    'Devuelve JSON con forma { "documentType": "...", "confidence": 0.0-1.0, "summary": "...", "normalizedData": { ... } }.',
+    invoiceHint,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -263,14 +267,18 @@ async function tryClaudeExtraction(
   strategy: ExtractionResult["strategy"],
   documentType = classifyDocument(fileName, documentText),
 ) {
+  const invoiceHint = documentType === "invoice"
+    ? 'Para facturas, normalizedData debe tener: { "supplierName": string, "issueDate": "YYYY-MM-DD", "dueDate": "YYYY-MM-DD" | null, "totalAmount": number, "taxAmount": number, "category": "materia_prima" | "envases" | "limpieza" | "otros" }.'
+    : "";
   const prompt = [
     "Clasifica y estructura este documento de heladeria.",
     `Tipo previsto: ${documentType}.`,
     "Si falta algun dato, usa null o valores conservadores, nunca inventes importes.",
-    'Devuelve JSON con forma { "documentType": "...", "confidence": 0.0-1.0, "summary": "...", "normalizedData": ... }.',
+    'Devuelve JSON con forma { "documentType": "...", "confidence": 0.0-1.0, "summary": "...", "normalizedData": { ... } }.',
+    invoiceHint,
     "Documento:",
     documentText.slice(0, 12000),
-  ].join("\n\n");
+  ].filter(Boolean).join("\n\n");
 
   const response = await askClaudeForStructuredData(prompt);
   if (!response) {
@@ -316,12 +324,16 @@ async function tryClaudePdfExtraction(
   strategy: ExtractionResult["strategy"],
   documentType: ExtractionResult["documentType"],
 ) {
+  const invoiceHint = documentType === "invoice"
+    ? 'Para facturas, normalizedData debe tener: { "supplierName": string, "issueDate": "YYYY-MM-DD", "dueDate": "YYYY-MM-DD" | null, "totalAmount": number, "taxAmount": number, "category": "materia_prima" | "envases" | "limpieza" | "otros" }.'
+    : "";
   const prompt = [
     "Clasifica y estructura este documento PDF de heladeria.",
     `Tipo previsto: ${documentType}.`,
     sourceHint ? `Ruta/carpeta de origen: ${sourceHint}.` : "",
     "Si falta algun dato, usa null o valores conservadores, nunca inventes importes.",
-    'Devuelve JSON con forma { "documentType": "...", "confidence": 0.0-1.0, "summary": "...", "normalizedData": ... }.',
+    'Devuelve JSON con forma { "documentType": "...", "confidence": 0.0-1.0, "summary": "...", "normalizedData": { ... } }.',
+    invoiceHint,
   ]
     .filter(Boolean)
     .join("\n\n");
