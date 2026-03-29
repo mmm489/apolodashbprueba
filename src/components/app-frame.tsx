@@ -100,7 +100,7 @@ export function AppFrame({
                     collapsed && "justify-center px-0",
                     active
                       ? "bg-indigo-500/20 text-white shadow-sm shadow-indigo-500/10"
-                      : "text-slate-400 hover:bg-white/10 hover:text-white",
+                      : "text-slate-300 hover:bg-white/10 hover:text-white",
                   )}
                 >
                   <Icon className={cn("size-[18px] shrink-0", active && "text-indigo-300")} />
