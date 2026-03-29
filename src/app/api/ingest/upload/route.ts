@@ -57,6 +57,7 @@ async function processSingleFile(file: File) {
             strategy: result.extraction.strategy,
             keys: Object.keys(result.extraction.normalizedData ?? {}),
             data: JSON.stringify(result.extraction.normalizedData).slice(0, 600),
+            persistError: result.persistError ?? null,
           }
         : "no-extraction",
     };

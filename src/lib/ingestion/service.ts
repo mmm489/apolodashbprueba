@@ -89,7 +89,10 @@ export async function ingestPdfBuffer(input: {
             pdfBuffer: input.pdfBuffer,
             sourceHint: input.sourcePath,
           });
-    await persistExtraction(document.id, extraction);
+    const persistError = await persistExtraction(document.id, extraction);
+    if (persistError) {
+      console.error(`[ingest] persistExtraction error for ${input.fileName}: ${persistError}`);
+    }
 
     const finalStatus = extraction.confidence >= 0.6 ? "validated" : "error";
     const errorMessage =
@@ -117,6 +120,7 @@ export async function ingestPdfBuffer(input: {
         errorMessage,
       },
       extraction,
+      persistError,
     };
   } finally {
     if (tempFilePath) {

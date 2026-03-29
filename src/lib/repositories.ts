@@ -331,9 +331,9 @@ export async function updateDocumentProcessingState(input: {
   `;
 }
 
-export async function persistExtraction(documentId: string, result: ExtractionResult) {
+export async function persistExtraction(documentId: string, result: ExtractionResult): Promise<string | null> {
   if (!hasDatabase()) {
-    return;
+    return "no-database";
   }
 
   const sql = getSql();
@@ -342,8 +342,11 @@ export async function persistExtraction(documentId: string, result: ExtractionRe
 
   try {
     await _persistExtractionInner(sql, documentId, result);
+    return null;
   } catch (error) {
-    console.error(`[persistExtraction] FAILED for doc ${documentId}:`, error instanceof Error ? error.message : error);
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`[persistExtraction] FAILED for doc ${documentId}:`, msg);
+    return msg;
   }
 }
 
