@@ -92,8 +92,9 @@ export async function extractStructuredData(params: {
   const initialType = classifyDocument(params.fileName, `${params.sourceHint ?? ""} ${nativeText}`);
   console.log(`[Extractor] File: ${params.fileName}, nativeText length: ${nativeText.length}, initialType: ${initialType}`);
 
-  // For invoices, use tool_use for guaranteed field names
-  if (initialType === "invoice" || looksLikeInvoice(params.fileName, nativeText, initialType)) {
+  // For invoices (or unknown PDFs that could be invoices), use tool_use for guaranteed field names
+  const couldBeInvoice = initialType === "invoice" || initialType === "unknown" || looksLikeInvoice(params.fileName, nativeText, initialType);
+  if (couldBeInvoice) {
     const toolResult = nativeText.length > 30
       ? await extractInvoiceFromText(nativeText)
       : pdfBuffer
