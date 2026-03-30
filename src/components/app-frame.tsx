@@ -15,6 +15,7 @@ import {
   Receipt,
   Search,
   Settings,
+  ShoppingBag,
   X,
 } from "lucide-react";
 
@@ -22,6 +23,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/", label: "Dashboard", section: "General", icon: LayoutDashboard },
+  { href: "/ventas", label: "Ventas", section: "General", icon: ShoppingBag },
   { href: "/finanzas", label: "Finanzas", section: "General", icon: Building2 },
   { href: "/gastos", label: "Gastos", section: "General", icon: Receipt },
   { href: "/tesoreria", label: "Tesoreria", section: "General", icon: Landmark },

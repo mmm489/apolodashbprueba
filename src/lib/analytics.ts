@@ -13,7 +13,7 @@ import {
   listTelegramMessages,
   listTelegramUsers,
 } from "@/lib/repositories";
-import type { ChatAnswer, DateFilter, DatePreset, FinancialWorkspace, InvoiceLineRecord, InvoiceRecord } from "@/lib/types";
+import type { ChatAnswer, DateFilter, DatePreset, FinancialWorkspace, InvoiceLineRecord, InvoiceRecord, ProductSaleRecord, SalesReport } from "@/lib/types";
 
 export function resolveDateFilter(input?: {
   preset?: string;
@@ -233,6 +233,67 @@ export async function answerBusinessQuestion(question: string): Promise<ChatAnsw
     sources: ["daily_kpis"],
   };
 }
+
+/* ---------- Sales workspace ---------- */
+
+export interface SalesWorkspace {
+  filter: DateFilter;
+  salesReports: SalesReport[];
+  productSales: ProductSaleRecord[];
+  topProducts: Array<{ productName: string; units: number; amount: number }>;
+  totals: {
+    totalSales: number;
+    totalOrders: number;
+    averageTicket: number;
+    daysWithData: number;
+  };
+}
+
+export async function getSalesWorkspace(input?: {
+  preset?: string;
+  from?: string;
+  to?: string;
+}): Promise<SalesWorkspace> {
+  const filter = resolveDateFilter(input);
+  const [salesReports, productSales] = await Promise.all([listSalesReports(), listProductSales()]);
+
+  const fromDate = startOfDaySafe(filter.from);
+  const toDate = endOfDaySafe(filter.to);
+
+  const scopedSales = salesReports.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
+  const scopedProducts = productSales.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
+
+  const totalSales = scopedSales.reduce((sum, item) => sum + item.totalSales, 0);
+  const totalOrders = scopedSales.reduce((sum, item) => sum + item.orderCount, 0);
+  const averageTicket = totalOrders > 0 ? totalSales / totalOrders : 0;
+
+  const topProducts = Object.values(
+    scopedProducts.reduce<Record<string, { productName: string; units: number; amount: number }>>((acc, item) => {
+      const key = item.productName.toLowerCase();
+      if (!acc[key]) {
+        acc[key] = { productName: item.productName, units: 0, amount: 0 };
+      }
+      acc[key].units += item.units;
+      acc[key].amount += item.amount;
+      return acc;
+    }, {}),
+  ).sort((a, b) => b.units - a.units);
+
+  return {
+    filter,
+    salesReports: scopedSales,
+    productSales: scopedProducts,
+    topProducts,
+    totals: {
+      totalSales,
+      totalOrders,
+      averageTicket,
+      daysWithData: scopedSales.length,
+    },
+  };
+}
+
+/* ---------- Expenses workspace ---------- */
 
 export interface ExpenseRow {
   invoiceId: string;
