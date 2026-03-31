@@ -16,6 +16,7 @@ import {
   Search,
   Settings,
   ShoppingBag,
+  Users,
   X,
 } from "lucide-react";
 
@@ -27,6 +28,7 @@ const navItems = [
   { href: "/finanzas", label: "Finanzas", section: "General", icon: Building2 },
   { href: "/gastos", label: "Gastos", section: "General", icon: Receipt },
   { href: "/tesoreria", label: "Tesoreria", section: "General", icon: Landmark },
+  { href: "/empleados", label: "Empleados", section: "General", icon: Users },
   { href: "/documentos", label: "Documentos", section: "Sistema", icon: FileText },
 ];
 

@@ -1,4 +1,4 @@
-import { ArrowRightLeft, Banknote, ReceiptText, TrendingUp } from "lucide-react";
+import { ArrowRightLeft, Banknote, Clock, ReceiptText, TrendingUp } from "lucide-react";
 
 import { AppFrame } from "@/components/app-frame";
 import { DateFilterBar } from "@/components/date-filter-bar";
@@ -90,6 +90,7 @@ export default async function HomePage({
             <FinanceRow label="Salidas banco" value={euro(workspace.cashFlowSummary.outflows)} percent="11%" color="#10b981" />
             <FinanceRow label="Ticket medio" value={euro(workspace.snapshot.kpis.averageTicket)} percent="10%" color="#f59e0b" />
             <FinanceRow label="Proveedores" value={String(workspace.snapshot.kpis.activeSuppliers)} percent="9%" color="#ef4444" />
+            <FinanceRow label="Productividad/hora" value={`${euro(workspace.snapshot.kpis.productivityPerHour)} /h`} percent={`${workspace.snapshot.kpis.totalMonthlyHours.toFixed(0)} h/mes`} color="#0ea5e9" />
           </div>
 
           {/* Highlight card */}

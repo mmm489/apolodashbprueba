@@ -110,6 +110,16 @@ export interface TelegramMessage {
   createdAt: string;
 }
 
+export interface Employee {
+  id: string;
+  name: string;
+  shiftStart: string;
+  shiftEnd: string;
+  workingDaysPerMonth: number;
+  isActive: boolean;
+  createdAt: string;
+}
+
 export interface KpiSnapshot {
   totalSales: number;
   totalExpenses: number;
@@ -120,6 +130,8 @@ export interface KpiSnapshot {
   bankGap: number;
   estimatedMargin: number;
   activeSuppliers: number;
+  totalMonthlyHours: number;
+  productivityPerHour: number;
 }
 
 export interface DashboardSnapshot {

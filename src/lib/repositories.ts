@@ -5,6 +5,7 @@ import {
   mockAlerts,
   mockBankTransactions,
   mockDocuments,
+  mockEmployees,
   mockHourlySales,
   mockInvoices,
   mockPayrolls,
@@ -17,6 +18,7 @@ import type {
   AlertRecord,
   BankTransaction,
   DocumentRecord,
+  Employee,
   ExtractionResult,
   HourlySalesEntry,
   InvoiceLineRecord,
@@ -205,6 +207,68 @@ export async function listTelegramMessages() {
     answer: String(row.answer),
     createdAt: new Date(String(row.created_at)).toISOString(),
   })) satisfies TelegramMessage[];
+}
+
+/* ---------- Employees ---------- */
+
+export async function listEmployees() {
+  if (!hasDatabase()) {
+    return mockEmployees;
+  }
+
+  const sql = getSql();
+  const rows = await sql`SELECT id, name, shift_start, shift_end, working_days_per_month, is_active, created_at FROM employees WHERE is_active = TRUE ORDER BY name ASC`;
+  return rows.map((row) => ({
+    id: String(row.id),
+    name: String(row.name),
+    shiftStart: String(row.shift_start),
+    shiftEnd: String(row.shift_end),
+    workingDaysPerMonth: Number(row.working_days_per_month),
+    isActive: Boolean(row.is_active),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+  })) satisfies Employee[];
+}
+
+export async function createEmployee(input: {
+  name: string;
+  shiftStart: string;
+  shiftEnd: string;
+  workingDaysPerMonth: number;
+}) {
+  const id = randomUUID();
+
+  if (!hasDatabase()) {
+    return { id, ...input, isActive: true, createdAt: new Date().toISOString() } satisfies Employee;
+  }
+
+  const sql = getSql();
+  await sql`
+    INSERT INTO employees (id, name, shift_start, shift_end, working_days_per_month)
+    VALUES (${id}, ${input.name}, ${input.shiftStart}, ${input.shiftEnd}, ${input.workingDaysPerMonth})
+  `;
+
+  return { id, ...input, isActive: true, createdAt: new Date().toISOString() } satisfies Employee;
+}
+
+export async function updateEmployee(
+  id: string,
+  input: { name: string; shiftStart: string; shiftEnd: string; workingDaysPerMonth: number },
+) {
+  if (!hasDatabase()) return;
+
+  const sql = getSql();
+  await sql`
+    UPDATE employees
+    SET name = ${input.name}, shift_start = ${input.shiftStart}, shift_end = ${input.shiftEnd}, working_days_per_month = ${input.workingDaysPerMonth}
+    WHERE id = ${id}
+  `;
+}
+
+export async function deleteEmployee(id: string) {
+  if (!hasDatabase()) return;
+
+  const sql = getSql();
+  await sql`UPDATE employees SET is_active = FALSE WHERE id = ${id}`;
 }
 
 export async function findTelegramUser(telegramUserId: string) {

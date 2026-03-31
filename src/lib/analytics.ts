@@ -4,6 +4,7 @@ import {
   listAlerts,
   listBankTransactions,
   listDocuments,
+  listEmployees,
   listHourlySales,
   listInvoiceLines,
   listInvoices,
@@ -58,7 +59,7 @@ export async function getFinancialWorkspace(input?: {
   to?: string;
 }): Promise<FinancialWorkspace> {
   const filter = resolveDateFilter(input);
-  const [documents, salesReports, hourlySales, invoices, payrolls, bankTransactions, productSales, alerts, telegramUsers, telegramMessages] =
+  const [documents, salesReports, hourlySales, invoices, payrolls, bankTransactions, productSales, alerts, telegramUsers, telegramMessages, employees] =
     await Promise.all([
       listDocuments(),
       listSalesReports(),
@@ -70,6 +71,7 @@ export async function getFinancialWorkspace(input?: {
       listAlerts(),
       listTelegramUsers(),
       listTelegramMessages(),
+      listEmployees(),
     ]);
 
   const fromDate = startOfDaySafe(filter.from);
@@ -110,6 +112,14 @@ export async function getFinancialWorkspace(input?: {
   const bankGap = totalSales - bankInflows;
   const estimatedMargin = totalSales - totalExpenses - totalPayroll;
 
+  const totalMonthlyHours = employees.reduce((sum, emp) => {
+    const [sh, sm] = emp.shiftStart.split(":").map(Number);
+    const [eh, em] = emp.shiftEnd.split(":").map(Number);
+    const hoursPerDay = (eh + em / 60) - (sh + sm / 60);
+    return sum + hoursPerDay * emp.workingDaysPerMonth;
+  }, 0);
+  const productivityPerHour = totalMonthlyHours > 0 ? totalSales / totalMonthlyHours : 0;
+
   const totalsByCategory = Object.entries(
     scopedInvoices.reduce<Record<string, number>>((acc, invoice) => {
       acc[invoice.category] = (acc[invoice.category] ?? 0) + invoice.totalAmount;
@@ -148,6 +158,8 @@ export async function getFinancialWorkspace(input?: {
         bankGap,
         estimatedMargin,
         activeSuppliers: new Set(scopedInvoices.map((item) => item.supplierName)).size,
+        totalMonthlyHours,
+        productivityPerHour,
       },
       alerts,
       documents: scopedDocuments,

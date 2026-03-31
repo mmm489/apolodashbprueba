@@ -2,6 +2,7 @@ import type {
   AlertRecord,
   BankTransaction,
   DocumentRecord,
+  Employee,
   HourlySalesEntry,
   InvoiceRecord,
   PayrollRecord,
@@ -194,6 +195,36 @@ export const mockTelegramUsers: TelegramUser[] = [
     username: "socio",
     displayName: "Socio",
     isActive: true,
+  },
+];
+
+export const mockEmployees: Employee[] = [
+  {
+    id: "emp_1",
+    name: "Ana",
+    shiftStart: "09:00",
+    shiftEnd: "13:00",
+    workingDaysPerMonth: 22,
+    isActive: true,
+    createdAt: "2026-01-15T10:00:00.000Z",
+  },
+  {
+    id: "emp_2",
+    name: "Carlos",
+    shiftStart: "16:00",
+    shiftEnd: "21:00",
+    workingDaysPerMonth: 20,
+    isActive: true,
+    createdAt: "2026-02-01T10:00:00.000Z",
+  },
+  {
+    id: "emp_3",
+    name: "Maria",
+    shiftStart: "10:00",
+    shiftEnd: "14:00",
+    workingDaysPerMonth: 18,
+    isActive: true,
+    createdAt: "2026-02-10T10:00:00.000Z",
   },
 ];
 

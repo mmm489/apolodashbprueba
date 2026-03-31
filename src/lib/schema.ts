@@ -113,4 +113,14 @@ CREATE TABLE IF NOT EXISTS sync_state (
   sync_value TEXT NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS employees (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  shift_start TEXT NOT NULL,
+  shift_end TEXT NOT NULL,
+  working_days_per_month INTEGER NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 `;
