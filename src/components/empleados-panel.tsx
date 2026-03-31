@@ -59,7 +59,7 @@ export function EmpleadosPanel({ employees }: { employees: Employee[] }) {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("¿Eliminar este empleado?")) return;
+    if (!confirm("Eliminar aquest empleat?")) return;
     setLoading(true);
     await fetch("/api/employees", {
       method: "DELETE",
@@ -74,21 +74,21 @@ export function EmpleadosPanel({ employees }: { employees: Employee[] }) {
     <div className="space-y-5">
       {/* KPI cards */}
       <section className="grid gap-4 sm:grid-cols-3">
-        <MiniCard label="Empleados activos" value={String(totalEmployees)} />
-        <MiniCard label="Horas/mes totales" value={`${totalMonthlyHours.toFixed(0)} h`} />
-        <MiniCard label="Media horas/empleado" value={totalEmployees > 0 ? `${(totalMonthlyHours / totalEmployees).toFixed(1)} h` : "—"} />
+        <MiniCard label="Empleats actius" value={String(totalEmployees)} />
+        <MiniCard label="Hores/mes totals" value={`${totalMonthlyHours.toFixed(0)} h`} />
+        <MiniCard label="Mitjana hores/empleat" value={totalEmployees > 0 ? `${(totalMonthlyHours / totalEmployees).toFixed(1)} h` : "—"} />
       </section>
 
       {/* Actions */}
       <div className="flex items-center justify-between">
-        <p className="text-[13px] text-slate-500">{totalEmployees} empleado{totalEmployees !== 1 ? "s" : ""} registrado{totalEmployees !== 1 ? "s" : ""}</p>
+        <p className="text-[13px] text-slate-500">{totalEmployees} empleat{totalEmployees !== 1 ? "s" : ""} registrat{totalEmployees !== 1 ? "s" : ""}</p>
         <button
           type="button"
           onClick={() => { setForm(emptyForm); setEditingId(null); setShowForm(!showForm); }}
           className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-indigo-700"
         >
           <Plus className="size-4" />
-          Nuevo empleado
+          Nou empleat
         </button>
       </div>
 
@@ -99,18 +99,18 @@ export function EmpleadosPanel({ employees }: { employees: Employee[] }) {
           className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm"
         >
           <p className="mb-4 text-[15px] font-semibold text-slate-900">
-            {editingId ? "Editar empleado" : "Nuevo empleado"}
+            {editingId ? "Editar empleat" : "Nou empleat"}
           </p>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <label className="mb-1 block text-[12px] font-medium text-slate-500">Nombre</label>
+              <label className="mb-1 block text-[12px] font-medium text-slate-500">Nom</label>
               <input
                 type="text"
                 required
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 className="w-full rounded-lg border border-[var(--line)] px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
-                placeholder="Nombre del empleado"
+                placeholder="Nom de l'empleat"
               />
             </div>
             <div>
@@ -124,7 +124,7 @@ export function EmpleadosPanel({ employees }: { employees: Employee[] }) {
               />
             </div>
             <div>
-              <label className="mb-1 block text-[12px] font-medium text-slate-500">Hora salida</label>
+              <label className="mb-1 block text-[12px] font-medium text-slate-500">Hora sortida</label>
               <input
                 type="time"
                 required
@@ -134,7 +134,7 @@ export function EmpleadosPanel({ employees }: { employees: Employee[] }) {
               />
             </div>
             <div>
-              <label className="mb-1 block text-[12px] font-medium text-slate-500">Dias/mes</label>
+              <label className="mb-1 block text-[12px] font-medium text-slate-500">Dies/mes</label>
               <input
                 type="number"
                 required
@@ -152,14 +152,14 @@ export function EmpleadosPanel({ employees }: { employees: Employee[] }) {
               disabled={loading}
               className="rounded-xl bg-indigo-600 px-5 py-2 text-[13px] font-medium text-white transition hover:bg-indigo-700 disabled:opacity-50"
             >
-              {editingId ? "Guardar cambios" : "Añadir empleado"}
+              {editingId ? "Guardar canvis" : "Afegir empleat"}
             </button>
             <button
               type="button"
               onClick={() => { setShowForm(false); setEditingId(null); }}
               className="rounded-xl border border-[var(--line)] px-5 py-2 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50"
             >
-              Cancelar
+              Cancel·lar
             </button>
           </div>
         </form>
@@ -170,19 +170,19 @@ export function EmpleadosPanel({ employees }: { employees: Employee[] }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[var(--line)] bg-slate-50/80 text-left text-[12px] font-medium uppercase tracking-wider text-slate-500">
-              <th className="px-5 py-3">Nombre</th>
-              <th className="px-5 py-3">Horario</th>
-              <th className="px-5 py-3 text-right">Horas/dia</th>
-              <th className="px-5 py-3 text-right">Dias/mes</th>
-              <th className="px-5 py-3 text-right">Horas/mes</th>
-              <th className="px-5 py-3 text-right">Acciones</th>
+              <th className="px-5 py-3">Nom</th>
+              <th className="px-5 py-3">Horari</th>
+              <th className="px-5 py-3 text-right">Hores/dia</th>
+              <th className="px-5 py-3 text-right">Dies/mes</th>
+              <th className="px-5 py-3 text-right">Hores/mes</th>
+              <th className="px-5 py-3 text-right">Accions</th>
             </tr>
           </thead>
           <tbody>
             {employees.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-5 py-8 text-center text-slate-400">
-                  No hay empleados registrados. Haz clic en &quot;Nuevo empleado&quot; para empezar.
+                  No hi ha empleats registrats. Fes clic a &quot;Nou empleat&quot; per comencar.
                 </td>
               </tr>
             )}

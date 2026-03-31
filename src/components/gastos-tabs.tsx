@@ -23,9 +23,9 @@ export function GastosTabs({
     <div className="rounded-2xl border border-[var(--line)] bg-white shadow-sm">
       {/* Tab bar */}
       <div className="flex border-b border-[var(--line)]">
-        <TabButton active={tab === "facturas"} onClick={() => setTab("facturas")} icon={<FileText className="h-4 w-4" />} label="Facturas" count={invoices.length} />
-        <TabButton active={tab === "lineas"} onClick={() => setTab("lineas")} icon={<List className="h-4 w-4" />} label="Lineas" count={rows.length} />
-        <TabButton active={tab === "productos"} onClick={() => setTab("productos")} icon={<Package className="h-4 w-4" />} label="Productos" count={products.length} />
+        <TabButton active={tab === "facturas"} onClick={() => setTab("facturas")} icon={<FileText className="h-4 w-4" />} label="Factures" count={invoices.length} />
+        <TabButton active={tab === "lineas"} onClick={() => setTab("lineas")} icon={<List className="h-4 w-4" />} label="Linies" count={rows.length} />
+        <TabButton active={tab === "productos"} onClick={() => setTab("productos")} icon={<Package className="h-4 w-4" />} label="Productes" count={products.length} />
       </div>
 
       <div className="p-5">
@@ -61,7 +61,7 @@ function InvoicesTab({ invoices }: { invoices: InvoiceSummary[] }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   if (!invoices.length) {
-    return <Empty text="No hay facturas en este periodo." />;
+    return <Empty text="No hi ha factures en aquest periode." />;
   }
 
   return (
@@ -85,7 +85,7 @@ function InvoicesTab({ invoices }: { invoices: InvoiceSummary[] }) {
                 <div className="mt-1 flex items-center gap-3 text-[12px] text-slate-500">
                   <span>{formatDate(inv.issueDate)}</span>
                   <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">{inv.category.replaceAll("_", " ")}</span>
-                  <span>{inv.lineCount} {inv.lineCount === 1 ? "linea" : "lineas"}</span>
+                  <span>{inv.lineCount} {inv.lineCount === 1 ? "linia" : "linies"}</span>
                   {inv.taxAmount > 0 && <span>IVA: {euro(inv.taxAmount)}</span>}
                 </div>
               </div>
@@ -96,10 +96,10 @@ function InvoicesTab({ invoices }: { invoices: InvoiceSummary[] }) {
                 <table className="w-full text-left">
                   <thead>
                     <tr>
-                      <th className="pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Descripcion</th>
-                      <th className="pb-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400">Cant.</th>
+                      <th className="pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Descripcio</th>
+                      <th className="pb-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400">Quant.</th>
                       <th className="pb-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400">P.Unit</th>
-                      <th className="pb-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400">Importe</th>
+                      <th className="pb-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400">Import</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -125,7 +125,7 @@ function InvoicesTab({ invoices }: { invoices: InvoiceSummary[] }) {
 /* ---- Lines Tab ---- */
 function LinesTab({ rows, totals }: { rows: ExpenseRow[]; totals: { totalGross: number; totalVat: number } }) {
   if (!rows.length) {
-    return <Empty text="No hay lineas de gasto en este periodo." />;
+    return <Empty text="No hi ha linies de despesa en aquest periode." />;
   }
 
   return (
@@ -133,12 +133,12 @@ function LinesTab({ rows, totals }: { rows: ExpenseRow[]; totals: { totalGross: 
       <table className="w-full min-w-[800px] text-left">
         <thead>
           <tr className="border-b border-[var(--line)]">
-            <Th>Fecha</Th>
-            <Th>Proveedor</Th>
-            <Th>Descripcion</Th>
-            <Th align="right">Cant.</Th>
+            <Th>Data</Th>
+            <Th>Proveidor</Th>
+            <Th>Descripcio</Th>
+            <Th align="right">Quant.</Th>
             <Th align="right">P. Unit.</Th>
-            <Th align="right">Importe</Th>
+            <Th align="right">Import</Th>
             <Th align="right">IVA</Th>
             <Th>Categoria</Th>
           </tr>
@@ -177,7 +177,7 @@ function LinesTab({ rows, totals }: { rows: ExpenseRow[]; totals: { totalGross: 
 /* ---- Products Tab ---- */
 function ProductsTab({ products }: { products: ProductSpend[] }) {
   if (!products.length) {
-    return <Empty text="No hay productos desglosados. Las lineas de factura apareceran aqui." />;
+    return <Empty text="No hi ha productes desglossats. Les linies de factura apareixeran aqui." />;
   }
 
   const maxAmount = products[0]?.totalAmount ?? 1;
@@ -192,7 +192,7 @@ function ProductsTab({ products }: { products: ProductSpend[] }) {
               <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
                 <span>{fmtNum(p.totalQuantity)} uds</span>
                 <span>·</span>
-                <span>{p.occurrences} {p.occurrences === 1 ? "factura" : "facturas"}</span>
+                <span>{p.occurrences} {p.occurrences === 1 ? "factura" : "factures"}</span>
                 <span>·</span>
                 <span>{p.suppliers.join(", ")}</span>
               </div>
@@ -245,5 +245,5 @@ function fmtNum(value: number) {
 
 function formatDate(dateStr: string) {
   const d = new Date(dateStr);
-  return d.toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" });
+  return d.toLocaleDateString("ca-ES", { day: "2-digit", month: "short", year: "numeric" });
 }

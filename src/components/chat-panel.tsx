@@ -30,9 +30,9 @@ export function ChatPanel({ suggestions }: { suggestions: string[] }) {
 
   return (
     <SectionCard
-      title="Chat analitico"
-      eyebrow="Claude + datos estructurados"
-      description="Haz preguntas sobre ventas, gastos, nominas y banco. El modelo solo contesta con datos ya guardados."
+      title="Xat analitic"
+      eyebrow="Claude + dades estructurades"
+      description="Fes preguntes sobre vendes, despeses, nomines i banc. El model nomes contesta amb dades ja guardades."
     >
       <div className="space-y-4">
         {/* Suggestions */}
@@ -52,7 +52,7 @@ export function ChatPanel({ suggestions }: { suggestions: string[] }) {
         {/* Input */}
         <div className="rounded-xl border border-[var(--line)] bg-white p-4">
           <label className="text-[12px] font-medium text-slate-500" htmlFor="question">
-            Escribe una pregunta
+            Escriu una pregunta
           </label>
           <div className="mt-2 flex flex-col gap-2 sm:flex-row">
             <input
@@ -62,7 +62,7 @@ export function ChatPanel({ suggestions }: { suggestions: string[] }) {
               onKeyDown={(event) => {
                 if (event.key === "Enter" && question.trim()) ask(question);
               }}
-              placeholder="Ej. Cuanto vendimos hoy?"
+              placeholder="Ex. Quant hem venut avui?"
               className="min-w-0 flex-1 rounded-lg border border-[var(--line)] bg-slate-50 px-4 py-2.5 text-[13px] outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-500/10"
             />
             <button
@@ -81,11 +81,11 @@ export function ChatPanel({ suggestions }: { suggestions: string[] }) {
         <div className="rounded-xl border border-[var(--line)] bg-slate-50/50 p-5">
           <div className="flex items-center gap-2">
             <Sparkles className="size-4 text-indigo-500" />
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Respuesta</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Resposta</p>
           </div>
           <p className="mt-3 whitespace-pre-wrap text-[13px] leading-7 text-slate-700">
             {answer?.answer ??
-              "Todavia no hay ninguna pregunta enviada. Prueba con una consulta de ventas, proveedores, nominas o banco."}
+              "Encara no hi ha cap pregunta enviada. Prova amb una consulta de vendes, proveidors, nomines o banc."}
           </p>
           {answer?.sources?.length ? (
             <div className="mt-4 flex flex-wrap gap-1.5">

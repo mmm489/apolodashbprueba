@@ -22,21 +22,21 @@ export default async function VentasPage({
 
   return (
     <AppFrame
-      title="Ventas"
-      description="Control diario de ventas, desglose por producto y carga de informes."
+      title="Vendes"
+      description="Control diari de vendes, desglossament per producte i carrega d'informes."
     >
       <DateFilterBar preset={filter.preset} from={filter.from} to={filter.to} />
 
       {/* KPIs */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Total ventas" value={euro(totals.totalSales)} color="emerald" />
-        <Metric label="Total pedidos" value={fmtNum(totals.totalOrders)} color="indigo" />
-        <Metric label="Ticket medio" value={euro(totals.averageTicket)} color="amber" />
-        <Metric label="Dias con datos" value={String(totals.daysWithData)} color="slate" />
+        <Metric label="Total vendes" value={euro(totals.totalSales)} color="emerald" />
+        <Metric label="Total comandes" value={fmtNum(totals.totalOrders)} color="indigo" />
+        <Metric label="Tiquet mitja" value={euro(totals.averageTicket)} color="amber" />
+        <Metric label="Dies amb dades" value={String(totals.daysWithData)} color="slate" />
       </section>
 
       {/* Upload */}
-      <SectionCard title="Cargar informe de ventas" eyebrow="Carga" description="Sube el Excel diario de ventas (formato .xls o .xlsx).">
+      <SectionCard title="Carregar informe de vendes" eyebrow="Carrega" description="Puja l'Excel diari de vendes (format .xls o .xlsx).">
         <UploadPanel />
       </SectionCard>
 

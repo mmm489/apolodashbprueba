@@ -27,7 +27,7 @@ export default async function HomePage({
   return (
     <AppFrame
       title="Dashboard"
-      description="Vista general del negocio con metricas clave, tendencias y desglose financiero."
+      description="Vista general del negoci amb metriques clau, tendencies i desglossament financer."
     >
       <DateFilterBar preset={workspace.filter.preset} from={workspace.filter.from} to={workspace.filter.to} />
 
@@ -35,14 +35,14 @@ export default async function HomePage({
       <section className="stagger-children grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MiniStatCard
           icon={<ReceiptText className="size-4" />}
-          label="Total documentos"
+          label="Total documents"
           value={String(workspace.snapshot.documentOverview.totalDocuments)}
-          delta={`${workspace.snapshot.documentOverview.validatedDocuments} validados`}
+          delta={`${workspace.snapshot.documentOverview.validatedDocuments} validats`}
           color="indigo"
         />
         <MiniStatCard
           icon={<TrendingUp className="size-4" />}
-          label="Total ventas"
+          label="Total vendes"
           value={euro(workspace.snapshot.kpis.totalSales)}
           delta="+ 2,5%"
           positive
@@ -50,14 +50,14 @@ export default async function HomePage({
         />
         <MiniStatCard
           icon={<Banknote className="size-4" />}
-          label="Total gastos"
+          label="Total despeses"
           value={euro(workspace.snapshot.kpis.totalExpenses)}
           delta="- 0,4%"
           color="amber"
         />
         <MiniStatCard
           icon={<ArrowRightLeft className="size-4" />}
-          label="Descuadre banco"
+          label="Descuadrament banc"
           value={euro(workspace.snapshot.kpis.bankGap)}
           delta="Revisar"
           color="rose"
@@ -73,31 +73,31 @@ export default async function HomePage({
       <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
         <div className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
           <div className="mb-5">
-            <p className="text-[20px] font-bold tracking-tight text-slate-900">Gasto por categoria</p>
+            <p className="text-[20px] font-bold tracking-tight text-slate-900">Despesa per categoria</p>
           </div>
           <DonutBreakdown items={workspace.totalsByCategory} />
         </div>
 
         <div className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
           <div className="mb-5">
-            <p className="text-[20px] font-bold tracking-tight text-slate-900">Resumen financiero</p>
+            <p className="text-[20px] font-bold tracking-tight text-slate-900">Resum financer</p>
           </div>
           <div className="stagger-children space-y-2">
-            <FinanceRow label="Ventas" value={euro(workspace.snapshot.kpis.totalSales)} percent="19%" color="#6366f1" />
-            <FinanceRow label="Margen estimado" value={euro(workspace.snapshot.kpis.estimatedMargin)} percent="15%" color="#8b5cf6" />
-            <FinanceRow label="Nominas" value={euro(workspace.snapshot.kpis.totalPayroll)} percent="13%" color="#ec4899" />
-            <FinanceRow label="Entradas banco" value={euro(workspace.cashFlowSummary.inflows)} percent="12%" color="#06b6d4" />
-            <FinanceRow label="Salidas banco" value={euro(workspace.cashFlowSummary.outflows)} percent="11%" color="#10b981" />
-            <FinanceRow label="Ticket medio" value={euro(workspace.snapshot.kpis.averageTicket)} percent="10%" color="#f59e0b" />
-            <FinanceRow label="Proveedores" value={String(workspace.snapshot.kpis.activeSuppliers)} percent="9%" color="#ef4444" />
-            <FinanceRow label="Productividad/hora" value={`${euro(workspace.snapshot.kpis.productivityPerHour)} /h`} percent={`${workspace.snapshot.kpis.totalMonthlyHours.toFixed(0)} h/mes`} color="#0ea5e9" />
+            <FinanceRow label="Vendes" value={euro(workspace.snapshot.kpis.totalSales)} percent="19%" color="#6366f1" />
+            <FinanceRow label="Marge estimat" value={euro(workspace.snapshot.kpis.estimatedMargin)} percent="15%" color="#8b5cf6" />
+            <FinanceRow label="Nomines" value={euro(workspace.snapshot.kpis.totalPayroll)} percent="13%" color="#ec4899" />
+            <FinanceRow label="Entrades banc" value={euro(workspace.cashFlowSummary.inflows)} percent="12%" color="#06b6d4" />
+            <FinanceRow label="Sortides banc" value={euro(workspace.cashFlowSummary.outflows)} percent="11%" color="#10b981" />
+            <FinanceRow label="Tiquet mitja" value={euro(workspace.snapshot.kpis.averageTicket)} percent="10%" color="#f59e0b" />
+            <FinanceRow label="Proveidors" value={String(workspace.snapshot.kpis.activeSuppliers)} percent="9%" color="#ef4444" />
+            <FinanceRow label="Productivitat/hora" value={`${euro(workspace.snapshot.kpis.productivityPerHour)} /h`} percent={`${workspace.snapshot.kpis.totalMonthlyHours.toFixed(0)} h/mes`} color="#0ea5e9" />
           </div>
 
           {/* Highlight card */}
           <div className="mt-5 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 p-5 text-white">
-            <p className="text-[13px] font-medium text-indigo-200">Foco de control</p>
+            <p className="text-[13px] font-medium text-indigo-200">Focus de control</p>
             <p className="mt-2 text-lg font-semibold leading-snug">
-              La diferencia entre ventas y cobros bancarios es {euro(workspace.snapshot.kpis.bankGap)}.
+              La diferencia entre vendes i cobraments bancaris es {euro(workspace.snapshot.kpis.bankGap)}.
             </p>
           </div>
         </div>

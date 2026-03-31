@@ -47,14 +47,14 @@ export function VentasTabs({
           active={tab === "resumen"}
           onClick={() => setTab("resumen")}
           icon={<CalendarDays className="h-4 w-4" />}
-          label="Resumen diario"
+          label="Resum diari"
           count={salesReports.length}
         />
         <TabButton
           active={tab === "detalle"}
           onClick={() => setTab("detalle")}
           icon={<ShoppingBag className="h-4 w-4" />}
-          label="Detalle del dia"
+          label="Detall del dia"
           count={selectedProducts.length}
         />
       </div>
@@ -100,7 +100,7 @@ function ResumenTab({
   onSelect: (date: string) => void;
 }) {
   if (!reports.length) {
-    return <Empty text="No hay informes de ventas en este periodo." />;
+    return <Empty text="No hi ha informes de vendes en aquest periode." />;
   }
 
   return (
@@ -108,10 +108,10 @@ function ResumenTab({
       <table className="w-full min-w-[600px] text-left">
         <thead>
           <tr className="border-b border-[var(--line)]">
-            <Th>Fecha</Th>
-            <Th align="right">Ventas</Th>
-            <Th align="right">Pedidos</Th>
-            <Th align="right">Ticket medio</Th>
+            <Th>Data</Th>
+            <Th align="right">Vendes</Th>
+            <Th align="right">Comandes</Th>
+            <Th align="right">Tiquet mitja</Th>
           </tr>
         </thead>
         <tbody>
@@ -160,7 +160,7 @@ function DetalleTab({
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   if (!report) {
-    return <Empty text="Selecciona un dia en la pestana Resumen para ver el desglose de productos." />;
+    return <Empty text="Selecciona un dia a la pestanya Resum per veure el desglossament de productes." />;
   }
 
   const families = groupByFamily(products);
@@ -171,9 +171,9 @@ function DetalleTab({
     <div className="space-y-5">
       {/* Day summary header */}
       <div className="grid gap-3 sm:grid-cols-3">
-        <MiniStat label="Ventas totales" value={euro(report.totalSales)} />
-        <MiniStat label="Pedidos" value={fmtNum(report.orderCount)} />
-        <MiniStat label="Ticket medio" value={euro(report.averageTicket)} />
+        <MiniStat label="Vendes totals" value={euro(report.totalSales)} />
+        <MiniStat label="Comandes" value={fmtNum(report.orderCount)} />
+        <MiniStat label="Tiquet mitja" value={euro(report.averageTicket)} />
       </div>
 
       {/* Products grouped by family */}
@@ -197,7 +197,7 @@ function DetalleTab({
                         <span className={`inline-block h-2.5 w-2.5 rounded-full ${fam.color}`} />
                         <p className="text-[13px] font-semibold text-slate-800">{fam.name}</p>
                         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
-                          {fam.items.length} {fam.items.length === 1 ? "articulo" : "articulos"}
+                          {fam.items.length} {fam.items.length === 1 ? "article" : "articles"}
                         </span>
                       </div>
                       <div className="flex items-center gap-4 shrink-0">
@@ -216,10 +216,10 @@ function DetalleTab({
                     <table className="w-full text-left">
                       <thead>
                         <tr>
-                          <th className="pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Producto</th>
-                          <th className="pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Codigo</th>
-                          <th className="pb-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400">Unidades</th>
-                          <th className="pb-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400">Importe</th>
+                          <th className="pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Producte</th>
+                          <th className="pb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Codi</th>
+                          <th className="pb-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400">Unitats</th>
+                          <th className="pb-2 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-400">Import</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -253,7 +253,7 @@ function DetalleTab({
           </div>
         </div>
       ) : (
-        <Empty text="No hay productos registrados para este dia." />
+        <Empty text="No hi ha productes registrats per aquest dia." />
       )}
     </div>
   );
@@ -346,5 +346,5 @@ function fmtNum(value: number) {
 
 function formatDate(dateStr: string) {
   const d = new Date(dateStr);
-  return d.toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "numeric" });
+  return d.toLocaleDateString("ca-ES", { day: "2-digit", month: "short", year: "numeric" });
 }

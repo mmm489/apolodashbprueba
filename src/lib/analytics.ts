@@ -204,44 +204,44 @@ export async function answerBusinessQuestion(question: string): Promise<ChatAnsw
   const snapshot = workspace.snapshot;
   const normalizedQuestion = question.toLowerCase();
 
-  if (normalizedQuestion.includes("venta")) {
+  if (normalizedQuestion.includes("vend") || normalizedQuestion.includes("venta")) {
     return {
-      answer: `En el periodo activo llevais ${formatCurrency(snapshot.kpis.totalSales)} en ventas y un ticket medio de ${formatCurrency(snapshot.kpis.averageTicket)}.`,
+      answer: `En el periode actiu porteu ${formatCurrency(snapshot.kpis.totalSales)} en vendes i un tiquet mitja de ${formatCurrency(snapshot.kpis.averageTicket)}.`,
       sources: ["sales_reports", "hourly_sales"],
     };
   }
 
   if (normalizedQuestion.includes("hora")) {
     return {
-      answer: `La mejor franja es ${snapshot.kpis.bestHourLabel} con ${formatCurrency(snapshot.kpis.bestHourSales)} acumulados en el periodo analizado.`,
+      answer: `La millor franja es ${snapshot.kpis.bestHourLabel} amb ${formatCurrency(snapshot.kpis.bestHourSales)} acumulats en el periode analitzat.`,
       sources: ["hourly_sales"],
     };
   }
 
-  if (normalizedQuestion.includes("nomina")) {
+  if (normalizedQuestion.includes("nomina") || normalizedQuestion.includes("nomin")) {
     return {
-      answer: `El coste laboral acumulado es ${formatCurrency(snapshot.kpis.totalPayroll)} en el periodo analizado.`,
+      answer: `El cost laboral acumulat es ${formatCurrency(snapshot.kpis.totalPayroll)} en el periode analitzat.`,
       sources: ["payrolls"],
     };
   }
 
-  if (normalizedQuestion.includes("banco") || normalizedQuestion.includes("descuadre")) {
+  if (normalizedQuestion.includes("banc") || normalizedQuestion.includes("descuadr")) {
     return {
-      answer: `La diferencia entre ventas registradas e ingresos bancarios es ${formatCurrency(snapshot.kpis.bankGap)}. Los cobros bancarios suman ${formatCurrency(workspace.cashFlowSummary.inflows)}.`,
+      answer: `La diferencia entre vendes registrades i ingressos bancaris es ${formatCurrency(snapshot.kpis.bankGap)}. Els cobraments bancaris sumen ${formatCurrency(workspace.cashFlowSummary.inflows)}.`,
       sources: ["sales_reports", "bank_transactions"],
     };
   }
 
-  if (normalizedQuestion.includes("proveedor") || normalizedQuestion.includes("gasto")) {
+  if (normalizedQuestion.includes("proveidor") || normalizedQuestion.includes("despes") || normalizedQuestion.includes("gasto")) {
     return {
-      answer: `Los gastos acumulados de proveedores y salidas bancarias suman ${formatCurrency(snapshot.kpis.totalExpenses)}. Hay ${snapshot.kpis.activeSuppliers} proveedores activos en el periodo.`,
+      answer: `Les despeses acumulades de proveidors i sortides bancaries sumen ${formatCurrency(snapshot.kpis.totalExpenses)}. Hi ha ${snapshot.kpis.activeSuppliers} proveidors actius en el periode.`,
       sources: ["invoices", "bank_transactions"],
     };
   }
 
   return {
     answer:
-      "Puedo ayudarte con ventas, mejores horas, gastos, nominas, banco y margen. Prueba una pregunta mas concreta para responderte con cifras.",
+      "Puc ajudar-te amb vendes, millors hores, despeses, nomines, banc i marge. Prova una pregunta mes concreta per respondre't amb xifres.",
     sources: ["daily_kpis"],
   };
 }

@@ -65,9 +65,9 @@ export function UploadPanel() {
         const text = await response.text();
         let payload: UploadResult;
         try {
-          payload = text ? (JSON.parse(text) as UploadResult) : { error: "La respuesta del servidor llego vacia." };
+          payload = text ? (JSON.parse(text) as UploadResult) : { error: "La resposta del servidor ha arribat buida." };
         } catch {
-          payload = { ok: false, error: `Respuesta inesperada del servidor (status ${response.status}): ${text.slice(0, 200)}` };
+          payload = { ok: false, error: `Resposta inesperada del servidor (status ${response.status}): ${text.slice(0, 200)}` };
         }
 
         setResult(payload);
@@ -78,7 +78,7 @@ export function UploadPanel() {
       } catch (error) {
         setResult({
           ok: false,
-          error: error instanceof Error ? error.message : "Error inesperado al subir y analizar los documentos.",
+          error: error instanceof Error ? error.message : "Error inesperat en pujar i analitzar els documents.",
         });
       }
     });
@@ -94,9 +94,9 @@ export function UploadPanel() {
         <div className="flex size-12 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
           <FileUp className="size-6" />
         </div>
-        <p className="mt-4 text-[15px] font-semibold text-slate-800">Arrastra documentos o fotos de facturas</p>
+        <p className="mt-4 text-[15px] font-semibold text-slate-800">Arrossega documents o fotos de factures</p>
         <p className="mt-1.5 max-w-sm text-[13px] leading-relaxed text-slate-500">
-          Sube facturas, informes de ventas en PDF, Excel o imagen (JPG, PNG), nominas o extractos bancarios para procesarlos.
+          Puja factures, informes de vendes en PDF, Excel o imatge (JPG, PNG), nomines o extractes bancaris per processar-los.
         </p>
         <input id="pdf-upload" type="file" accept=".pdf,.xls,.xlsx,.jpg,.jpeg,.png,.webp,application/pdf,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png,image/webp" multiple className="hidden" onChange={(event) => onFilesSelected(event.target.files)} />
       </label>
@@ -105,11 +105,11 @@ export function UploadPanel() {
       <div className="rounded-xl border border-[var(--line)] bg-white p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Lote actual</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Lot actual</p>
             <p className="mt-1 text-[15px] font-semibold text-slate-900">
-              {files.length ? `${files.length} archivo${files.length > 1 ? "s" : ""}` : "Ningun archivo seleccionado"}
+              {files.length ? `${files.length} fitxer${files.length > 1 ? "s" : ""}` : "Cap fitxer seleccionat"}
             </p>
-            <p className="text-[12px] text-slate-500">{files.length ? totalSizeLabel : "Selecciona documentos para analizarlos."}</p>
+            <p className="text-[12px] text-slate-500">{files.length ? totalSizeLabel : "Selecciona documents per analitzar-los."}</p>
           </div>
           <button
             type="button"
@@ -118,7 +118,7 @@ export function UploadPanel() {
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-[13px] font-semibold text-white shadow-md shadow-indigo-500/25 transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isPending ? <LoaderCircle className="size-4 animate-spin" /> : <FileUp className="size-4" />}
-            Subir y analizar
+            Pujar i analitzar
           </button>
         </div>
 
@@ -136,7 +136,7 @@ export function UploadPanel() {
       {/* Result */}
       {result ? (
         <div className="rounded-xl border border-[var(--line)] bg-white p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Resultado</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Resultat</p>
           {result.error ? (
             <div className="mt-3 flex items-start gap-2 rounded-lg bg-rose-50 p-3">
               <XCircle className="mt-0.5 size-4 shrink-0 text-rose-500" />
@@ -158,7 +158,7 @@ export function UploadPanel() {
                     <div>
                       <p className="text-[13px] font-medium text-slate-800">{item.fileName}</p>
                       <p className="text-[11px] text-slate-500">
-                        {item.duplicated ? "Ya existia" : "Nuevo"} | {item.documentType}
+                        {item.duplicated ? "Ja existia" : "Nou"} | {item.documentType}
                       </p>
                       {item.error ? <p className="mt-1 text-[11px] text-rose-600">{item.error}</p> : null}
                     </div>

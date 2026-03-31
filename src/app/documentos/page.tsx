@@ -24,17 +24,17 @@ export default async function DocumentosPage({
 
   return (
     <AppFrame
-      title="Documentos y carga"
-      description="Centro documental para subir PDFs, revisar estado y controlar el pipeline de analisis."
+      title="Documents i carrega"
+      description="Centre documental per pujar PDFs, revisar estat i controlar el pipeline d'analisi."
     >
       <DateFilterBar preset={workspace.filter.preset} from={workspace.filter.from} to={workspace.filter.to} />
 
       <section className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-        <SectionCard title="Subida directa" eyebrow="Carga" description="Arrastra facturas, ventas, nominas o banco para procesarlos al momento.">
+        <SectionCard title="Pujada directa" eyebrow="Carrega" description="Arrossega factures, vendes, nomines o banc per processar-los al moment.">
           <UploadPanel />
         </SectionCard>
 
-        <SectionCard title="Historial documental" eyebrow="Seguimiento" description="Listado de documentos procesados dentro del rango activo.">
+        <SectionCard title="Historial documental" eyebrow="Seguiment" description="Llistat de documents processats dins del rang actiu.">
           <div className="stagger-children space-y-2">
             {workspace.snapshot.documents.map((document) => (
               <div key={document.id} className="rounded-xl border border-[var(--line)] bg-slate-50/50 p-4 transition hover:bg-white hover:shadow-sm">

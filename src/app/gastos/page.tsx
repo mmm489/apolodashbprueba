@@ -24,8 +24,8 @@ export default async function GastosPage({
 
   return (
     <AppFrame
-      title="Gastos"
-      description="Detalle de gastos por factura, linea de producto, proveedor y categoria."
+      title="Despeses"
+      description="Detall de despeses per factura, linia de producte, proveidor i categoria."
     >
       <DateFilterBar preset={filter.preset} from={filter.from} to={filter.to} />
       <ExpenseFilterBar
@@ -38,10 +38,10 @@ export default async function GastosPage({
 
       {/* KPIs */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Total gastos" value={euro(totals.totalGross)} color="rose" />
-        <Metric label="IVA acumulado" value={euro(totals.totalVat)} color="amber" />
-        <Metric label="Facturas" value={String(totals.invoiceCount)} color="indigo" />
-        <Metric label="Productos unicos" value={String(products.length)} color="slate" />
+        <Metric label="Total despeses" value={euro(totals.totalGross)} color="rose" />
+        <Metric label="IVA acumulat" value={euro(totals.totalVat)} color="amber" />
+        <Metric label="Factures" value={String(totals.invoiceCount)} color="indigo" />
+        <Metric label="Productes unics" value={String(products.length)} color="slate" />
       </section>
 
       {/* Tabbed content */}
@@ -55,7 +55,7 @@ export default async function GastosPage({
       {/* Breakdowns */}
       {rows.length > 0 ? (
         <section className="grid gap-4 xl:grid-cols-2">
-          <SectionCard title="Por proveedor" eyebrow="Desglose" description="Gasto agrupado por proveedor.">
+          <SectionCard title="Per proveidor" eyebrow="Desglossament" description="Despesa agrupada per proveidor.">
             <div className="space-y-2">
               {groupByField(rows, "supplierName").map(([name, amount]) => (
                 <div key={name} className="flex items-center justify-between rounded-xl border border-[var(--line)] bg-slate-50/50 p-3 transition hover:bg-white hover:shadow-sm">
@@ -66,7 +66,7 @@ export default async function GastosPage({
             </div>
           </SectionCard>
 
-          <SectionCard title="Por categoria" eyebrow="Desglose" description="Gasto agrupado por tipo de gasto.">
+          <SectionCard title="Per categoria" eyebrow="Desglossament" description="Despesa agrupada per tipus de despesa.">
             <div className="space-y-2">
               {groupByField(rows, "category").map(([name, amount]) => (
                 <div key={name} className="flex items-center justify-between rounded-xl border border-[var(--line)] bg-slate-50/50 p-3 transition hover:bg-white hover:shadow-sm">

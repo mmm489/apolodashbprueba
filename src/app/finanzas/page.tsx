@@ -20,14 +20,14 @@ export default async function FinanzasPage({
 
   return (
     <AppFrame
-      title="Finanzas y contabilidad"
-      description="Vista centrada en ventas, facturas, nominas y productos para trabajar con criterio financiero."
+      title="Finances i comptabilitat"
+      description="Vista centrada en vendes, factures, nomines i productes per treballar amb criteri financer."
     >
       <DateFilterBar preset={workspace.filter.preset} from={workspace.filter.from} to={workspace.filter.to} />
       <ProductFilterBar product={productQuery} />
 
       <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <SectionCard title="Ventas del periodo" eyebrow="Ingresos" description="Detalle diario de ventas registradas.">
+        <SectionCard title="Vendes del periode" eyebrow="Ingressos" description="Detall diari de vendes registrades.">
           <div className="space-y-2">
             {workspace.salesReports.map((report) => (
               <div key={report.id} className="rounded-xl border border-[var(--line)] bg-slate-50/50 p-4 transition hover:bg-white hover:shadow-sm">
@@ -38,14 +38,14 @@ export default async function FinanzasPage({
                   </span>
                 </div>
                 <p className="mt-1.5 text-[12px] text-slate-500">
-                  {report.orderCount} pedidos | ticket medio {euro(report.averageTicket)}
+                  {report.orderCount} comandes | tiquet mitja {euro(report.averageTicket)}
                 </p>
               </div>
             ))}
           </div>
         </SectionCard>
 
-        <SectionCard title="Facturas de proveedores" eyebrow="Gasto" description="Control de facturas contabilizadas por proveedor y categoria.">
+        <SectionCard title="Factures de proveidors" eyebrow="Despesa" description="Control de factures comptabilitzades per proveidor i categoria.">
           <div className="space-y-2">
             {workspace.invoices.map((invoice) => (
               <div key={invoice.id} className="rounded-xl border border-[var(--line)] bg-slate-50/50 p-4 transition hover:bg-white hover:shadow-sm">
@@ -65,7 +65,7 @@ export default async function FinanzasPage({
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-        <SectionCard title="Nominas" eyebrow="Laboral" description="Resumen del coste laboral cargado en el periodo.">
+        <SectionCard title="Nomines" eyebrow="Laboral" description="Resum del cost laboral carregat en el periode.">
           <div className="space-y-2">
             {workspace.payrolls.map((payroll) => (
               <div key={payroll.id} className="rounded-xl border border-[var(--line)] bg-slate-50/50 p-4 transition hover:bg-white hover:shadow-sm">
@@ -74,25 +74,25 @@ export default async function FinanzasPage({
                   <span className="text-[13px] font-semibold text-slate-700">{euro(payroll.grossAmount)}</span>
                 </div>
                 <p className="mt-1.5 text-[12px] text-slate-500">
-                  Periodo {payroll.payPeriod} | neto {euro(payroll.netAmount)}
+                  Periode {payroll.payPeriod} | net {euro(payroll.netAmount)}
                 </p>
               </div>
             ))}
           </div>
         </SectionCard>
 
-        <SectionCard title="Lectura contable" eyebrow="Margen" description="Lectura sintetica del resultado economico dentro del rango activo.">
+        <SectionCard title="Lectura comptable" eyebrow="Marge" description="Lectura sintetica del resultat economic dins del rang actiu.">
           <div className="grid gap-3 md:grid-cols-2">
-            <Metric label="Ventas" value={euro(workspace.snapshot.kpis.totalSales)} color="emerald" />
-            <Metric label="Gastos" value={euro(workspace.snapshot.kpis.totalExpenses)} color="rose" />
-            <Metric label="Nominas" value={euro(workspace.snapshot.kpis.totalPayroll)} color="amber" />
-            <Metric label="Margen estimado" value={euro(workspace.snapshot.kpis.estimatedMargin)} color="indigo" />
+            <Metric label="Vendes" value={euro(workspace.snapshot.kpis.totalSales)} color="emerald" />
+            <Metric label="Despeses" value={euro(workspace.snapshot.kpis.totalExpenses)} color="rose" />
+            <Metric label="Nomines" value={euro(workspace.snapshot.kpis.totalPayroll)} color="amber" />
+            <Metric label="Marge estimat" value={euro(workspace.snapshot.kpis.estimatedMargin)} color="indigo" />
           </div>
         </SectionCard>
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.05fr_0.95fr]">
-        <SectionCard title="Productos mas vendidos" eyebrow="Articulos" description="Ranking por unidades e importe a partir de los informes Articles Venda.">
+        <SectionCard title="Productes mes venuts" eyebrow="Articles" description="Ranking per unitats i import a partir dels informes Articles Venda.">
           <div className="space-y-2">
             {filteredProducts.slice(0, 12).map((product) => (
               <div key={product.productName} className="rounded-xl border border-[var(--line)] bg-slate-50/60 p-4">
@@ -100,22 +100,22 @@ export default async function FinanzasPage({
                   <p className="text-[13px] font-semibold text-slate-800">{product.productName}</p>
                   <span className="rounded-lg bg-indigo-50 px-2.5 py-1 text-[12px] font-semibold text-indigo-700">{product.units} uds</span>
                 </div>
-                <p className="mt-1.5 text-[12px] text-slate-500">Importe acumulado {euro(product.amount)}</p>
+                <p className="mt-1.5 text-[12px] text-slate-500">Import acumulat {euro(product.amount)}</p>
               </div>
             ))}
-            {!filteredProducts.length ? <p className="text-sm text-slate-500">No hay productos que coincidan con ese filtro.</p> : null}
+            {!filteredProducts.length ? <p className="text-sm text-slate-500">No hi ha productes que coincideixin amb aquest filtre.</p> : null}
           </div>
         </SectionCard>
 
-        <SectionCard title="Analisis de producto" eyebrow="Insight" description="Lectura rapida para identificar referencias fuertes del periodo seleccionado.">
+        <SectionCard title="Analisi de producte" eyebrow="Insight" description="Lectura rapida per identificar referencies fortes del periode seleccionat.">
           {filteredProducts[0] ? (
             <div className="space-y-4">
-              <Metric label="Producto lider" value={filteredProducts[0].productName} color="emerald" />
-              <Metric label="Unidades top" value={`${filteredProducts[0].units} uds`} color="indigo" />
-              <Metric label="Importe top" value={euro(filteredProducts[0].amount)} color="amber" />
+              <Metric label="Producte lider" value={filteredProducts[0].productName} color="emerald" />
+              <Metric label="Unitats top" value={`${filteredProducts[0].units} uds`} color="indigo" />
+              <Metric label="Import top" value={euro(filteredProducts[0].amount)} color="amber" />
             </div>
           ) : (
-            <p className="text-sm text-slate-500">Sube un Excel de Articles Venda y filtra por producto para ver detalle.</p>
+            <p className="text-sm text-slate-500">Puja un Excel d'Articles Venda i filtra per producte per veure el detall.</p>
           )}
         </SectionCard>
       </section>

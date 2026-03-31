@@ -24,12 +24,12 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/", label: "Dashboard", section: "General", icon: LayoutDashboard },
-  { href: "/ventas", label: "Ventas", section: "General", icon: ShoppingBag },
-  { href: "/finanzas", label: "Finanzas", section: "General", icon: Building2 },
-  { href: "/gastos", label: "Gastos", section: "General", icon: Receipt },
-  { href: "/tesoreria", label: "Tesoreria", section: "General", icon: Landmark },
-  { href: "/empleados", label: "Empleados", section: "General", icon: Users },
-  { href: "/documentos", label: "Documentos", section: "Sistema", icon: FileText },
+  { href: "/ventas", label: "Vendes", section: "General", icon: ShoppingBag },
+  { href: "/finanzas", label: "Finances", section: "General", icon: Building2 },
+  { href: "/gastos", label: "Despeses", section: "General", icon: Receipt },
+  { href: "/tesoreria", label: "Tresoreria", section: "General", icon: Landmark },
+  { href: "/empleados", label: "Empleats", section: "General", icon: Users },
+  { href: "/documentos", label: "Documents", section: "Sistema", icon: FileText },
 ];
 
 export function AppFrame({
@@ -71,7 +71,7 @@ export function AppFrame({
           {!collapsed && (
             <div className="ml-3 animate-fade-in">
               <p className="text-[13px] font-semibold text-white">Apolo Finance</p>
-              <p className="text-[11px] text-slate-400">Heladeria Dashboard</p>
+              <p className="text-[11px] text-slate-400">Gelateria Dashboard</p>
             </div>
           )}
           <button
@@ -158,7 +158,7 @@ export function AppFrame({
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Buscar..."
+                placeholder="Cercar..."
                 className="w-full rounded-xl border border-[var(--line)] bg-white py-2 pl-10 pr-4 text-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
               />
             </div>

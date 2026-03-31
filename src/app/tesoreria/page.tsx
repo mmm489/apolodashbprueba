@@ -19,34 +19,34 @@ export default async function TesoreriaPage({
 
   return (
     <AppFrame
-      title="Tesoreria y banco"
-      description="Seguimiento de entradas, salidas y diferencia entre caja de ventas y movimientos bancarios."
+      title="Tresoreria i banc"
+      description="Seguiment d'entrades, sortides i diferencia entre caixa de vendes i moviments bancaris."
     >
       <DateFilterBar preset={workspace.filter.preset} from={workspace.filter.from} to={workspace.filter.to} />
 
       <section className="stagger-children grid gap-4 md:grid-cols-3">
         <FlowCard
           icon={<ArrowDownRight className="size-4" />}
-          label="Entradas banco"
+          label="Entrades banc"
           value={euro(workspace.cashFlowSummary.inflows)}
           color="emerald"
         />
         <FlowCard
           icon={<ArrowUpRight className="size-4" />}
-          label="Salidas banco"
+          label="Sortides banc"
           value={euro(workspace.cashFlowSummary.outflows)}
           color="rose"
         />
         <FlowCard
           icon={<GitCompareArrows className="size-4" />}
-          label="Flujo neto"
+          label="Flux net"
           value={euro(workspace.cashFlowSummary.net)}
           color="indigo"
         />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <SectionCard title="Movimientos bancarios" eyebrow="Extractos" description="Detalle de entradas y salidas procesadas del banco.">
+        <SectionCard title="Moviments bancaris" eyebrow="Extractes" description="Detall d'entrades i sortides processades del banc.">
           <div className="stagger-children space-y-2">
             {workspace.bankTransactions.map((movement) => {
               const isInflow = movement.direction === "in";
@@ -67,10 +67,10 @@ export default async function TesoreriaPage({
           </div>
         </SectionCard>
 
-        <SectionCard title="Conciliacion basica" eyebrow="Control" description="Comparacion rapida entre ventas registradas y entradas bancarias.">
+        <SectionCard title="Conciliacio basica" eyebrow="Control" description="Comparacio rapida entre vendes registrades i entrades bancaries.">
           <div className="stagger-children grid gap-3">
-            <ReconcileCard label="Ventas registradas" value={euro(workspace.snapshot.kpis.totalSales)} color="emerald" />
-            <ReconcileCard label="Cobros bancarios" value={euro(workspace.cashFlowSummary.inflows)} color="indigo" />
+            <ReconcileCard label="Vendes registrades" value={euro(workspace.snapshot.kpis.totalSales)} color="emerald" />
+            <ReconcileCard label="Cobraments bancaris" value={euro(workspace.cashFlowSummary.inflows)} color="indigo" />
             <div className="rounded-xl bg-gradient-to-br from-slate-800 to-slate-900 p-5 text-white">
               <p className="text-[12px] font-medium text-slate-400">Diferencia</p>
               <p className="mt-2 text-[28px] font-bold tracking-tight">{euro(workspace.snapshot.kpis.bankGap)}</p>

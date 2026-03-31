@@ -8,10 +8,10 @@ export function SalesBars({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-[15px] font-semibold text-slate-900">Ventas comparadas</h3>
+        <h3 className="text-[15px] font-semibold text-slate-900">Vendes comparades</h3>
         <div className="flex items-center gap-4 text-[12px] text-slate-500">
-          <Legend color="bg-indigo-500" label="Margen" />
-          <Legend color="bg-amber-400" label="Ingresos" />
+          <Legend color="bg-indigo-500" label="Marge" />
+          <Legend color="bg-amber-400" label="Ingressos" />
         </div>
       </div>
 

@@ -8,9 +8,9 @@ const presets = [
   { value: "7d", label: "7d" },
   { value: "30d", label: "30d" },
   { value: "90d", label: "90d" },
-  { value: "month", label: "Este mes" },
-  { value: "year", label: "Este ano" },
-  { value: "custom", label: "Personalizado" },
+  { value: "month", label: "Aquest mes" },
+  { value: "year", label: "Aquest any" },
+  { value: "custom", label: "Personalitzat" },
 ];
 
 export function DateFilterBar({

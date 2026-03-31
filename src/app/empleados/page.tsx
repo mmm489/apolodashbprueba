@@ -7,8 +7,8 @@ export default async function EmpleadosPage() {
 
   return (
     <AppFrame
-      title="Empleados"
-      description="Gestiona los empleados, sus horarios y dias de trabajo para calcular la productividad."
+      title="Empleats"
+      description="Gestiona els empleats, els seus horaris i dies de treball per calcular la productivitat."
     >
       <EmpleadosPanel employees={employees} />
     </AppFrame>
