@@ -171,7 +171,13 @@ function parseDetailedFormat(
       currentHour = hourCell;
     }
 
-    if (!currentHour || hourCell.toUpperCase() === "TOTAL") continue;
+    // Skip TOTAL/subtotal rows: check all cells for "TOTAL" text
+    const rowText = row.map((c) => String(c ?? "").toUpperCase().trim()).join(" ");
+    if (!currentHour || rowText.includes("TOTAL")) continue;
+
+    // Skip rows without a product code (non-data rows like section headers)
+    const articleVal = articleCol >= 0 ? String(row[articleCol] ?? "").trim() : "";
+    if (articleCol >= 0 && !articleVal) continue;
 
     const importVal = importCol >= 0 && row[importCol] != null && row[importCol] !== ""
       ? toNumber(row[importCol]!)
