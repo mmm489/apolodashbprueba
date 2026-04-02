@@ -84,7 +84,7 @@ export function parseSpreadsheetSalesReport(fileName: string, buffer: Buffer): E
   };
 }
 
-function extractSaleDate(rows: Array<Array<string | number | null>>) {
+export function extractSaleDate(rows: Array<Array<string | number | null>>) {
   const flat = rows.flat().map((cell) => (cell ?? "").toString());
   const text = flat.join(" ");
 
@@ -101,12 +101,12 @@ function extractSaleDate(rows: Array<Array<string | number | null>>) {
   return `${year}-${month}-${day}`;
 }
 
-function fallbackDateFromFileName(fileName: string) {
+export function fallbackDateFromFileName(fileName: string) {
   const match = fileName.match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
   return match ? `${match[1]}-${match[2]}-${match[3]}` : null;
 }
 
-function toNumber(value: string | number) {
+export function toNumber(value: string | number) {
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
       throw new Error(`Valor numerico no valido: ${value}`);

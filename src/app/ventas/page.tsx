@@ -1,8 +1,9 @@
+import { formatISO, subDays } from "date-fns";
+import { AlertTriangle } from "lucide-react";
+
 import { AppFrame } from "@/components/app-frame";
 import { DateFilterBar } from "@/components/date-filter-bar";
-import { SectionCard } from "@/components/section-card";
-import { UploadPanel } from "@/components/upload-panel";
-import { VentasTabs } from "@/components/ventas-tabs";
+import { VendesDayList } from "@/components/vendes-day-list";
 import { getSalesWorkspace } from "@/lib/analytics";
 
 export default async function VentasPage({
@@ -17,13 +18,18 @@ export default async function VentasPage({
     to: firstValue(params?.to),
   });
 
-  const selectedDate = firstValue(params?.date);
-  const { salesReports, productSales, totals, filter } = workspace;
+  const { dayStatuses, productSales, hourlySales, totals, filter } = workspace;
+
+  // Check if yesterday's data is missing
+  const yesterday = formatISO(subDays(new Date(), 1), { representation: "date" });
+  const yesterdayStatus = dayStatuses.find((d) => d.date === yesterday);
+  const yesterdayMissing = yesterdayStatus && (!yesterdayStatus.hasArticles || !yesterdayStatus.hasHourly);
+  const yesterdayLabel = new Date(yesterday).toLocaleDateString("ca-ES", { weekday: "long", day: "numeric", month: "long" });
 
   return (
     <AppFrame
       title="Vendes"
-      description="Control diari de vendes, desglossament per producte i carrega d'informes."
+      description="Control diari de vendes amb pujada d'informes per dia."
     >
       <DateFilterBar preset={filter.preset} from={filter.from} to={filter.to} />
 
@@ -35,16 +41,30 @@ export default async function VentasPage({
         <Metric label="Dies amb dades" value={String(totals.daysWithData)} color="slate" />
       </section>
 
-      {/* Upload */}
-      <SectionCard title="Carregar informe de vendes" eyebrow="Carrega" description="Puja l'Excel diari de vendes (format .xls o .xlsx).">
-        <UploadPanel />
-      </SectionCard>
+      {/* Yesterday missing banner */}
+      {yesterdayMissing && (
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600" />
+          <div>
+            <p className="text-[14px] font-semibold text-amber-900">
+              Falten dades d&apos;ahir ({yesterdayLabel})
+            </p>
+            <p className="mt-0.5 text-[13px] text-amber-700">
+              {!yesterdayStatus.hasArticles && !yesterdayStatus.hasHourly
+                ? "Puja els fitxers d'Articles Venda i Resum Hores per completar el dia."
+                : !yesterdayStatus.hasArticles
+                  ? "Falta el fitxer d'Articles Venda."
+                  : "Falta el fitxer de Resum Hores."}
+            </p>
+          </div>
+        </div>
+      )}
 
-      {/* Tabbed content */}
-      <VentasTabs
-        salesReports={salesReports}
+      {/* Day-by-day list */}
+      <VendesDayList
+        dayStatuses={dayStatuses}
         productSales={productSales}
-        selectedDate={selectedDate}
+        hourlySales={hourlySales}
       />
     </AppFrame>
   );

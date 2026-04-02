@@ -14,7 +14,7 @@ import {
   listTelegramMessages,
   listTelegramUsers,
 } from "@/lib/repositories";
-import type { ChatAnswer, DateFilter, DatePreset, FinancialWorkspace, InvoiceLineRecord, InvoiceRecord, ProductSaleRecord, SalesReport } from "@/lib/types";
+import type { ChatAnswer, DateFilter, DatePreset, FinancialWorkspace, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, ProductSaleRecord, SalesReport } from "@/lib/types";
 
 export function resolveDateFilter(input?: {
   preset?: string;
@@ -248,10 +248,21 @@ export async function answerBusinessQuestion(question: string): Promise<ChatAnsw
 
 /* ---------- Sales workspace ---------- */
 
+export interface DayStatus {
+  date: string;
+  totalSales: number | null;
+  orderCount: number | null;
+  averageTicket: number | null;
+  hasArticles: boolean;
+  hasHourly: boolean;
+}
+
 export interface SalesWorkspace {
   filter: DateFilter;
   salesReports: SalesReport[];
   productSales: ProductSaleRecord[];
+  hourlySales: HourlySalesEntry[];
+  dayStatuses: DayStatus[];
   topProducts: Array<{ productName: string; units: number; amount: number }>;
   totals: {
     totalSales: number;
@@ -267,13 +278,14 @@ export async function getSalesWorkspace(input?: {
   to?: string;
 }): Promise<SalesWorkspace> {
   const filter = resolveDateFilter(input);
-  const [salesReports, productSales] = await Promise.all([listSalesReports(), listProductSales()]);
+  const [salesReports, productSales, hourlySales] = await Promise.all([listSalesReports(), listProductSales(), listHourlySales()]);
 
   const fromDate = startOfDaySafe(filter.from);
   const toDate = endOfDaySafe(filter.to);
 
   const scopedSales = salesReports.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
   const scopedProducts = productSales.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
+  const scopedHourly = hourlySales.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
 
   const totalSales = scopedSales.reduce((sum, item) => sum + item.totalSales, 0);
   const totalOrders = scopedSales.reduce((sum, item) => sum + item.orderCount, 0);
@@ -291,10 +303,36 @@ export async function getSalesWorkspace(input?: {
     }, {}),
   ).sort((a, b) => b.units - a.units);
 
+  // Build day-by-day statuses
+  const salesByDate = new Map<string, SalesReport>();
+  for (const r of scopedSales) salesByDate.set(r.businessDate, r);
+
+  const hourlyDates = new Set<string>();
+  for (const h of scopedHourly) hourlyDates.add(h.businessDate);
+
+  const dayStatuses: DayStatus[] = [];
+  const cursor = new Date(fromDate);
+  while (cursor <= toDate) {
+    const dateStr = formatISO(cursor, { representation: "date" });
+    const report = salesByDate.get(dateStr);
+    dayStatuses.push({
+      date: dateStr,
+      totalSales: report?.totalSales ?? null,
+      orderCount: report?.orderCount ?? null,
+      averageTicket: report?.averageTicket ?? null,
+      hasArticles: salesByDate.has(dateStr),
+      hasHourly: hourlyDates.has(dateStr),
+    });
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  dayStatuses.sort((a, b) => b.date.localeCompare(a.date));
+
   return {
     filter,
     salesReports: scopedSales,
     productSales: scopedProducts,
+    hourlySales: scopedHourly,
+    dayStatuses,
     topProducts,
     totals: {
       totalSales,

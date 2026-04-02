@@ -15,6 +15,7 @@ import type { VisionMediaType } from "@/lib/ai/claude";
 
 import { classifyDocument } from "./classifier";
 import { extractStructuredData, extractStructuredDataFromImage } from "./extractor";
+import { isHourlySpreadsheet, parseHourlySpreadsheetReport } from "./hourly-spreadsheet-parser";
 import { isSpreadsheetFile, parseSpreadsheetSalesReport } from "./spreadsheet-parser";
 
 const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
@@ -75,7 +76,9 @@ export async function ingestPdfBuffer(input: {
 
   try {
     const extraction = isSpreadsheetFile(input.fileName)
-      ? parseSpreadsheetSalesReport(input.fileName, input.pdfBuffer)
+      ? isHourlySpreadsheet(input.pdfBuffer)
+        ? parseHourlySpreadsheetReport(input.fileName, input.pdfBuffer)
+        : parseSpreadsheetSalesReport(input.fileName, input.pdfBuffer)
       : isImageFile(input.fileName)
         ? await extractStructuredDataFromImage({
             fileName: input.fileName,
