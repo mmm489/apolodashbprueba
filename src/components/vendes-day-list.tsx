@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Clock, FileUp, LoaderCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Clock, FileUp, LoaderCircle, Users } from "lucide-react";
 
 import type { DayStatus } from "@/lib/analytics";
 import type { Employee, EmployeeShift, HourlySalesEntry, ProductSaleRecord } from "@/lib/types";
@@ -149,20 +149,16 @@ function DayRow({
   dayShifts: EmployeeShift[];
   employees: Employee[];
 }) {
-  const hasAnyData = day.hasArticles || day.hasHourly;
-
   return (
     <>
       <tr
-        onClick={hasAnyData ? onToggle : undefined}
-        className={`border-b border-[var(--line)] transition ${hasAnyData ? "cursor-pointer hover:bg-slate-50/80" : ""} ${isExpanded ? "bg-indigo-50/60" : ""}`}
+        onClick={onToggle}
+        className={`border-b border-[var(--line)] transition cursor-pointer hover:bg-slate-50/80 ${isExpanded ? "bg-indigo-50/60" : ""}`}
       >
         <td className="px-5 py-3">
-          {hasAnyData && (
-            isExpanded
-              ? <ChevronDown className="size-4 text-slate-400" />
-              : <ChevronRight className="size-4 text-slate-400" />
-          )}
+          {isExpanded
+            ? <ChevronDown className="size-4 text-slate-400" />
+            : <ChevronRight className="size-4 text-slate-400" />}
         </td>
         <td className="px-5 py-3 font-semibold text-slate-900">{formatDate(day.date)}</td>
         <td className="px-5 py-3 text-center">
@@ -192,6 +188,18 @@ function DayRow({
           <div className="flex items-center justify-end gap-1">
             {!day.hasArticles && <UploadButton label="Articles" date={day.date} expectedType="articles" />}
             {!day.hasHourly && <UploadButton label="Hores" date={day.date} expectedType="hores" />}
+            <button
+              type="button"
+              onClick={onToggle}
+              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition ${
+                dayShifts.length > 0
+                  ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                  : "bg-violet-50 text-violet-700 hover:bg-violet-100"
+              }`}
+            >
+              <Users className="size-3" />
+              {dayShifts.length > 0 ? `${dayShifts.length}` : "Empleats"}
+            </button>
           </div>
         </td>
       </tr>
@@ -310,7 +318,7 @@ function DayShifts({
           <button
             type="button"
             onClick={() => setAdding(!adding)}
-            className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700 transition"
+            className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-[11px] font-medium text-white transition hover:bg-indigo-700"
           >
             + Afegir empleat
           </button>
