@@ -50,7 +50,7 @@ export async function listSalesReports() {
   const rows = await sql`SELECT id, business_date, total_sales, order_count, average_ticket, payment_mix FROM sales_reports ORDER BY business_date DESC LIMIT 60`;
   return rows.map((row) => ({
     id: String(row.id),
-    businessDate: String(row.business_date),
+    businessDate: normalizeDate(row.business_date),
     totalSales: toNumber(row.total_sales),
     orderCount: toNumber(row.order_count),
     averageTicket: toNumber(row.average_ticket),
@@ -67,7 +67,7 @@ export async function listHourlySales() {
   const rows = await sql`SELECT id, business_date, hour_label, sales, order_count FROM hourly_sales ORDER BY business_date DESC, hour_label ASC LIMIT 120`;
   return rows.map((row) => ({
     id: String(row.id),
-    businessDate: String(row.business_date),
+    businessDate: normalizeDate(row.business_date),
     hour: String(row.hour_label),
     sales: toNumber(row.sales),
     orderCount: toNumber(row.order_count),
@@ -119,7 +119,7 @@ export async function listProductSales() {
   return rows.map((row) => ({
     id: String(row.id),
     salesReportId: String(row.sales_report_id),
-    businessDate: String(row.business_date),
+    businessDate: normalizeDate(row.business_date),
     productCode: String(row.product_code),
     productName: String(row.product_name),
     units: toNumber(row.units),
@@ -504,6 +504,17 @@ async function _persistExtractionInner(sql: ReturnType<typeof getSql>, documentI
       `;
     }
   }
+}
+
+/** Normalizes a DATE column value to "YYYY-MM-DD" regardless of driver format. */
+function normalizeDate(value: unknown): string {
+  const str = String(value);
+  // Already ISO date format
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  // ISO datetime or other parseable format
+  const d = new Date(str);
+  if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  return str.slice(0, 10);
 }
 
 function mapDocument(row: Record<string, unknown>): DocumentRecord {
