@@ -163,6 +163,7 @@ function DayRow({
   dayHourlyProducts,
   productCosts,
   dayShifts,
+  employees,
 }: {
   day: DayStatus;
   isExpanded: boolean;
@@ -244,7 +245,7 @@ function DayRow({
 
               {/* Hourly with product detail */}
               {day.hasHourly && dayHourly.length > 0 && (
-                <HourlyDetail hourly={dayHourly} hourlyProducts={dayHourlyProducts} costMap={costMap} />
+                <HourlyDetail hourly={dayHourly} hourlyProducts={dayHourlyProducts} costMap={costMap} shifts={dayShifts} employees={employees} />
               )}
             </div>
 
@@ -427,16 +428,38 @@ function HourlyDetail({
   hourly,
   hourlyProducts,
   costMap,
+  shifts,
+  employees,
 }: {
   hourly: HourlySalesEntry[];
   hourlyProducts: HourlyProductSale[];
   costMap: Map<string, number>;
+  shifts: EmployeeShift[];
+  employees: Employee[];
 }) {
   const [openHour, setOpenHour] = useState<string | null>(null);
   const sorted = [...hourly].sort((a, b) => a.hour.localeCompare(b.hour));
 
+  // Calculate employee cost per hour slot
+  // An employee working 10:00-14:00 covers hours 10:00, 11:00, 12:00, 13:00
+  function getEmployeeCostForHour(hourLabel: string): number {
+    const hourNum = Number.parseInt(hourLabel.split(":")[0], 10);
+    let cost = 0;
+    for (const shift of shifts) {
+      const emp = employees.find((e) => e.id === shift.employeeId);
+      if (!emp) continue;
+      const startH = Number.parseInt(shift.shiftStart.split(":")[0], 10);
+      const endH = Number.parseInt(shift.shiftEnd.split(":")[0], 10);
+      if (hourNum >= startH && hourNum < endH) {
+        cost += emp.hourlyCost;
+      }
+    }
+    return cost;
+  }
+
   const totalSales = hourly.reduce((s, h) => s + h.sales, 0);
-  const totalCost = hourlyProducts.reduce((s, p) => s + (costMap.get(p.productCode) ?? 0) * p.units, 0);
+  const totalProductCost = hourlyProducts.reduce((s, p) => s + (costMap.get(p.productCode) ?? 0) * p.units, 0);
+  const totalEmployeeCost = sorted.reduce((s, h) => s + getEmployeeCostForHour(h.hour), 0);
 
   return (
     <div>
@@ -445,8 +468,9 @@ function HourlyDetail({
         {sorted.map((h) => {
           const isOpen = openHour === h.hour;
           const products = hourlyProducts.filter((p) => p.hourLabel === h.hour);
-          const hourCost = products.reduce((s, p) => s + (costMap.get(p.productCode) ?? 0) * p.units, 0);
-          const margin = h.sales - hourCost;
+          const hourProductCost = products.reduce((s, p) => s + (costMap.get(p.productCode) ?? 0) * p.units, 0);
+          const hourEmpCost = getEmployeeCostForHour(h.hour);
+          const margin = h.sales - hourProductCost - hourEmpCost;
 
           return (
             <div key={h.id} className="rounded-lg border border-[var(--line)] bg-white overflow-hidden">
@@ -460,7 +484,8 @@ function HourlyDetail({
                 <span className="text-[12px] text-slate-500">{fmtNum(h.orderCount)} uds</span>
                 <span className="ml-auto flex items-center gap-3 shrink-0">
                   <span className="text-[12px] text-slate-500">Venda: <span className="font-semibold text-emerald-700">{euro(h.sales)}</span></span>
-                  <span className="text-[12px] text-slate-500">Cost: <span className="font-semibold text-rose-600">{euro(hourCost)}</span></span>
+                  <span className="text-[12px] text-slate-500">Prod: <span className="font-semibold text-rose-600">{euro(hourProductCost)}</span></span>
+                  {hourEmpCost > 0 && <span className="text-[12px] text-slate-500">Empl: <span className="font-semibold text-violet-600">{euro(hourEmpCost)}</span></span>}
                   <span className={`rounded-lg px-2 py-0.5 text-[11px] font-semibold ${margin >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
                     Marge: {euro(margin)}
                   </span>
@@ -507,9 +532,10 @@ function HourlyDetail({
           <span className="text-[13px] text-slate-700">Total dia</span>
           <div className="flex items-center gap-3">
             <span className="text-[12px] text-emerald-700">Venda: {euro(totalSales)}</span>
-            <span className="text-[12px] text-rose-600">Cost: {euro(totalCost)}</span>
-            <span className={`rounded-lg px-2 py-0.5 text-[12px] font-bold ${totalSales - totalCost >= 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
-              Marge: {euro(totalSales - totalCost)}
+            <span className="text-[12px] text-rose-600">Prod: {euro(totalProductCost)}</span>
+            {totalEmployeeCost > 0 && <span className="text-[12px] text-violet-600">Empl: {euro(totalEmployeeCost)}</span>}
+            <span className={`rounded-lg px-2 py-0.5 text-[12px] font-bold ${totalSales - totalProductCost - totalEmployeeCost >= 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+              Marge: {euro(totalSales - totalProductCost - totalEmployeeCost)}
             </span>
           </div>
         </div>
