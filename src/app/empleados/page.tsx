@@ -2,6 +2,8 @@ import { AppFrame } from "@/components/app-frame";
 import { EmpleadosPanel } from "@/components/empleados-panel";
 import { listEmployees } from "@/lib/repositories";
 
+export const dynamic = "force-dynamic";
+
 export default async function EmpleadosPage() {
   const employees = await listEmployees();
 

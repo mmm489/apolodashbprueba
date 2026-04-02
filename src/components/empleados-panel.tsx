@@ -39,8 +39,8 @@ export function EmpleadosPanel({ employees }: { employees: Employee[] }) {
     setForm(emptyForm);
     setEditingId(null);
     setShowForm(false);
-    setLoading(false);
     router.refresh();
+    setLoading(false);
   }
 
   function startEdit(emp: Employee) {
