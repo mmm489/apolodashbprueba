@@ -36,6 +36,7 @@ export function parseSpreadsheetSalesReport(fileName: string, buffer: Buffer): E
   });
 
   const saleDate = extractSaleDate(textRows) ?? fallbackDateFromFileName(fileName) ?? new Date().toISOString().slice(0, 10);
+  validateDate(saleDate, fileName);
   const itemRows = rawRows
     .map((row) => row.map((cell) => cell ?? ""))
     .filter((row) => {
@@ -59,6 +60,16 @@ export function parseSpreadsheetSalesReport(fileName: string, buffer: Buffer): E
 
   const totalSales = productSales.reduce((sum, item) => sum + item.amount, 0);
   const totalUnits = productSales.reduce((sum, item) => sum + item.units, 0);
+
+  // Cross-check with TOTAL row if present in the Excel
+  const excelTotal = findTotalRow(rawRows, 6);
+  if (excelTotal != null) {
+    const diff = Math.abs(totalSales - excelTotal);
+    if (diff > 0.5) {
+      console.warn(`[articles-parser] Totals no quadren: calculat=${totalSales.toFixed(2)}, Excel=${excelTotal.toFixed(2)}, diff=${diff.toFixed(2)}`);
+    }
+  }
+
   const salesReportId = randomUUID();
   const normalizedData: SalesReport = {
     id: salesReportId,
@@ -104,6 +115,42 @@ export function extractSaleDate(rows: Array<Array<string | number | null>>) {
 export function fallbackDateFromFileName(fileName: string) {
   const match = fileName.match(/(\d{4})[-_](\d{2})[-_](\d{2})/);
   return match ? `${match[1]}-${match[2]}-${match[3]}` : null;
+}
+
+export function validateDate(dateStr: string, fileName: string) {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const oneYearAgo = new Date();
+  oneYearAgo.setFullYear(now.getFullYear() - 1);
+
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Data invalida detectada a "${fileName}": ${dateStr}`);
+  }
+  if (date > now) {
+    throw new Error(`La data ${dateStr} de "${fileName}" es futura. Comprova el fitxer.`);
+  }
+  if (date < oneYearAgo) {
+    throw new Error(`La data ${dateStr} de "${fileName}" es de fa mes d'un any. Comprova el fitxer.`);
+  }
+}
+
+function findTotalRow(rows: Array<Array<string | number | null>>, amountCol: number): number | null {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i];
+    if (!row) continue;
+    const firstCell = String(row[0] ?? "").toUpperCase().trim();
+    if (firstCell === "TOTAL" || firstCell === "TOTALS") {
+      const val = row[amountCol];
+      if (val != null && val !== "") {
+        try {
+          return toNumber(val);
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 export function toNumber(value: string | number) {

@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 
 import type { ExtractionResult, HourlySalesEntry } from "@/lib/types";
 
-import { extractSaleDate, fallbackDateFromFileName, toNumber } from "./spreadsheet-parser";
+import { extractSaleDate, fallbackDateFromFileName, toNumber, validateDate } from "./spreadsheet-parser";
 
 /**
  * Detects if an Excel buffer contains an hourly sales report ("Resum Hores").
@@ -65,6 +65,7 @@ export function parseHourlySpreadsheetReport(fileName: string, buffer: Buffer): 
     extractSaleDate(textRows) ??
     fallbackDateFromFileName(fileName) ??
     new Date().toISOString().slice(0, 10);
+  validateDate(saleDate, fileName);
 
   // Find header row with HORA column to determine column indices
   let horaCol = -1;
@@ -120,6 +121,24 @@ export function parseHourlySpreadsheetReport(fileName: string, buffer: Buffer): 
 
   if (!entries.length) {
     throw new Error("No s'han trobat linies horàries vàlides a l'Excel.");
+  }
+
+  // Cross-check with TOTAL row if present
+  for (let i = rawRows.length - 1; i > headerRowIdx; i--) {
+    const row = rawRows[i];
+    if (!row) continue;
+    const cell = String(row[horaCol] ?? "").toUpperCase().trim();
+    if (cell === "TOTAL") {
+      if (importCol >= 0 && row[importCol] != null && row[importCol] !== "") {
+        const excelTotal = toNumber(row[importCol]!);
+        const calcTotal = entries.reduce((s, e) => s + e.sales, 0);
+        const diff = Math.abs(calcTotal - excelTotal);
+        if (diff > 0.5) {
+          console.warn(`[hourly-parser] Totals no quadren: calculat=${calcTotal.toFixed(2)}, Excel=${excelTotal.toFixed(2)}, diff=${diff.toFixed(2)}`);
+        }
+      }
+      break;
+    }
   }
 
   return {

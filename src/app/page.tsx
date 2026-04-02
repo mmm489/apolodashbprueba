@@ -69,6 +69,44 @@ export default async function HomePage({
         <SalesBars items={salesBarItems} />
       </section>
 
+      {/* Hourly performance */}
+      {workspace.snapshot.hourlyPerformance.length > 0 && (
+        <section className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
+          <div className="mb-4">
+            <p className="text-[20px] font-bold tracking-tight text-slate-900">Vendes per hora</p>
+            <p className="mt-0.5 text-[13px] text-slate-500">Acumulat del periode seleccionat</p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            {[...workspace.snapshot.hourlyPerformance]
+              .sort((a, b) => a.hour.localeCompare(b.hour))
+              .map((h) => {
+                const maxSales = Math.max(...workspace.snapshot.hourlyPerformance.map((x) => x.sales), 1);
+                const pct = (h.sales / maxSales) * 100;
+                const isBest = h.hour === workspace.snapshot.kpis.bestHourLabel;
+                return (
+                  <div key={h.hour} className={`rounded-xl border p-3 transition hover:shadow-sm ${isBest ? "border-indigo-200 bg-indigo-50/50" : "border-[var(--line)] bg-slate-50/50"}`}>
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[14px] font-bold ${isBest ? "text-indigo-700" : "text-slate-800"}`}>{h.hour}</span>
+                      <span className={`text-[13px] font-semibold ${isBest ? "text-indigo-700" : "text-emerald-700"}`}>{euro(h.sales)}</span>
+                    </div>
+                    <div className="mt-2 h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
+                      <div className={`h-full rounded-full transition-all ${isBest ? "bg-indigo-500" : "bg-emerald-400"}`} style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+          {workspace.snapshot.kpis.bestHourLabel !== "--" && (
+            <div className="mt-4 flex items-center gap-2 rounded-lg bg-indigo-50 px-4 py-2.5">
+              <Clock className="size-4 text-indigo-600" />
+              <p className="text-[13px] text-indigo-800">
+                <span className="font-semibold">Millor franja:</span> {workspace.snapshot.kpis.bestHourLabel} amb {euro(workspace.snapshot.kpis.bestHourSales)} acumulats
+              </p>
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Bottom grid */}
       <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
         <div className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
