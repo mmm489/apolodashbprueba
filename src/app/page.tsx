@@ -77,17 +77,16 @@ export default async function HomePage({
             <p className="mt-0.5 text-[13px] text-slate-500">Acumulat del periode seleccionat</p>
           </div>
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            {[...workspace.snapshot.hourlyPerformance]
-              .sort((a, b) => a.hour.localeCompare(b.hour))
-              .map((h) => {
+            {buildFullHourRange(workspace.snapshot.hourlyPerformance).map((h) => {
                 const maxSales = Math.max(...workspace.snapshot.hourlyPerformance.map((x) => x.sales), 1);
-                const pct = (h.sales / maxSales) * 100;
-                const isBest = h.hour === workspace.snapshot.kpis.bestHourLabel;
+                const pct = h.sales > 0 ? (h.sales / maxSales) * 100 : 0;
+                const isBest = h.hour === workspace.snapshot.kpis.bestHourLabel && h.sales > 0;
+                const isEmpty = h.sales === 0;
                 return (
-                  <div key={h.hour} className={`rounded-xl border p-3 transition hover:shadow-sm ${isBest ? "border-indigo-200 bg-indigo-50/50" : "border-[var(--line)] bg-slate-50/50"}`}>
+                  <div key={h.hour} className={`rounded-xl border p-3 transition hover:shadow-sm ${isBest ? "border-indigo-200 bg-indigo-50/50" : isEmpty ? "border-[var(--line)] bg-slate-50/30 opacity-60" : "border-[var(--line)] bg-slate-50/50"}`}>
                     <div className="flex items-center justify-between">
-                      <span className={`text-[14px] font-bold ${isBest ? "text-indigo-700" : "text-slate-800"}`}>{h.hour}</span>
-                      <span className={`text-[13px] font-semibold ${isBest ? "text-indigo-700" : "text-emerald-700"}`}>{euro(h.sales)}</span>
+                      <span className={`text-[14px] font-bold ${isBest ? "text-indigo-700" : isEmpty ? "text-slate-400" : "text-slate-800"}`}>{h.hour}</span>
+                      <span className={`text-[13px] font-semibold ${isBest ? "text-indigo-700" : isEmpty ? "text-slate-300" : "text-emerald-700"}`}>{isEmpty ? "--" : euro(h.sales)}</span>
                     </div>
                     <div className="mt-2 h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
                       <div className={`h-full rounded-full transition-all ${isBest ? "bg-indigo-500" : "bg-emerald-400"}`} style={{ width: `${pct}%` }} />
@@ -205,4 +204,33 @@ function euro(value: number) {
 
 function firstValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
+}
+
+/** Builds a full hour range from 9:00 to 3:00 (next day), merging existing data. */
+function buildFullHourRange(data: Array<{ hour: string; sales: number }>) {
+  // Generate slots: 9:00, 9:30, 10:00, ..., 23:30, 0:00, 0:30, 1:00, ..., 2:30, 3:00
+  const slots: string[] = [];
+  // 9:00 to 23:30
+  for (let h = 9; h <= 23; h++) {
+    slots.push(`${h}:00`);
+    slots.push(`${h}:30`);
+  }
+  // 0:00 to 3:00
+  for (let h = 0; h <= 2; h++) {
+    slots.push(`${h}:00`);
+    slots.push(`${h}:30`);
+  }
+  slots.push("3:00");
+
+  const dataMap = new Map<string, number>();
+  for (const d of data) {
+    // Normalize "09:00" to "9:00" for matching
+    const key = d.hour.replace(/^0/, "");
+    dataMap.set(key, (dataMap.get(key) ?? 0) + d.sales);
+  }
+
+  return slots.map((slot) => ({
+    hour: slot,
+    sales: dataMap.get(slot) ?? 0,
+  }));
 }
