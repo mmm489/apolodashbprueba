@@ -248,6 +248,12 @@ export async function answerBusinessQuestion(question: string): Promise<ChatAnsw
 
 /* ---------- Sales workspace ---------- */
 
+export interface DayWeather {
+  tempMax: number;
+  tempMin: number;
+  weatherCode: number;
+}
+
 export interface DayStatus {
   date: string;
   totalSales: number | null;
@@ -255,6 +261,7 @@ export interface DayStatus {
   averageTicket: number | null;
   hasArticles: boolean;
   hasHourly: boolean;
+  weather: DayWeather | null;
 }
 
 export interface SalesWorkspace {
@@ -310,6 +317,9 @@ export async function getSalesWorkspace(input?: {
   const hourlyDates = new Set<string>();
   for (const h of scopedHourly) hourlyDates.add(h.businessDate);
 
+  // Fetch weather data for the date range (Salou, Tarragona)
+  const weatherMap = await fetchWeatherData(filter.from, filter.to);
+
   const dayStatuses: DayStatus[] = [];
   const cursor = new Date(fromDate);
   while (cursor <= toDate) {
@@ -322,6 +332,7 @@ export async function getSalesWorkspace(input?: {
       averageTicket: report?.averageTicket ?? null,
       hasArticles: salesByDate.has(dateStr),
       hasHourly: hourlyDates.has(dateStr),
+      weather: weatherMap.get(dateStr) ?? null,
     });
     cursor.setDate(cursor.getDate() + 1);
   }
@@ -563,4 +574,30 @@ function formatCurrency(value: number) {
     currency: "EUR",
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+/* ---------- Weather (Open-Meteo, Salou 41.07°N 1.13°E) ---------- */
+
+async function fetchWeatherData(from: string, to: string): Promise<Map<string, DayWeather>> {
+  const map = new Map<string, DayWeather>();
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=41.07&longitude=1.13&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=Europe/Madrid&start_date=${from}&end_date=${to}`;
+    const res = await fetch(url, { next: { revalidate: 3600 } });
+    if (!res.ok) return map;
+    const data = await res.json();
+    const times: string[] = data.daily?.time ?? [];
+    const maxTemps: number[] = data.daily?.temperature_2m_max ?? [];
+    const minTemps: number[] = data.daily?.temperature_2m_min ?? [];
+    const codes: number[] = data.daily?.weather_code ?? [];
+    for (let i = 0; i < times.length; i++) {
+      map.set(times[i], {
+        tempMax: maxTemps[i] ?? 0,
+        tempMin: minTemps[i] ?? 0,
+        weatherCode: codes[i] ?? 0,
+      });
+    }
+  } catch (err) {
+    console.warn("[weather] No s'ha pogut obtenir el temps:", err);
+  }
+  return map;
 }

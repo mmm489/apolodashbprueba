@@ -85,6 +85,7 @@ export function VendesDayList({
           <tr className="border-b border-[var(--line)] bg-slate-50/80 text-left text-[12px] font-medium uppercase tracking-wider text-slate-500">
             <th className="px-5 py-3 w-8" />
             <th className="px-5 py-3">Data</th>
+            <th className="px-5 py-3 text-center">Temps</th>
             <th className="px-5 py-3 text-right">Vendes</th>
             <th className="px-5 py-3 text-right">Comandes</th>
             <th className="px-5 py-3 text-center">Articles</th>
@@ -111,7 +112,7 @@ export function VendesDayList({
           })}
           {dayStatuses.length === 0 && (
             <tr>
-              <td colSpan={7} className="px-5 py-8 text-center text-slate-400">
+              <td colSpan={8} className="px-5 py-8 text-center text-slate-400">
                 No hi ha dies en aquest periode.
               </td>
             </tr>
@@ -153,6 +154,17 @@ function DayRow({
           )}
         </td>
         <td className="px-5 py-3 font-semibold text-slate-900">{formatDate(day.date)}</td>
+        <td className="px-5 py-3 text-center">
+          {day.weather ? (
+            <span className="inline-flex items-center gap-1 text-[12px] text-slate-600" title={`${day.weather.tempMin.toFixed(0)}°–${day.weather.tempMax.toFixed(0)}°C`}>
+              <span>{weatherEmoji(day.weather.weatherCode)}</span>
+              <span className="font-medium">{day.weather.tempMax.toFixed(0)}°</span>
+              <span className="text-slate-400">{day.weather.tempMin.toFixed(0)}°</span>
+            </span>
+          ) : (
+            <span className="text-slate-300">--</span>
+          )}
+        </td>
         <td className="px-5 py-3 text-right font-semibold text-emerald-700">
           {day.totalSales != null ? euro(day.totalSales) : <span className="text-slate-300">--</span>}
         </td>
@@ -176,7 +188,7 @@ function DayRow({
       {/* Expanded detail */}
       {isExpanded && (
         <tr>
-          <td colSpan={7} className="border-b border-[var(--line)] bg-slate-50/30 px-5 py-4">
+          <td colSpan={8} className="border-b border-[var(--line)] bg-slate-50/30 px-5 py-4">
             <div className="grid gap-4 xl:grid-cols-2">
               {/* Products */}
               {day.hasArticles && dayProducts.length > 0 && (
@@ -408,6 +420,22 @@ function euro(value: number) {
 
 function fmtNum(value: number) {
   return new Intl.NumberFormat("es-ES", { maximumFractionDigits: 0 }).format(value);
+}
+
+/** WMO weather codes → emoji */
+function weatherEmoji(code: number): string {
+  if (code === 0) return "☀️";
+  if (code <= 3) return "⛅";
+  if (code >= 45 && code <= 48) return "🌫️";
+  if (code >= 51 && code <= 55) return "🌦️";
+  if (code >= 56 && code <= 57) return "🌧️";
+  if (code >= 61 && code <= 65) return "🌧️";
+  if (code >= 66 && code <= 67) return "🌨️";
+  if (code >= 71 && code <= 77) return "❄️";
+  if (code >= 80 && code <= 82) return "🌧️";
+  if (code >= 85 && code <= 86) return "❄️";
+  if (code >= 95 && code <= 99) return "⛈️";
+  return "🌤️";
 }
 
 function formatDate(dateStr: string) {
