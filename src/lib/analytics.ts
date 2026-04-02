@@ -7,6 +7,7 @@ import {
   listEmployeeShifts,
   listEmployees,
   listHourlySales,
+  listHourlyProductSales,
   listProductCosts,
   listInvoiceLines,
   listInvoices,
@@ -16,7 +17,7 @@ import {
   listTelegramMessages,
   listTelegramUsers,
 } from "@/lib/repositories";
-import type { ChatAnswer, DateFilter, DatePreset, Employee, EmployeeShift, FinancialWorkspace, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, ProductSaleRecord, SalesReport } from "@/lib/types";
+import type { ChatAnswer, DateFilter, DatePreset, Employee, EmployeeShift, FinancialWorkspace, HourlyProductSale, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, ProductCost, ProductSaleRecord, SalesReport } from "@/lib/types";
 
 export function resolveDateFilter(input?: {
   preset?: string;
@@ -294,6 +295,8 @@ export interface SalesWorkspace {
   salesReports: SalesReport[];
   productSales: ProductSaleRecord[];
   hourlySales: HourlySalesEntry[];
+  hourlyProductSales: HourlyProductSale[];
+  productCosts: ProductCost[];
   employeeShifts: EmployeeShift[];
   employees: Employee[];
   dayStatuses: DayStatus[];
@@ -312,8 +315,8 @@ export async function getSalesWorkspace(input?: {
   to?: string;
 }): Promise<SalesWorkspace> {
   const filter = resolveDateFilter(input);
-  const [salesReports, productSales, hourlySales, employees, employeeShifts] = await Promise.all([
-    listSalesReports(), listProductSales(), listHourlySales(), listEmployees(), listEmployeeShifts(filter.from, filter.to),
+  const [salesReports, productSales, hourlySales, hourlyProductSales, employees, employeeShifts, productCosts] = await Promise.all([
+    listSalesReports(), listProductSales(), listHourlySales(), listHourlyProductSales(), listEmployees(), listEmployeeShifts(filter.from, filter.to), listProductCosts(),
   ]);
 
   const fromDate = startOfDaySafe(filter.from);
@@ -322,6 +325,7 @@ export async function getSalesWorkspace(input?: {
   const scopedSales = salesReports.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
   const scopedProducts = productSales.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
   const scopedHourly = hourlySales.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
+  const scopedHourlyProducts = hourlyProductSales.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
 
   const totalSales = scopedSales.reduce((sum, item) => sum + item.totalSales, 0);
   const totalOrders = scopedSales.reduce((sum, item) => sum + item.orderCount, 0);
@@ -372,6 +376,8 @@ export async function getSalesWorkspace(input?: {
     salesReports: scopedSales,
     productSales: scopedProducts,
     hourlySales: scopedHourly,
+    hourlyProductSales: scopedHourlyProducts,
+    productCosts,
     employeeShifts,
     employees,
     dayStatuses,

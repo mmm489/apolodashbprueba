@@ -5,7 +5,7 @@ import { useRef, useState, useTransition } from "react";
 import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Clock, FileUp, LoaderCircle, Users } from "lucide-react";
 
 import type { DayStatus } from "@/lib/analytics";
-import type { Employee, EmployeeShift, HourlySalesEntry, ProductSaleRecord } from "@/lib/types";
+import type { Employee, EmployeeShift, HourlyProductSale, HourlySalesEntry, ProductCost, ProductSaleRecord } from "@/lib/types";
 
 /* ---- Family classification (from ventas-tabs) ---- */
 
@@ -71,12 +71,16 @@ export function VendesDayList({
   dayStatuses,
   productSales,
   hourlySales,
+  hourlyProductSales,
+  productCosts,
   employeeShifts,
   employees,
 }: {
   dayStatuses: DayStatus[];
   productSales: ProductSaleRecord[];
   hourlySales: HourlySalesEntry[];
+  hourlyProductSales: HourlyProductSale[];
+  productCosts: ProductCost[];
   employeeShifts: EmployeeShift[];
   employees: Employee[];
 }) {
@@ -114,6 +118,7 @@ export function VendesDayList({
             const isExpanded = expandedDate === day.date;
             const dayProducts = productSales.filter((p) => p.businessDate === day.date);
             const dayHourly = hourlySales.filter((h) => h.businessDate === day.date);
+            const dayHourlyProducts = hourlyProductSales.filter((hp) => hp.businessDate === day.date);
             const dayShifts = employeeShifts.filter((s) => s.businessDate === day.date);
 
             return (
@@ -125,6 +130,8 @@ export function VendesDayList({
                 onOpenShifts={() => setShiftsModalDate(day.date)}
                 dayProducts={dayProducts}
                 dayHourly={dayHourly}
+                dayHourlyProducts={dayHourlyProducts}
+                productCosts={productCosts}
                 dayShifts={dayShifts}
                 employees={employees}
               />
@@ -153,6 +160,8 @@ function DayRow({
   onOpenShifts,
   dayProducts,
   dayHourly,
+  dayHourlyProducts,
+  productCosts,
   dayShifts,
 }: {
   day: DayStatus;
@@ -161,9 +170,13 @@ function DayRow({
   onOpenShifts: () => void;
   dayProducts: ProductSaleRecord[];
   dayHourly: HourlySalesEntry[];
+  dayHourlyProducts: HourlyProductSale[];
+  productCosts: ProductCost[];
   dayShifts: EmployeeShift[];
   employees: Employee[];
 }) {
+  const costMap = new Map<string, number>();
+  for (const pc of productCosts) costMap.set(pc.productCode, pc.unitCost);
   return (
     <>
       <tr
@@ -229,38 +242,9 @@ function DayRow({
                 <ExpandableFamilies products={dayProducts} />
               )}
 
-              {/* Hourly */}
+              {/* Hourly with product detail */}
               {day.hasHourly && dayHourly.length > 0 && (
-                <div>
-                  <p className="mb-3 text-[12px] font-semibold uppercase tracking-wider text-slate-500">Resum Hores</p>
-                  <div className="rounded-lg border border-[var(--line)] bg-white overflow-hidden">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-[var(--line)] bg-slate-50/80 text-[11px] font-medium uppercase tracking-wider text-slate-500">
-                          <th className="px-3 py-2 text-left">Hora</th>
-                          <th className="px-3 py-2 text-right">Operacions</th>
-                          <th className="px-3 py-2 text-right">Import</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[...dayHourly].sort((a, b) => a.hour.localeCompare(b.hour)).map((h) => (
-                          <tr key={h.id} className="border-b border-[var(--line)]/50">
-                            <td className="px-3 py-1.5 text-[13px] text-slate-700">{h.hour}</td>
-                            <td className="px-3 py-1.5 text-right text-[13px] text-slate-600">{h.orderCount}</td>
-                            <td className="px-3 py-1.5 text-right text-[13px] font-semibold text-slate-800">{euro(h.sales)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="bg-slate-50/80 font-semibold text-slate-900">
-                          <td className="px-3 py-2 text-[13px]">Total</td>
-                          <td className="px-3 py-2 text-right text-[13px]">{dayHourly.reduce((s, h) => s + h.orderCount, 0)}</td>
-                          <td className="px-3 py-2 text-right text-[13px]">{euro(dayHourly.reduce((s, h) => s + h.sales, 0))}</td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                </div>
+                <HourlyDetail hourly={dayHourly} hourlyProducts={dayHourlyProducts} costMap={costMap} />
               )}
             </div>
 
@@ -432,6 +416,103 @@ function ShiftsModal({
             <p className="text-[12px] text-slate-400">Selecciona un empleat i l&apos;horari per afegir-lo</p>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ---- Hourly detail with products ---- */
+
+function HourlyDetail({
+  hourly,
+  hourlyProducts,
+  costMap,
+}: {
+  hourly: HourlySalesEntry[];
+  hourlyProducts: HourlyProductSale[];
+  costMap: Map<string, number>;
+}) {
+  const [openHour, setOpenHour] = useState<string | null>(null);
+  const sorted = [...hourly].sort((a, b) => a.hour.localeCompare(b.hour));
+
+  const totalSales = hourly.reduce((s, h) => s + h.sales, 0);
+  const totalCost = hourlyProducts.reduce((s, p) => s + (costMap.get(p.productCode) ?? 0) * p.units, 0);
+
+  return (
+    <div>
+      <p className="mb-3 text-[12px] font-semibold uppercase tracking-wider text-slate-500">Detall per hora</p>
+      <div className="space-y-1.5">
+        {sorted.map((h) => {
+          const isOpen = openHour === h.hour;
+          const products = hourlyProducts.filter((p) => p.hourLabel === h.hour);
+          const hourCost = products.reduce((s, p) => s + (costMap.get(p.productCode) ?? 0) * p.units, 0);
+          const margin = h.sales - hourCost;
+
+          return (
+            <div key={h.id} className="rounded-lg border border-[var(--line)] bg-white overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setOpenHour(isOpen ? null : h.hour)}
+                className="flex w-full items-center gap-3 px-3 py-2 text-left transition hover:bg-slate-50/50"
+              >
+                {isOpen ? <ChevronDown className="size-3 text-slate-400" /> : <ChevronRight className="size-3 text-slate-400" />}
+                <span className="text-[13px] font-bold text-slate-800 w-12">{h.hour}</span>
+                <span className="text-[12px] text-slate-500">{fmtNum(h.orderCount)} uds</span>
+                <span className="ml-auto flex items-center gap-3 shrink-0">
+                  <span className="text-[12px] text-slate-500">Venda: <span className="font-semibold text-emerald-700">{euro(h.sales)}</span></span>
+                  <span className="text-[12px] text-slate-500">Cost: <span className="font-semibold text-rose-600">{euro(hourCost)}</span></span>
+                  <span className={`rounded-lg px-2 py-0.5 text-[11px] font-semibold ${margin >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
+                    Marge: {euro(margin)}
+                  </span>
+                </span>
+              </button>
+
+              {isOpen && products.length > 0 && (
+                <div className="border-t border-[var(--line)] bg-slate-50/50 px-3 py-2">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
+                        <th className="pb-1 text-left">Producte</th>
+                        <th className="pb-1 text-right">Uds</th>
+                        <th className="pb-1 text-right">Venda</th>
+                        <th className="pb-1 text-right">Cost</th>
+                        <th className="pb-1 text-right">Marge</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {products.sort((a, b) => b.amount - a.amount).map((p) => {
+                        const unitCost = costMap.get(p.productCode) ?? 0;
+                        const totalCostP = unitCost * p.units;
+                        const marginP = p.amount - totalCostP;
+                        return (
+                          <tr key={p.id} className="border-t border-[var(--line)]/30">
+                            <td className="py-1 pr-2 text-[12px] text-slate-700">{p.productName}</td>
+                            <td className="py-1 text-right text-[12px] text-slate-500">{fmtNum(p.units)}</td>
+                            <td className="py-1 text-right text-[12px] text-emerald-700">{euro(p.amount)}</td>
+                            <td className="py-1 text-right text-[12px] text-rose-600">{unitCost > 0 ? euro(totalCostP) : <span className="text-slate-300">--</span>}</td>
+                            <td className={`py-1 text-right text-[12px] font-semibold ${marginP >= 0 ? "text-emerald-700" : "text-rose-600"}`}>{unitCost > 0 ? euro(marginP) : <span className="text-slate-300">--</span>}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Totals */}
+        <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 font-semibold">
+          <span className="text-[13px] text-slate-700">Total dia</span>
+          <div className="flex items-center gap-3">
+            <span className="text-[12px] text-emerald-700">Venda: {euro(totalSales)}</span>
+            <span className="text-[12px] text-rose-600">Cost: {euro(totalCost)}</span>
+            <span className={`rounded-lg px-2 py-0.5 text-[12px] font-bold ${totalSales - totalCost >= 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+              Marge: {euro(totalSales - totalCost)}
+            </span>
+          </div>
+        </div>
       </div>
     </div>
   );

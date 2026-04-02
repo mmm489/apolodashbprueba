@@ -130,6 +130,16 @@ export interface EmployeeShift {
   shiftEnd: string;
 }
 
+export interface HourlyProductSale {
+  id: string;
+  businessDate: string;
+  hourLabel: string;
+  productCode: string;
+  productName: string;
+  units: number;
+  amount: number;
+}
+
 export interface ProductCost {
   id: string;
   productCode: string;
@@ -211,6 +221,7 @@ export interface ExtractionResult {
   auxiliaryData?: {
     productSales?: ProductSaleRecord[];
     invoiceLines?: InvoiceLineRecord[];
+    hourlyProductSales?: HourlyProductSale[];
   };
 }
 

@@ -125,6 +125,17 @@ CREATE TABLE IF NOT EXISTS employees (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS hourly_product_sales (
+  id TEXT PRIMARY KEY,
+  document_id TEXT REFERENCES documents(id) ON DELETE CASCADE,
+  business_date DATE NOT NULL,
+  hour_label TEXT NOT NULL,
+  product_code TEXT NOT NULL,
+  product_name TEXT NOT NULL,
+  units NUMERIC(12,2) NOT NULL,
+  amount NUMERIC(12,2) NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS product_costs (
   id TEXT PRIMARY KEY,
   product_code TEXT NOT NULL,

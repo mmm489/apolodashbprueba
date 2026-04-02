@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import * as XLSX from "xlsx";
 
-import type { ExtractionResult, HourlySalesEntry } from "@/lib/types";
+import type { ExtractionResult, HourlyProductSale, HourlySalesEntry } from "@/lib/types";
 
 import { extractSaleDate, fallbackDateFromFileName, toNumber, validateDate } from "./spreadsheet-parser";
 
@@ -64,12 +64,12 @@ export function parseHourlySpreadsheetReport(fileName: string, buffer: Buffer): 
     raw: true,
   });
 
-  // Detect format by checking title/headers
+  // Must be "RESUM HORES DETALLAT" format
   const allText = textRows.slice(0, 15).flat().map((c) => String(c ?? "").toUpperCase()).join(" ");
   const isDetailed = allText.includes("DETALLAT") || (allText.includes("HORA") && allText.includes("ARTICLE") && allText.includes("DESCRIP"));
 
-  if (!allText.includes("HORA")) {
-    throw new Error(`El format del fitxer "${fileName}" no es un Resum Hores valid. Falta la capçalera HORA.`);
+  if (!isDetailed) {
+    throw new Error(`Format no acceptat. Necessitem el "Resum Hores Detallat" (amb Article, Descripció, Unitats, Import per hora). El format antic "Resum Hores" ja no es suporta.`);
   }
 
   const saleDate =
@@ -78,9 +78,7 @@ export function parseHourlySpreadsheetReport(fileName: string, buffer: Buffer): 
     new Date().toISOString().slice(0, 10);
   validateDate(saleDate, fileName);
 
-  const entries = isDetailed
-    ? parseDetailedFormat(rawRows, textRows, saleDate)
-    : parseSimpleFormat(rawRows, textRows, saleDate);
+  const { entries, productDetails } = parseDetailedFormat(rawRows, textRows, saleDate);
 
   if (!entries.length) {
     throw new Error("No s'han trobat linies horàries vàlides a l'Excel.");
@@ -90,8 +88,11 @@ export function parseHourlySpreadsheetReport(fileName: string, buffer: Buffer): 
     documentType: "hourly_report",
     confidence: 0.98,
     strategy: "native-text",
-    summary: `Informe horari de vendes del ${saleDate}`,
+    summary: `Informe horari detallat de vendes del ${saleDate}`,
     normalizedData: entries,
+    auxiliaryData: {
+      hourlyProductSales: productDetails,
+    },
   };
 }
 
@@ -101,9 +102,11 @@ function parseDetailedFormat(
   rawRows: Array<Array<string | number | null>>,
   textRows: Array<Array<string | number | null>>,
   saleDate: string,
-): HourlySalesEntry[] {
+): { entries: HourlySalesEntry[]; productDetails: HourlyProductSale[] } {
   // Find header row
   let horaCol = -1;
+  let articleCol = -1;
+  let descripcioCol = -1;
   let unitatsCol = -1;
   let importCol = -1;
   let headerRowIdx = -1;
@@ -114,6 +117,8 @@ function parseDetailedFormat(
     for (let j = 0; j < row.length; j++) {
       const cell = String(row[j] ?? "").toUpperCase().trim();
       if (cell === "HORA") horaCol = j;
+      else if (cell === "ARTICLE" || cell === "CODI") articleCol = j;
+      else if (cell.startsWith("DESCRIP")) descripcioCol = j;
       else if (cell === "UNITATS") unitatsCol = j;
       else if (cell === "IMPORT") importCol = j;
     }
@@ -151,8 +156,9 @@ function parseDetailedFormat(
     }
   }
 
-  // Parse and aggregate by hour
+  // Parse rows: aggregate by hour + capture product details
   const hourMap = new Map<string, { sales: number; orderCount: number }>();
+  const productDetails: HourlyProductSale[] = [];
   let currentHour = "";
   const hourPattern = /^\d{1,2}-\d{1,2}$/;
 
@@ -160,16 +166,13 @@ function parseDetailedFormat(
     const row = rawRows[i];
     if (!row) continue;
 
-    // Check if this row starts a new hour
     const hourCell = String(row[horaCol] ?? "").trim();
     if (hourPattern.test(hourCell)) {
       currentHour = hourCell;
     }
 
-    // Skip rows without a current hour or TOTAL rows
     if (!currentHour || hourCell.toUpperCase() === "TOTAL") continue;
 
-    // Get import value
     const importVal = importCol >= 0 && row[importCol] != null && row[importCol] !== ""
       ? toNumber(row[importCol]!)
       : 0;
@@ -179,6 +182,7 @@ function parseDetailedFormat(
 
     if (importVal === 0 && unitatsVal === 0) continue;
 
+    // Aggregate hourly totals
     const existing = hourMap.get(currentHour);
     if (existing) {
       existing.sales += importVal;
@@ -186,10 +190,24 @@ function parseDetailedFormat(
     } else {
       hourMap.set(currentHour, { sales: importVal, orderCount: unitatsVal });
     }
+
+    // Capture product detail
+    const productCode = articleCol >= 0 ? String(row[articleCol] ?? "").trim() : "";
+    const productName = descripcioCol >= 0 ? String(row[descripcioCol] ?? "").trim() : "";
+    if (productCode || productName) {
+      productDetails.push({
+        id: randomUUID(),
+        businessDate: saleDate,
+        hourLabel: normalizeHourRange(currentHour),
+        productCode,
+        productName,
+        units: unitatsVal,
+        amount: importVal,
+      });
+    }
   }
 
-  // Convert hour ranges "10-11" to "10:00" format
-  return [...hourMap.entries()]
+  const entries = [...hourMap.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([hour, data]) => ({
       id: randomUUID(),
@@ -198,6 +216,8 @@ function parseDetailedFormat(
       sales: data.sales,
       orderCount: data.orderCount,
     }));
+
+  return { entries, productDetails };
 }
 
 /** Converts "10-11" to "10:00", passes through "10:00" as-is */
@@ -207,97 +227,3 @@ function normalizeHourRange(hour: string): string {
   return `${start}:00`;
 }
 
-/* ---------- Simple format: HORA | OPERACIONS | IMPORT ---------- */
-
-function parseSimpleFormat(
-  rawRows: Array<Array<string | number | null>>,
-  textRows: Array<Array<string | number | null>>,
-  saleDate: string,
-): HourlySalesEntry[] {
-  // Find header row
-  let horaCol = -1;
-  let headerRowIdx = -1;
-
-  for (let i = 0; i < Math.min(textRows.length, 15); i++) {
-    const row = textRows[i];
-    if (!row) continue;
-    for (let j = 0; j < row.length; j++) {
-      const cell = String(row[j] ?? "").toUpperCase().trim();
-      if (cell === "HORA") horaCol = j;
-    }
-    if (horaCol >= 0) {
-      headerRowIdx = i;
-      break;
-    }
-  }
-
-  if (headerRowIdx < 0 || horaCol < 0) {
-    throw new Error("No s'han trobat les capçaleres HORA a l'Excel.");
-  }
-
-  // Detect actual numeric columns from first data row
-  let operacionsCol = -1;
-  let importCol = -1;
-  const timePattern = /^\d{1,2}:\d{2}$/;
-
-  for (let i = headerRowIdx + 1; i < rawRows.length; i++) {
-    const row = rawRows[i];
-    if (!row) continue;
-    const hourCell = String(row[horaCol] ?? "").trim();
-    if (!timePattern.test(hourCell)) continue;
-
-    const numericCols: number[] = [];
-    for (let j = horaCol + 1; j < row.length; j++) {
-      if (row[j] != null && row[j] !== "" && typeof row[j] === "number" && Number.isFinite(row[j] as number)) {
-        numericCols.push(j);
-      }
-    }
-    if (numericCols.length >= 2) {
-      operacionsCol = numericCols[0];
-      importCol = numericCols[1];
-    } else if (numericCols.length === 1) {
-      importCol = numericCols[0];
-    }
-    break;
-  }
-
-  // Parse data rows
-  const entries: HourlySalesEntry[] = [];
-
-  for (let i = headerRowIdx + 1; i < rawRows.length; i++) {
-    const row = rawRows[i];
-    if (!row) continue;
-
-    const hourCell = String(row[horaCol] ?? "").trim();
-    if (hourCell.toUpperCase() === "TOTAL" || !timePattern.test(hourCell)) continue;
-
-    const orderCount = operacionsCol >= 0 ? toNumber(row[operacionsCol] ?? 0) : 0;
-    const sales = importCol >= 0 ? toNumber(row[importCol] ?? 0) : 0;
-
-    entries.push({
-      id: randomUUID(),
-      businessDate: saleDate,
-      hour: hourCell,
-      sales,
-      orderCount,
-    });
-  }
-
-  // Cross-check with TOTAL row
-  for (let i = rawRows.length - 1; i > headerRowIdx; i--) {
-    const row = rawRows[i];
-    if (!row) continue;
-    const cell = String(row[horaCol] ?? "").toUpperCase().trim();
-    if (cell === "TOTAL" && importCol >= 0 && row[importCol] != null && row[importCol] !== "") {
-      const excelTotal = toNumber(row[importCol]!);
-      const calcTotal = entries.reduce((s, e) => s + e.sales, 0);
-      const diff = Math.abs(calcTotal - excelTotal);
-      if (diff > 0.5) {
-        console.warn(`[hourly-parser] Totals no quadren: calculat=${calcTotal.toFixed(2)}, Excel=${excelTotal.toFixed(2)}, diff=${diff.toFixed(2)}`);
-      }
-      break;
-    }
-  }
-
-  return entries;
-}

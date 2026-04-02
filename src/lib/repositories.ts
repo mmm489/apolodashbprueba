@@ -21,6 +21,7 @@ import type {
   Employee,
   EmployeeShift,
   ExtractionResult,
+  HourlyProductSale,
   ProductCost,
   HourlySalesEntry,
   InvoiceLineRecord,
@@ -74,6 +75,22 @@ export async function listHourlySales() {
     sales: toNumber(row.sales),
     orderCount: toNumber(row.order_count),
   })) satisfies HourlySalesEntry[];
+}
+
+export async function listHourlyProductSales() {
+  if (!hasDatabase()) return [];
+
+  const sql = getSql();
+  const rows = await sql`SELECT id, business_date, hour_label, product_code, product_name, units, amount FROM hourly_product_sales ORDER BY business_date DESC, hour_label ASC LIMIT 2000`;
+  return rows.map((row) => ({
+    id: String(row.id),
+    businessDate: normalizeDate(row.business_date),
+    hourLabel: String(row.hour_label),
+    productCode: String(row.product_code),
+    productName: String(row.product_name),
+    units: toNumber(row.units),
+    amount: toNumber(row.amount),
+  })) satisfies HourlyProductSale[];
 }
 
 export async function listInvoices() {
@@ -539,6 +556,16 @@ async function _persistExtractionInner(sql: ReturnType<typeof getSql>, documentI
         VALUES (${entry.id}, ${documentId}, ${entry.businessDate}, ${entry.hour}, ${entry.sales}, ${entry.orderCount})
         ON CONFLICT (id) DO NOTHING
       `;
+    }
+    // Persist hourly product details if available
+    if (result.auxiliaryData?.hourlyProductSales?.length) {
+      for (const item of result.auxiliaryData.hourlyProductSales) {
+        await sql`
+          INSERT INTO hourly_product_sales (id, document_id, business_date, hour_label, product_code, product_name, units, amount)
+          VALUES (${item.id}, ${documentId}, ${item.businessDate}, ${item.hourLabel}, ${item.productCode}, ${item.productName}, ${item.units}, ${item.amount})
+          ON CONFLICT (id) DO NOTHING
+        `;
+      }
     }
     return;
   }
