@@ -21,6 +21,7 @@ import type {
   Employee,
   EmployeeShift,
   ExtractionResult,
+  ProductCost,
   HourlySalesEntry,
   InvoiceLineRecord,
   InvoiceRecord,
@@ -208,6 +209,53 @@ export async function listTelegramMessages() {
     answer: String(row.answer),
     createdAt: new Date(String(row.created_at)).toISOString(),
   })) satisfies TelegramMessage[];
+}
+
+/* ---------- Product Costs ---------- */
+
+export async function listProductCosts() {
+  if (!hasDatabase()) return [];
+
+  const sql = getSql();
+  const rows = await sql`SELECT id, product_code, product_name, category, unit_cost FROM product_costs ORDER BY category ASC, product_name ASC`;
+  return rows.map((row) => ({
+    id: String(row.id),
+    productCode: String(row.product_code),
+    productName: String(row.product_name),
+    category: String(row.category),
+    unitCost: toNumber(row.unit_cost),
+  })) satisfies ProductCost[];
+}
+
+export async function upsertProductCost(input: {
+  productCode: string;
+  productName: string;
+  category: string;
+  unitCost: number;
+}) {
+  if (!hasDatabase()) return;
+
+  const sql = getSql();
+  const id = randomUUID();
+  await sql`
+    INSERT INTO product_costs (id, product_code, product_name, category, unit_cost, updated_at)
+    VALUES (${id}, ${input.productCode}, ${input.productName}, ${input.category}, ${input.unitCost}, NOW())
+    ON CONFLICT (product_code)
+    DO UPDATE SET product_name = EXCLUDED.product_name, category = EXCLUDED.category, unit_cost = EXCLUDED.unit_cost, updated_at = NOW()
+  `;
+}
+
+export async function syncProductCostsFromSales() {
+  if (!hasDatabase()) return;
+
+  const sql = getSql();
+  // Insert any product from product_sales that doesn't exist yet in product_costs
+  await sql`
+    INSERT INTO product_costs (id, product_code, product_name, category, unit_cost)
+    SELECT gen_random_uuid()::text, ps.product_code, ps.product_name, 'Altres', 0
+    FROM (SELECT DISTINCT product_code, product_name FROM product_sales) ps
+    WHERE NOT EXISTS (SELECT 1 FROM product_costs pc WHERE pc.product_code = ps.product_code)
+  `;
 }
 
 /* ---------- Employees ---------- */

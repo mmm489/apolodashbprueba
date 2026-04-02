@@ -125,6 +125,16 @@ CREATE TABLE IF NOT EXISTS employees (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS product_costs (
+  id TEXT PRIMARY KEY,
+  product_code TEXT NOT NULL,
+  product_name TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'Altres',
+  unit_cost NUMERIC(8,4) NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(product_code)
+);
+
 CREATE TABLE IF NOT EXISTS employee_shifts (
   id TEXT PRIMARY KEY,
   employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,

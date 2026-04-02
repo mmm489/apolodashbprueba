@@ -130,6 +130,14 @@ export interface EmployeeShift {
   shiftEnd: string;
 }
 
+export interface ProductCost {
+  id: string;
+  productCode: string;
+  productName: string;
+  category: string;
+  unitCost: number;
+}
+
 export interface KpiSnapshot {
   totalSales: number;
   totalExpenses: number;

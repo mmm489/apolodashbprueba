@@ -14,6 +14,7 @@ import {
   Menu,
   Receipt,
   Search,
+  Package,
   Settings,
   ShoppingBag,
   Users,
@@ -29,6 +30,7 @@ const navItems = [
   { href: "/gastos", label: "Despeses", section: "General", icon: Receipt },
   { href: "/tesoreria", label: "Tresoreria", section: "General", icon: Landmark },
   { href: "/empleados", label: "Empleats", section: "General", icon: Users },
+  { href: "/productes", label: "Productes", section: "General", icon: Package },
   { href: "/documentos", label: "Documents", section: "Sistema", icon: FileText },
 ];
 
