@@ -1,4 +1,4 @@
-import { ArrowRightLeft, Banknote, Clock, ReceiptText, TrendingUp } from "lucide-react";
+import { Banknote, Clock, Package, TrendingUp, Users } from "lucide-react";
 
 import { AppFrame } from "@/components/app-frame";
 import { DateFilterBar } from "@/components/date-filter-bar";
@@ -34,17 +34,10 @@ export default async function HomePage({
       {/* KPI cards */}
       <section className="stagger-children grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <MiniStatCard
-          icon={<ReceiptText className="size-4" />}
-          label="Total documents"
-          value={String(workspace.snapshot.documentOverview.totalDocuments)}
-          delta={`${workspace.snapshot.documentOverview.validatedDocuments} validats`}
-          color="indigo"
-        />
-        <MiniStatCard
           icon={<TrendingUp className="size-4" />}
           label="Total vendes"
           value={euro(workspace.snapshot.kpis.totalSales)}
-          delta="+ 2,5%"
+          delta="Periode seleccionat"
           positive
           color="emerald"
         />
@@ -52,15 +45,22 @@ export default async function HomePage({
           icon={<Banknote className="size-4" />}
           label="Total despeses"
           value={euro(workspace.snapshot.kpis.totalExpenses)}
-          delta="- 0,4%"
+          delta="Proveidors + banc"
           color="amber"
         />
         <MiniStatCard
-          icon={<ArrowRightLeft className="size-4" />}
-          label="Descuadrament banc"
-          value={euro(workspace.snapshot.kpis.bankGap)}
-          delta="Revisar"
+          icon={<Package className="size-4" />}
+          label="Cost productes"
+          value={euro(workspace.snapshot.kpis.totalProductCost)}
+          delta="Cost materia venuda"
           color="rose"
+        />
+        <MiniStatCard
+          icon={<Users className="size-4" />}
+          label="Cost empleats"
+          value={euro(workspace.snapshot.kpis.totalEmployeeCost)}
+          delta="Torns registrats"
+          color="indigo"
         />
       </section>
 
@@ -120,23 +120,26 @@ export default async function HomePage({
             <p className="text-[20px] font-bold tracking-tight text-slate-900">Resum financer</p>
           </div>
           <div className="stagger-children space-y-2">
-            <FinanceRow label="Vendes" value={euro(workspace.snapshot.kpis.totalSales)} percent="19%" color="#6366f1" />
-            <FinanceRow label="Marge estimat" value={euro(workspace.snapshot.kpis.estimatedMargin)} percent="15%" color="#8b5cf6" />
-            <FinanceRow label="Nomines" value={euro(workspace.snapshot.kpis.totalPayroll)} percent="13%" color="#ec4899" />
-            <FinanceRow label="Entrades banc" value={euro(workspace.cashFlowSummary.inflows)} percent="12%" color="#06b6d4" />
-            <FinanceRow label="Sortides banc" value={euro(workspace.cashFlowSummary.outflows)} percent="11%" color="#10b981" />
-            <FinanceRow label="Tiquet mitja" value={euro(workspace.snapshot.kpis.averageTicket)} percent="10%" color="#f59e0b" />
-            <FinanceRow label="Proveidors" value={String(workspace.snapshot.kpis.activeSuppliers)} percent="9%" color="#ef4444" />
+            <FinanceRow label="Vendes" value={euro(workspace.snapshot.kpis.totalSales)} percent="" color="#6366f1" />
+            <FinanceRow label="Cost productes" value={euro(workspace.snapshot.kpis.totalProductCost)} percent="" color="#f43f5e" />
+            <FinanceRow label="Cost empleats" value={euro(workspace.snapshot.kpis.totalEmployeeCost)} percent="" color="#8b5cf6" />
+            <FinanceRow label="Despeses" value={euro(workspace.snapshot.kpis.totalExpenses)} percent="" color="#f59e0b" />
+            <FinanceRow label="Nomines" value={euro(workspace.snapshot.kpis.totalPayroll)} percent="" color="#ec4899" />
+            <FinanceRow label="Tiquet mitja" value={euro(workspace.snapshot.kpis.averageTicket)} percent="" color="#06b6d4" />
             <FinanceRow label="Productivitat/hora" value={`${euro(workspace.snapshot.kpis.productivityPerHour)} /h`} percent={`${workspace.snapshot.kpis.totalMonthlyHours.toFixed(0)} h/mes`} color="#0ea5e9" />
           </div>
 
-          {/* Highlight card */}
-          <div className="mt-5 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 p-5 text-white">
-            <p className="text-[13px] font-medium text-indigo-200">Focus de control</p>
-            <p className="mt-2 text-lg font-semibold leading-snug">
-              La diferencia entre vendes i cobraments bancaris es {euro(workspace.snapshot.kpis.bankGap)}.
-            </p>
-          </div>
+          {/* Highlight card — margin */}
+          {(() => {
+            const margin = workspace.snapshot.kpis.totalSales - workspace.snapshot.kpis.totalProductCost - workspace.snapshot.kpis.totalEmployeeCost;
+            const isPositive = margin >= 0;
+            return (
+              <div className={`mt-5 rounded-xl p-5 text-white ${isPositive ? "bg-gradient-to-br from-emerald-500 to-teal-600" : "bg-gradient-to-br from-rose-500 to-red-600"}`}>
+                <p className="text-[13px] font-medium text-white/70">Marge brut (vendes - cost productes - cost empleats)</p>
+                <p className="mt-2 text-[28px] font-bold tracking-tight">{euro(margin)}</p>
+              </div>
+            );
+          })()}
         </div>
       </section>
     </AppFrame>

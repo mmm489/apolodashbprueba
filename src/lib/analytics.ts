@@ -7,6 +7,7 @@ import {
   listEmployeeShifts,
   listEmployees,
   listHourlySales,
+  listProductCosts,
   listInvoiceLines,
   listInvoices,
   listPayrolls,
@@ -60,7 +61,7 @@ export async function getFinancialWorkspace(input?: {
   to?: string;
 }): Promise<FinancialWorkspace> {
   const filter = resolveDateFilter(input);
-  const [documents, salesReports, hourlySales, invoices, payrolls, bankTransactions, productSales, alerts, telegramUsers, telegramMessages, employees] =
+  const [documents, salesReports, hourlySales, invoices, payrolls, bankTransactions, productSales, alerts, telegramUsers, telegramMessages, employees, productCosts, employeeShifts] =
     await Promise.all([
       listDocuments(),
       listSalesReports(),
@@ -73,6 +74,8 @@ export async function getFinancialWorkspace(input?: {
       listTelegramUsers(),
       listTelegramMessages(),
       listEmployees(),
+      listProductCosts(),
+      listEmployeeShifts(filter.from, filter.to),
     ]);
 
   const fromDate = startOfDaySafe(filter.from);
@@ -121,6 +124,25 @@ export async function getFinancialWorkspace(input?: {
   }, 0);
   const productivityPerHour = totalMonthlyHours > 0 ? totalSales / totalMonthlyHours : 0;
 
+  // Product cost: sum(unit_cost * units_sold) for products in the period
+  const costMap = new Map<string, number>();
+  for (const pc of productCosts) costMap.set(pc.productCode, pc.unitCost);
+  const scopedProductsForCost = productSales.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
+  const totalProductCost = scopedProductsForCost.reduce((sum, item) => {
+    const unitCost = costMap.get(item.productCode) ?? 0;
+    return sum + unitCost * item.units;
+  }, 0);
+
+  // Employee cost: sum(hours * hourly_cost) for shifts in the period
+  const totalEmployeeCost = employeeShifts.reduce((sum, shift) => {
+    const emp = employees.find((e) => e.id === shift.employeeId);
+    if (!emp) return sum;
+    const [sh, sm] = shift.shiftStart.split(":").map(Number);
+    const [eh, em] = shift.shiftEnd.split(":").map(Number);
+    const hours = (eh + em / 60) - (sh + sm / 60);
+    return sum + hours * emp.hourlyCost;
+  }, 0);
+
   const totalsByCategory = Object.entries(
     scopedInvoices.reduce<Record<string, number>>((acc, invoice) => {
       acc[invoice.category] = (acc[invoice.category] ?? 0) + invoice.totalAmount;
@@ -161,6 +183,8 @@ export async function getFinancialWorkspace(input?: {
         activeSuppliers: new Set(scopedInvoices.map((item) => item.supplierName)).size,
         totalMonthlyHours,
         productivityPerHour,
+        totalProductCost,
+        totalEmployeeCost,
       },
       alerts,
       documents: scopedDocuments,

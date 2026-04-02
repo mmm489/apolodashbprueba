@@ -150,6 +150,8 @@ export interface KpiSnapshot {
   activeSuppliers: number;
   totalMonthlyHours: number;
   productivityPerHour: number;
+  totalProductCost: number;
+  totalEmployeeCost: number;
 }
 
 export interface DashboardSnapshot {
