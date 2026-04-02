@@ -100,9 +100,35 @@ export function parseHourlySpreadsheetReport(fileName: string, buffer: Buffer): 
     throw new Error("No s'han trobat les capçaleres HORA/OPERACIONS/IMPORT a l'Excel.");
   }
 
+  // Merged cells can shift data vs headers. Find actual data columns by scanning the first data row.
+  // Look for the first row after header that has a time value, then find numeric columns.
+  const timePattern = /^\d{1,2}:\d{2}$/;
+  for (let i = headerRowIdx + 1; i < rawRows.length; i++) {
+    const row = rawRows[i];
+    if (!row) continue;
+    const hourCell = String(row[horaCol] ?? "").trim();
+    if (!timePattern.test(hourCell)) continue;
+
+    // Found a data row - find actual numeric columns after horaCol
+    const numericCols: number[] = [];
+    for (let j = horaCol + 1; j < row.length; j++) {
+      const val = row[j];
+      if (val != null && val !== "" && typeof val === "number" && Number.isFinite(val)) {
+        numericCols.push(j);
+      }
+    }
+    // First numeric col = operations, second = import (sales)
+    if (numericCols.length >= 2) {
+      operacionsCol = numericCols[0];
+      importCol = numericCols[1];
+    } else if (numericCols.length === 1) {
+      importCol = numericCols[0];
+    }
+    break;
+  }
+
   // Parse data rows after the header
   const entries: HourlySalesEntry[] = [];
-  const timePattern = /^\d{1,2}:\d{2}$/;
 
   for (let i = headerRowIdx + 1; i < rawRows.length; i++) {
     const row = rawRows[i];

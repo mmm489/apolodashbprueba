@@ -180,26 +180,7 @@ function DayRow({
             <div className="grid gap-4 xl:grid-cols-2">
               {/* Products */}
               {day.hasArticles && dayProducts.length > 0 && (
-                <div>
-                  <p className="mb-3 text-[12px] font-semibold uppercase tracking-wider text-slate-500">Articles Venda</p>
-                  <div className="space-y-2">
-                    {groupByFamily(dayProducts).map((fam) => (
-                      <div key={fam.name} className="rounded-lg border border-[var(--line)] bg-white p-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className={`size-2.5 rounded-full ${fam.color}`} />
-                            <span className="text-[13px] font-semibold text-slate-800">{fam.name}</span>
-                            <span className="text-[11px] text-slate-400">{fam.items.length} articles</span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-[12px] text-slate-500">{fmtNum(fam.totalUnits)} uds</span>
-                            <span className="rounded-lg bg-emerald-50 px-2 py-0.5 text-[12px] font-semibold text-emerald-700">{euro(fam.totalAmount)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                <ExpandableFamilies products={dayProducts} />
               )}
 
               {/* Hourly */}
@@ -240,6 +221,68 @@ function DayRow({
         </tr>
       )}
     </>
+  );
+}
+
+/* ---- Expandable families ---- */
+
+function ExpandableFamilies({ products }: { products: ProductSaleRecord[] }) {
+  const [openFamily, setOpenFamily] = useState<string | null>(null);
+  const families = groupByFamily(products);
+
+  return (
+    <div>
+      <p className="mb-3 text-[12px] font-semibold uppercase tracking-wider text-slate-500">Articles Venda</p>
+      <div className="space-y-2">
+        {families.map((fam) => {
+          const isOpen = openFamily === fam.name;
+          return (
+            <div key={fam.name} className="rounded-lg border border-[var(--line)] bg-white overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setOpenFamily(isOpen ? null : fam.name)}
+                className="flex w-full items-center justify-between p-3 text-left transition hover:bg-slate-50/50"
+              >
+                <div className="flex items-center gap-2">
+                  {isOpen ? <ChevronDown className="size-3.5 text-slate-400" /> : <ChevronRight className="size-3.5 text-slate-400" />}
+                  <span className={`size-2.5 rounded-full ${fam.color}`} />
+                  <span className="text-[13px] font-semibold text-slate-800">{fam.name}</span>
+                  <span className="text-[11px] text-slate-400">{fam.items.length} articles</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[12px] text-slate-500">{fmtNum(fam.totalUnits)} uds</span>
+                  <span className="rounded-lg bg-emerald-50 px-2 py-0.5 text-[12px] font-semibold text-emerald-700">{euro(fam.totalAmount)}</span>
+                </div>
+              </button>
+              {isOpen && (
+                <div className="border-t border-[var(--line)] bg-slate-50/50 px-3 py-2">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
+                        <th className="pb-1.5 text-left">Producte</th>
+                        <th className="pb-1.5 text-left">Codi</th>
+                        <th className="pb-1.5 text-right">Unitats</th>
+                        <th className="pb-1.5 text-right">Import</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fam.items.sort((a, b) => b.amount - a.amount).map((p) => (
+                        <tr key={p.id} className="border-t border-[var(--line)]/30">
+                          <td className="py-1.5 pr-2 text-[13px] text-slate-700">{p.productName}</td>
+                          <td className="py-1.5 pr-2 text-[13px] text-slate-400">{p.productCode}</td>
+                          <td className="py-1.5 pr-2 text-right text-[13px] text-slate-500">{fmtNum(p.units)}</td>
+                          <td className="py-1.5 text-right text-[13px] font-semibold text-slate-800">{euro(p.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
