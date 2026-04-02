@@ -81,8 +81,20 @@ export function VendesDayList({
   employees: Employee[];
 }) {
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
+  const [shiftsModalDate, setShiftsModalDate] = useState<string | null>(null);
 
   return (
+    <>
+    {/* Shifts modal */}
+    {shiftsModalDate && (
+      <ShiftsModal
+        date={shiftsModalDate}
+        shifts={employeeShifts.filter((s) => s.businessDate === shiftsModalDate)}
+        employees={employees}
+        onClose={() => setShiftsModalDate(null)}
+      />
+    )}
+
     <div className="rounded-2xl border border-[var(--line)] bg-white shadow-sm overflow-hidden">
       <table className="w-full text-sm">
         <thead>
@@ -110,6 +122,7 @@ export function VendesDayList({
                 day={day}
                 isExpanded={isExpanded}
                 onToggle={() => setExpandedDate(isExpanded ? null : day.date)}
+                onOpenShifts={() => setShiftsModalDate(day.date)}
                 dayProducts={dayProducts}
                 dayHourly={dayHourly}
                 dayShifts={dayShifts}
@@ -127,6 +140,7 @@ export function VendesDayList({
         </tbody>
       </table>
     </div>
+    </>
   );
 }
 
@@ -136,14 +150,15 @@ function DayRow({
   day,
   isExpanded,
   onToggle,
+  onOpenShifts,
   dayProducts,
   dayHourly,
   dayShifts,
-  employees,
 }: {
   day: DayStatus;
   isExpanded: boolean;
   onToggle: () => void;
+  onOpenShifts: () => void;
   dayProducts: ProductSaleRecord[];
   dayHourly: HourlySalesEntry[];
   dayShifts: EmployeeShift[];
@@ -190,7 +205,7 @@ function DayRow({
             {!day.hasHourly && <UploadButton label="Hores" date={day.date} expectedType="hores" />}
             <button
               type="button"
-              onClick={onToggle}
+              onClick={onOpenShifts}
               className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition ${
                 dayShifts.length > 0
                   ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
@@ -198,7 +213,7 @@ function DayRow({
               }`}
             >
               <Users className="size-3" />
-              {dayShifts.length > 0 ? `${dayShifts.length}` : "Empleats"}
+              {dayShifts.length > 0 ? `${dayShifts.length} empleats` : "Empleats"}
             </button>
           </div>
         </td>
@@ -249,8 +264,6 @@ function DayRow({
               )}
             </div>
 
-            {/* Employee shifts */}
-            <DayShifts date={day.date} shifts={dayShifts} employees={employees} />
           </td>
         </tr>
       )}
@@ -258,19 +271,20 @@ function DayRow({
   );
 }
 
-/* ---- Day shifts ---- */
+/* ---- Shifts modal ---- */
 
-function DayShifts({
+function ShiftsModal({
   date,
   shifts,
   employees,
+  onClose,
 }: {
   date: string;
   shifts: EmployeeShift[];
   employees: Employee[];
+  onClose: () => void;
 }) {
   const router = useRouter();
-  const [adding, setAdding] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState("");
   const [shiftStart, setShiftStart] = useState("09:00");
   const [shiftEnd, setShiftEnd] = useState("13:00");
@@ -278,6 +292,8 @@ function DayShifts({
 
   const assignedIds = new Set(shifts.map((s) => s.employeeId));
   const availableEmployees = employees.filter((e) => !assignedIds.has(e.id));
+
+  const dateLabel = new Date(date).toLocaleDateString("ca-ES", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
   function addShift() {
     if (!selectedEmployee) return;
@@ -287,7 +303,6 @@ function DayShifts({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ employeeId: selectedEmployee, businessDate: date, shiftStart, shiftEnd }),
       });
-      setAdding(false);
       setSelectedEmployee("");
       router.refresh();
     });
@@ -311,106 +326,113 @@ function DayShifts({
   }, 0);
 
   return (
-    <div className="mt-4">
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-[12px] font-semibold uppercase tracking-wider text-slate-500">Empleats del dia</p>
-        {availableEmployees.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setAdding(!adding)}
-            className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-[11px] font-medium text-white transition hover:bg-indigo-700"
-          >
-            + Afegir empleat
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-lg rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xl">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <p className="text-[18px] font-bold text-slate-900">Empleats del dia</p>
+            <p className="mt-0.5 text-[13px] text-slate-500">{dateLabel}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition">
+            <span className="text-[18px]">✕</span>
           </button>
+        </div>
+
+        {/* Add form */}
+        {availableEmployees.length > 0 && (
+          <div className="mb-4 flex flex-wrap items-end gap-2 rounded-xl border border-indigo-100 bg-indigo-50/50 p-3">
+            <div className="flex-1 min-w-[140px]">
+              <label className="mb-1 block text-[11px] font-medium text-slate-500">Empleat</label>
+              <select
+                value={selectedEmployee}
+                onChange={(e) => {
+                  setSelectedEmployee(e.target.value);
+                  const emp = employees.find((x) => x.id === e.target.value);
+                  if (emp) { setShiftStart(emp.shiftStart); setShiftEnd(emp.shiftEnd); }
+                }}
+                className="w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-[13px] outline-none"
+              >
+                <option value="">Selecciona empleat...</option>
+                {availableEmployees.map((e) => (
+                  <option key={e.id} value={e.id}>{e.name} ({e.hourlyCost.toFixed(2)} €/h)</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-500">Entrada</label>
+              <input type="time" value={shiftStart} onChange={(e) => setShiftStart(e.target.value)}
+                className="rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-[13px] outline-none" />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-slate-500">Sortida</label>
+              <input type="time" value={shiftEnd} onChange={(e) => setShiftEnd(e.target.value)}
+                className="rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-[13px] outline-none" />
+            </div>
+            <button
+              type="button"
+              onClick={addShift}
+              disabled={isPending || !selectedEmployee}
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-indigo-700 disabled:opacity-50"
+            >
+              Afegir
+            </button>
+          </div>
+        )}
+
+        {/* Shifts list */}
+        {shifts.length > 0 ? (
+          <div className="rounded-xl border border-[var(--line)] overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-[var(--line)] bg-slate-50/80 text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                  <th className="px-4 py-2.5 text-left">Empleat</th>
+                  <th className="px-4 py-2.5 text-center">Horari</th>
+                  <th className="px-4 py-2.5 text-right">Hores</th>
+                  <th className="px-4 py-2.5 text-right">Cost</th>
+                  <th className="px-4 py-2.5 w-8" />
+                </tr>
+              </thead>
+              <tbody>
+                {shifts.map((s) => {
+                  const hours = parseHours(s.shiftStart, s.shiftEnd);
+                  const emp = employees.find((e) => e.id === s.employeeId);
+                  const cost = hours * (emp?.hourlyCost ?? 0);
+                  return (
+                    <tr key={s.id} className="border-b border-[var(--line)]/50">
+                      <td className="px-4 py-2 text-[13px] font-medium text-slate-800">{s.employeeName}</td>
+                      <td className="px-4 py-2 text-center text-[13px] text-slate-600">{s.shiftStart} – {s.shiftEnd}</td>
+                      <td className="px-4 py-2 text-right text-[13px] text-slate-600">{hours.toFixed(1)} h</td>
+                      <td className="px-4 py-2 text-right text-[13px] font-semibold text-slate-800">{euro(cost)}</td>
+                      <td className="px-4 py-2 text-right">
+                        <button type="button" onClick={() => removeShift(s.employeeId)} className="text-slate-400 hover:text-rose-500 transition" title="Treure">
+                          <span className="text-[14px]">✕</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="bg-slate-50/80 font-semibold text-slate-900">
+                  <td className="px-4 py-2.5 text-[13px]">Total</td>
+                  <td className="px-4 py-2.5 text-center text-[13px]">{shifts.length} empleats</td>
+                  <td className="px-4 py-2.5 text-right text-[13px]">{totalHours.toFixed(1)} h</td>
+                  <td className="px-4 py-2.5 text-right text-[13px]">{euro(totalCost)}</td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 py-8 text-center">
+            <Users className="mx-auto size-8 text-slate-300" />
+            <p className="mt-2 text-[13px] text-slate-400">Cap empleat assignat a aquest dia</p>
+            <p className="text-[12px] text-slate-400">Selecciona un empleat i l&apos;horari per afegir-lo</p>
+          </div>
         )}
       </div>
-
-      {adding && (
-        <div className="mb-3 flex flex-wrap items-end gap-2 rounded-lg border border-indigo-100 bg-indigo-50/50 p-3">
-          <div>
-            <label className="mb-1 block text-[11px] font-medium text-slate-500">Empleat</label>
-            <select
-              value={selectedEmployee}
-              onChange={(e) => {
-                setSelectedEmployee(e.target.value);
-                const emp = employees.find((x) => x.id === e.target.value);
-                if (emp) { setShiftStart(emp.shiftStart); setShiftEnd(emp.shiftEnd); }
-              }}
-              className="rounded-lg border border-[var(--line)] bg-white px-3 py-1.5 text-[13px] outline-none"
-            >
-              <option value="">Selecciona...</option>
-              {availableEmployees.map((e) => (
-                <option key={e.id} value={e.id}>{e.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] font-medium text-slate-500">Entrada</label>
-            <input type="time" value={shiftStart} onChange={(e) => setShiftStart(e.target.value)}
-              className="rounded-lg border border-[var(--line)] bg-white px-3 py-1.5 text-[13px] outline-none" />
-          </div>
-          <div>
-            <label className="mb-1 block text-[11px] font-medium text-slate-500">Sortida</label>
-            <input type="time" value={shiftEnd} onChange={(e) => setShiftEnd(e.target.value)}
-              className="rounded-lg border border-[var(--line)] bg-white px-3 py-1.5 text-[13px] outline-none" />
-          </div>
-          <button
-            type="button"
-            onClick={addShift}
-            disabled={isPending || !selectedEmployee}
-            className="rounded-lg bg-indigo-600 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-indigo-700 disabled:opacity-50"
-          >
-            {isPending ? "Guardant..." : "Afegir"}
-          </button>
-        </div>
-      )}
-
-      {shifts.length > 0 ? (
-        <div className="rounded-lg border border-[var(--line)] bg-white overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[var(--line)] bg-slate-50/80 text-[11px] font-medium uppercase tracking-wider text-slate-500">
-                <th className="px-3 py-2 text-left">Empleat</th>
-                <th className="px-3 py-2 text-center">Horari</th>
-                <th className="px-3 py-2 text-right">Hores</th>
-                <th className="px-3 py-2 text-right">Cost</th>
-                <th className="px-3 py-2 w-8" />
-              </tr>
-            </thead>
-            <tbody>
-              {shifts.map((s) => {
-                const hours = parseHours(s.shiftStart, s.shiftEnd);
-                const emp = employees.find((e) => e.id === s.employeeId);
-                const cost = hours * (emp?.hourlyCost ?? 0);
-                return (
-                  <tr key={s.id} className="border-b border-[var(--line)]/50">
-                    <td className="px-3 py-1.5 text-[13px] font-medium text-slate-800">{s.employeeName}</td>
-                    <td className="px-3 py-1.5 text-center text-[13px] text-slate-600">{s.shiftStart} – {s.shiftEnd}</td>
-                    <td className="px-3 py-1.5 text-right text-[13px] text-slate-600">{hours.toFixed(1)} h</td>
-                    <td className="px-3 py-1.5 text-right text-[13px] font-semibold text-slate-800">{euro(cost)}</td>
-                    <td className="px-3 py-1.5 text-right">
-                      <button type="button" onClick={() => removeShift(s.employeeId)} className="text-slate-400 hover:text-rose-500 transition" title="Treure">
-                        <span className="text-[12px]">✕</span>
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="bg-slate-50/80 font-semibold text-slate-900">
-                <td className="px-3 py-2 text-[13px]">Total</td>
-                <td className="px-3 py-2 text-center text-[13px]">{shifts.length} empleats</td>
-                <td className="px-3 py-2 text-right text-[13px]">{totalHours.toFixed(1)} h</td>
-                <td className="px-3 py-2 text-right text-[13px]">{euro(totalCost)}</td>
-                <td />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      ) : (
-        <p className="text-[12px] text-slate-400">Cap empleat assignat. Fes clic a &quot;+ Afegir empleat&quot; per registrar qui ha treballat.</p>
-      )}
     </div>
   );
 }
