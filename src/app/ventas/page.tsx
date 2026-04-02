@@ -35,7 +35,7 @@ export default async function VentasPage({
 
       {/* Product & category summary for the period */}
       {productSales.length > 0 && (
-        <VendesSummary productSales={productSales} topProducts={topProducts} />
+        <VendesSummary productSales={productSales} topProducts={topProducts} productCosts={productCosts} />
       )}
 
       {/* Day-by-day list */}

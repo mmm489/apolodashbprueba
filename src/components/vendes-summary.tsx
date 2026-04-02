@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
-import type { ProductSaleRecord } from "@/lib/types";
+import type { ProductCost, ProductSaleRecord } from "@/lib/types";
 
 /* ---- Family classification ---- */
 
@@ -45,7 +45,7 @@ interface FamilyAgg {
   bgLight: string;
   totalUnits: number;
   totalAmount: number;
-  products: Array<{ productName: string; units: number; amount: number }>;
+  products: Array<{ productCode: string; productName: string; units: number; amount: number }>;
 }
 
 function aggregateByFamily(products: ProductSaleRecord[]): FamilyAgg[] {
@@ -56,12 +56,12 @@ function aggregateByFamily(products: ProductSaleRecord[]): FamilyAgg[] {
     if (existing) {
       existing.totalUnits += p.units;
       existing.totalAmount += p.amount;
-      const prod = existing.products.find((x) => x.productName === p.productName);
+      const prod = existing.products.find((x) => x.productCode === p.productCode);
       if (prod) {
         prod.units += p.units;
         prod.amount += p.amount;
       } else {
-        existing.products.push({ productName: p.productName, units: p.units, amount: p.amount });
+        existing.products.push({ productCode: p.productCode, productName: p.productName, units: p.units, amount: p.amount });
       }
     } else {
       map.set(rule.name, {
@@ -70,7 +70,7 @@ function aggregateByFamily(products: ProductSaleRecord[]): FamilyAgg[] {
         bgLight: rule.bgLight,
         totalUnits: p.units,
         totalAmount: p.amount,
-        products: [{ productName: p.productName, units: p.units, amount: p.amount }],
+        products: [{ productCode: p.productCode, productName: p.productName, units: p.units, amount: p.amount }],
       });
     }
   }
@@ -82,12 +82,20 @@ function aggregateByFamily(products: ProductSaleRecord[]): FamilyAgg[] {
 export function VendesSummary({
   productSales,
   topProducts,
+  productCosts,
 }: {
   productSales: ProductSaleRecord[];
   topProducts: Array<{ productName: string; units: number; amount: number }>;
+  productCosts: ProductCost[];
 }) {
   const families = aggregateByFamily(productSales);
   const grandTotal = families.reduce((s, f) => s + f.totalAmount, 0);
+  const costMap = new Map<string, number>();
+  const costByName = new Map<string, number>();
+  for (const pc of productCosts) {
+    costMap.set(pc.productCode, pc.unitCost);
+    costByName.set(pc.productName.toLowerCase(), pc.unitCost);
+  }
   const [expandedFamily, setExpandedFamily] = useState<string | null>(null);
 
   return (
@@ -102,6 +110,8 @@ export function VendesSummary({
           {families.map((fam) => {
             const pct = grandTotal > 0 ? (fam.totalAmount / grandTotal) * 100 : 0;
             const isOpen = expandedFamily === fam.name;
+            const famCost = fam.products.reduce((s, p) => s + (costMap.get(p.productCode) ?? 0) * p.units, 0);
+            const famMargin = fam.totalAmount - famCost;
             return (
               <div key={fam.name} className="rounded-xl border border-[var(--line)] overflow-hidden transition hover:shadow-sm">
                 <button
@@ -114,10 +124,12 @@ export function VendesSummary({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[13px] font-semibold text-slate-800">{fam.name}</span>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <span className="text-[12px] text-slate-400">{fmtNum(fam.totalUnits)} uds</span>
-                        <span className={`rounded-lg px-2 py-0.5 text-[12px] font-semibold ${fam.bgLight}`}>{euro(fam.totalAmount)}</span>
-                        <span className="w-10 text-right text-[12px] font-medium text-slate-500">{pct.toFixed(1)}%</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[11px] text-slate-400">{fmtNum(fam.totalUnits)} uds</span>
+                        <span className="text-[11px] text-emerald-600">{euro(fam.totalAmount)}</span>
+                        <span className="text-[11px] text-rose-500">{euro(famCost)}</span>
+                        <span className={`rounded-lg px-1.5 py-0.5 text-[11px] font-semibold ${famMargin >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>{euro(famMargin)}</span>
+                        <span className="w-10 text-right text-[11px] font-medium text-slate-400">{pct.toFixed(1)}%</span>
                       </div>
                     </div>
                     <div className="mt-1.5 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
@@ -132,18 +144,27 @@ export function VendesSummary({
                       <thead>
                         <tr className="text-[11px] font-medium uppercase tracking-wider text-slate-400">
                           <th className="pb-1.5 text-left">Producte</th>
-                          <th className="pb-1.5 text-right">Unitats</th>
-                          <th className="pb-1.5 text-right">Import</th>
+                          <th className="pb-1.5 text-right">Uds</th>
+                          <th className="pb-1.5 text-right">Venda</th>
+                          <th className="pb-1.5 text-right">Cost</th>
+                          <th className="pb-1.5 text-right">Marge</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {fam.products.sort((a, b) => b.amount - a.amount).map((p) => (
-                          <tr key={p.productName} className="border-t border-[var(--line)]/30">
-                            <td className="py-1.5 pr-2 text-[13px] text-slate-700">{p.productName}</td>
-                            <td className="py-1.5 pr-2 text-right text-[13px] text-slate-500">{fmtNum(p.units)}</td>
-                            <td className="py-1.5 text-right text-[13px] font-semibold text-slate-800">{euro(p.amount)}</td>
-                          </tr>
-                        ))}
+                        {fam.products.sort((a, b) => b.amount - a.amount).map((p) => {
+                          const unitCost = costMap.get(p.productCode) ?? 0;
+                          const totalCost = unitCost * p.units;
+                          const margin = p.amount - totalCost;
+                          return (
+                            <tr key={p.productCode} className="border-t border-[var(--line)]/30">
+                              <td className="py-1.5 pr-2 text-[13px] text-slate-700">{p.productName}</td>
+                              <td className="py-1.5 text-right text-[13px] text-slate-500">{fmtNum(p.units)}</td>
+                              <td className="py-1.5 text-right text-[13px] text-emerald-700">{euro(p.amount)}</td>
+                              <td className="py-1.5 text-right text-[13px] text-rose-500">{unitCost > 0 ? euro(totalCost) : <span className="text-slate-300">--</span>}</td>
+                              <td className={`py-1.5 text-right text-[13px] font-semibold ${unitCost > 0 ? (margin >= 0 ? "text-emerald-700" : "text-rose-600") : "text-slate-300"}`}>{unitCost > 0 ? euro(margin) : "--"}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -164,6 +185,9 @@ export function VendesSummary({
           {topProducts.slice(0, 15).map((p, i) => {
             const maxAmount = topProducts[0]?.amount ?? 1;
             const pct = (p.amount / maxAmount) * 100;
+            const unitCost = costByName.get(p.productName.toLowerCase()) ?? 0;
+            const totalCost = unitCost * p.units;
+            const margin = p.amount - totalCost;
             return (
               <div key={p.productName} className="rounded-xl border border-[var(--line)] bg-slate-50/50 p-3 transition hover:bg-white hover:shadow-sm">
                 <div className="flex items-center gap-3">
@@ -173,9 +197,13 @@ export function VendesSummary({
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-[13px] font-semibold text-slate-800 truncate">{p.productName}</span>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <span className="text-[12px] text-slate-400">{fmtNum(p.units)} uds</span>
-                        <span className="rounded-lg bg-emerald-50 px-2 py-0.5 text-[12px] font-semibold text-emerald-700">{euro(p.amount)}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[11px] text-slate-400">{fmtNum(p.units)} uds</span>
+                        <span className="text-[11px] text-emerald-600">{euro(p.amount)}</span>
+                        <span className="text-[11px] text-rose-500">{unitCost > 0 ? euro(totalCost) : "--"}</span>
+                        <span className={`rounded-lg px-1.5 py-0.5 text-[11px] font-semibold ${unitCost > 0 ? (margin >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700") : "bg-slate-50 text-slate-400"}`}>
+                          {unitCost > 0 ? euro(margin) : "--"}
+                        </span>
                       </div>
                     </div>
                     <div className="mt-1.5 h-1 w-full rounded-full bg-slate-100 overflow-hidden">
