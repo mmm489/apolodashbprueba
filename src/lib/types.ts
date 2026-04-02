@@ -116,8 +116,18 @@ export interface Employee {
   shiftStart: string;
   shiftEnd: string;
   workingDaysPerMonth: number;
+  hourlyCost: number;
   isActive: boolean;
   createdAt: string;
+}
+
+export interface EmployeeShift {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  businessDate: string;
+  shiftStart: string;
+  shiftEnd: string;
 }
 
 export interface KpiSnapshot {

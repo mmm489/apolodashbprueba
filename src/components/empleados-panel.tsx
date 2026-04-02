@@ -12,7 +12,7 @@ function parseHours(start: string, end: string) {
   return (eh + em / 60) - (sh + sm / 60);
 }
 
-const emptyForm = { name: "", shiftStart: "09:00", shiftEnd: "13:00", workingDaysPerMonth: 22 };
+const emptyForm = { name: "", shiftStart: "09:00", shiftEnd: "13:00", workingDaysPerMonth: 22, hourlyCost: 0 };
 
 export function EmpleadosPanel({ employees }: { employees: Employee[] }) {
   const router = useRouter();
@@ -53,6 +53,7 @@ export function EmpleadosPanel({ employees }: { employees: Employee[] }) {
       shiftStart: emp.shiftStart,
       shiftEnd: emp.shiftEnd,
       workingDaysPerMonth: emp.workingDaysPerMonth,
+      hourlyCost: emp.hourlyCost,
     });
     setEditingId(emp.id);
     setShowForm(true);
@@ -101,7 +102,7 @@ export function EmpleadosPanel({ employees }: { employees: Employee[] }) {
           <p className="mb-4 text-[15px] font-semibold text-slate-900">
             {editingId ? "Editar empleat" : "Nou empleat"}
           </p>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <div>
               <label className="mb-1 block text-[12px] font-medium text-slate-500">Nom</label>
               <input
@@ -145,6 +146,18 @@ export function EmpleadosPanel({ employees }: { employees: Employee[] }) {
                 className="w-full rounded-lg border border-[var(--line)] px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
               />
             </div>
+            <div>
+              <label className="mb-1 block text-[12px] font-medium text-slate-500">Cost/hora (EUR)</label>
+              <input
+                type="number"
+                required
+                min={0}
+                step={0.01}
+                value={form.hourlyCost}
+                onChange={(e) => setForm({ ...form, hourlyCost: Number(e.target.value) })}
+                className="w-full rounded-lg border border-[var(--line)] px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
+              />
+            </div>
           </div>
           <div className="mt-4 flex gap-2">
             <button
@@ -174,6 +187,7 @@ export function EmpleadosPanel({ employees }: { employees: Employee[] }) {
               <th className="px-5 py-3">Horari</th>
               <th className="px-5 py-3 text-right">Hores/dia</th>
               <th className="px-5 py-3 text-right">Dies/mes</th>
+              <th className="px-5 py-3 text-right">Cost/h</th>
               <th className="px-5 py-3 text-right">Hores/mes</th>
               <th className="px-5 py-3 text-right">Accions</th>
             </tr>
@@ -181,7 +195,7 @@ export function EmpleadosPanel({ employees }: { employees: Employee[] }) {
           <tbody>
             {employees.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-5 py-8 text-center text-slate-400">
+                <td colSpan={7} className="px-5 py-8 text-center text-slate-400">
                   No hi ha empleats registrats. Fes clic a &quot;Nou empleat&quot; per comencar.
                 </td>
               </tr>
@@ -195,6 +209,7 @@ export function EmpleadosPanel({ employees }: { employees: Employee[] }) {
                   <td className="px-5 py-3 text-slate-600">{emp.shiftStart} – {emp.shiftEnd}</td>
                   <td className="px-5 py-3 text-right text-slate-600">{hoursPerDay.toFixed(1)} h</td>
                   <td className="px-5 py-3 text-right text-slate-600">{emp.workingDaysPerMonth}</td>
+                  <td className="px-5 py-3 text-right text-slate-600">{emp.hourlyCost.toFixed(2)} €</td>
                   <td className="px-5 py-3 text-right font-medium text-slate-900">{hoursPerMonth.toFixed(0)} h</td>
                   <td className="px-5 py-3 text-right">
                     <div className="flex items-center justify-end gap-1">

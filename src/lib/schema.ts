@@ -120,7 +120,18 @@ CREATE TABLE IF NOT EXISTS employees (
   shift_start TEXT NOT NULL,
   shift_end TEXT NOT NULL,
   working_days_per_month INTEGER NOT NULL,
+  hourly_cost NUMERIC(8,2) NOT NULL DEFAULT 0,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS employee_shifts (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  business_date DATE NOT NULL,
+  shift_start TEXT NOT NULL,
+  shift_end TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(employee_id, business_date)
 );
 `;

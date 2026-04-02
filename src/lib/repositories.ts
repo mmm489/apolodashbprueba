@@ -19,6 +19,7 @@ import type {
   BankTransaction,
   DocumentRecord,
   Employee,
+  EmployeeShift,
   ExtractionResult,
   HourlySalesEntry,
   InvoiceLineRecord,
@@ -217,13 +218,14 @@ export async function listEmployees() {
   }
 
   const sql = getSql();
-  const rows = await sql`SELECT id, name, shift_start, shift_end, working_days_per_month, is_active, created_at FROM employees WHERE is_active = TRUE ORDER BY name ASC`;
+  const rows = await sql`SELECT id, name, shift_start, shift_end, working_days_per_month, hourly_cost, is_active, created_at FROM employees WHERE is_active = TRUE ORDER BY name ASC`;
   return rows.map((row) => ({
     id: String(row.id),
     name: String(row.name),
     shiftStart: String(row.shift_start),
     shiftEnd: String(row.shift_end),
     workingDaysPerMonth: Number(row.working_days_per_month),
+    hourlyCost: toNumber(row.hourly_cost),
     isActive: Boolean(row.is_active),
     createdAt: new Date(String(row.created_at)).toISOString(),
   })) satisfies Employee[];
@@ -234,6 +236,7 @@ export async function createEmployee(input: {
   shiftStart: string;
   shiftEnd: string;
   workingDaysPerMonth: number;
+  hourlyCost: number;
 }) {
   const id = randomUUID();
 
@@ -243,8 +246,8 @@ export async function createEmployee(input: {
 
   const sql = getSql();
   await sql`
-    INSERT INTO employees (id, name, shift_start, shift_end, working_days_per_month)
-    VALUES (${id}, ${input.name}, ${input.shiftStart}, ${input.shiftEnd}, ${input.workingDaysPerMonth})
+    INSERT INTO employees (id, name, shift_start, shift_end, working_days_per_month, hourly_cost)
+    VALUES (${id}, ${input.name}, ${input.shiftStart}, ${input.shiftEnd}, ${input.workingDaysPerMonth}, ${input.hourlyCost})
   `;
 
   return { id, ...input, isActive: true, createdAt: new Date().toISOString() } satisfies Employee;
@@ -252,14 +255,14 @@ export async function createEmployee(input: {
 
 export async function updateEmployee(
   id: string,
-  input: { name: string; shiftStart: string; shiftEnd: string; workingDaysPerMonth: number },
+  input: { name: string; shiftStart: string; shiftEnd: string; workingDaysPerMonth: number; hourlyCost: number },
 ) {
   if (!hasDatabase()) return;
 
   const sql = getSql();
   await sql`
     UPDATE employees
-    SET name = ${input.name}, shift_start = ${input.shiftStart}, shift_end = ${input.shiftEnd}, working_days_per_month = ${input.workingDaysPerMonth}
+    SET name = ${input.name}, shift_start = ${input.shiftStart}, shift_end = ${input.shiftEnd}, working_days_per_month = ${input.workingDaysPerMonth}, hourly_cost = ${input.hourlyCost}
     WHERE id = ${id}
   `;
 }
@@ -269,6 +272,50 @@ export async function deleteEmployee(id: string) {
 
   const sql = getSql();
   await sql`UPDATE employees SET is_active = FALSE WHERE id = ${id}`;
+}
+
+/* ---------- Employee Shifts ---------- */
+
+export async function listEmployeeShifts(from?: string, to?: string) {
+  if (!hasDatabase()) return [];
+
+  const sql = getSql();
+  const rows = from && to
+    ? await sql`SELECT s.id, s.employee_id, e.name AS employee_name, s.business_date, s.shift_start, s.shift_end FROM employee_shifts s JOIN employees e ON e.id = s.employee_id WHERE s.business_date >= ${from} AND s.business_date <= ${to} ORDER BY s.business_date DESC, e.name ASC`
+    : await sql`SELECT s.id, s.employee_id, e.name AS employee_name, s.business_date, s.shift_start, s.shift_end FROM employee_shifts s JOIN employees e ON e.id = s.employee_id ORDER BY s.business_date DESC, e.name ASC LIMIT 200`;
+  return rows.map((row) => ({
+    id: String(row.id),
+    employeeId: String(row.employee_id),
+    employeeName: String(row.employee_name),
+    businessDate: normalizeDate(row.business_date),
+    shiftStart: String(row.shift_start),
+    shiftEnd: String(row.shift_end),
+  })) satisfies EmployeeShift[];
+}
+
+export async function upsertEmployeeShift(input: {
+  employeeId: string;
+  businessDate: string;
+  shiftStart: string;
+  shiftEnd: string;
+}) {
+  if (!hasDatabase()) return;
+
+  const sql = getSql();
+  const id = randomUUID();
+  await sql`
+    INSERT INTO employee_shifts (id, employee_id, business_date, shift_start, shift_end)
+    VALUES (${id}, ${input.employeeId}, ${input.businessDate}, ${input.shiftStart}, ${input.shiftEnd})
+    ON CONFLICT (employee_id, business_date)
+    DO UPDATE SET shift_start = EXCLUDED.shift_start, shift_end = EXCLUDED.shift_end
+  `;
+}
+
+export async function deleteEmployeeShift(employeeId: string, businessDate: string) {
+  if (!hasDatabase()) return;
+
+  const sql = getSql();
+  await sql`DELETE FROM employee_shifts WHERE employee_id = ${employeeId} AND business_date = ${businessDate}`;
 }
 
 export async function findTelegramUser(telegramUserId: string) {

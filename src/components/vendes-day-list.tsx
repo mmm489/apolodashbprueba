@@ -5,7 +5,7 @@ import { useRef, useState, useTransition } from "react";
 import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Clock, FileUp, LoaderCircle } from "lucide-react";
 
 import type { DayStatus } from "@/lib/analytics";
-import type { HourlySalesEntry, ProductSaleRecord } from "@/lib/types";
+import type { Employee, EmployeeShift, HourlySalesEntry, ProductSaleRecord } from "@/lib/types";
 
 /* ---- Family classification (from ventas-tabs) ---- */
 
@@ -71,10 +71,14 @@ export function VendesDayList({
   dayStatuses,
   productSales,
   hourlySales,
+  employeeShifts,
+  employees,
 }: {
   dayStatuses: DayStatus[];
   productSales: ProductSaleRecord[];
   hourlySales: HourlySalesEntry[];
+  employeeShifts: EmployeeShift[];
+  employees: Employee[];
 }) {
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
 
@@ -98,6 +102,7 @@ export function VendesDayList({
             const isExpanded = expandedDate === day.date;
             const dayProducts = productSales.filter((p) => p.businessDate === day.date);
             const dayHourly = hourlySales.filter((h) => h.businessDate === day.date);
+            const dayShifts = employeeShifts.filter((s) => s.businessDate === day.date);
 
             return (
               <DayRow
@@ -107,6 +112,8 @@ export function VendesDayList({
                 onToggle={() => setExpandedDate(isExpanded ? null : day.date)}
                 dayProducts={dayProducts}
                 dayHourly={dayHourly}
+                dayShifts={dayShifts}
+                employees={employees}
               />
             );
           })}
@@ -131,12 +138,16 @@ function DayRow({
   onToggle,
   dayProducts,
   dayHourly,
+  dayShifts,
+  employees,
 }: {
   day: DayStatus;
   isExpanded: boolean;
   onToggle: () => void;
   dayProducts: ProductSaleRecord[];
   dayHourly: HourlySalesEntry[];
+  dayShifts: EmployeeShift[];
+  employees: Employee[];
 }) {
   const hasAnyData = day.hasArticles || day.hasHourly;
 
@@ -229,10 +240,170 @@ function DayRow({
                 </div>
               )}
             </div>
+
+            {/* Employee shifts */}
+            <DayShifts date={day.date} shifts={dayShifts} employees={employees} />
           </td>
         </tr>
       )}
     </>
+  );
+}
+
+/* ---- Day shifts ---- */
+
+function DayShifts({
+  date,
+  shifts,
+  employees,
+}: {
+  date: string;
+  shifts: EmployeeShift[];
+  employees: Employee[];
+}) {
+  const router = useRouter();
+  const [adding, setAdding] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState("");
+  const [shiftStart, setShiftStart] = useState("09:00");
+  const [shiftEnd, setShiftEnd] = useState("13:00");
+  const [isPending, startTransition] = useTransition();
+
+  const assignedIds = new Set(shifts.map((s) => s.employeeId));
+  const availableEmployees = employees.filter((e) => !assignedIds.has(e.id));
+
+  function addShift() {
+    if (!selectedEmployee) return;
+    startTransition(async () => {
+      await fetch("/api/employees/shifts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeId: selectedEmployee, businessDate: date, shiftStart, shiftEnd }),
+      });
+      setAdding(false);
+      setSelectedEmployee("");
+      router.refresh();
+    });
+  }
+
+  function removeShift(employeeId: string) {
+    startTransition(async () => {
+      await fetch("/api/employees/shifts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeId, businessDate: date }),
+      });
+      router.refresh();
+    });
+  }
+
+  const totalHours = shifts.reduce((sum, s) => sum + parseHours(s.shiftStart, s.shiftEnd), 0);
+  const totalCost = shifts.reduce((sum, s) => {
+    const emp = employees.find((e) => e.id === s.employeeId);
+    return sum + parseHours(s.shiftStart, s.shiftEnd) * (emp?.hourlyCost ?? 0);
+  }, 0);
+
+  return (
+    <div className="mt-4">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[12px] font-semibold uppercase tracking-wider text-slate-500">Empleats del dia</p>
+        {availableEmployees.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setAdding(!adding)}
+            className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700 transition"
+          >
+            + Afegir empleat
+          </button>
+        )}
+      </div>
+
+      {adding && (
+        <div className="mb-3 flex flex-wrap items-end gap-2 rounded-lg border border-indigo-100 bg-indigo-50/50 p-3">
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-slate-500">Empleat</label>
+            <select
+              value={selectedEmployee}
+              onChange={(e) => {
+                setSelectedEmployee(e.target.value);
+                const emp = employees.find((x) => x.id === e.target.value);
+                if (emp) { setShiftStart(emp.shiftStart); setShiftEnd(emp.shiftEnd); }
+              }}
+              className="rounded-lg border border-[var(--line)] bg-white px-3 py-1.5 text-[13px] outline-none"
+            >
+              <option value="">Selecciona...</option>
+              {availableEmployees.map((e) => (
+                <option key={e.id} value={e.id}>{e.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-slate-500">Entrada</label>
+            <input type="time" value={shiftStart} onChange={(e) => setShiftStart(e.target.value)}
+              className="rounded-lg border border-[var(--line)] bg-white px-3 py-1.5 text-[13px] outline-none" />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-medium text-slate-500">Sortida</label>
+            <input type="time" value={shiftEnd} onChange={(e) => setShiftEnd(e.target.value)}
+              className="rounded-lg border border-[var(--line)] bg-white px-3 py-1.5 text-[13px] outline-none" />
+          </div>
+          <button
+            type="button"
+            onClick={addShift}
+            disabled={isPending || !selectedEmployee}
+            className="rounded-lg bg-indigo-600 px-4 py-1.5 text-[12px] font-medium text-white transition hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {isPending ? "Guardant..." : "Afegir"}
+          </button>
+        </div>
+      )}
+
+      {shifts.length > 0 ? (
+        <div className="rounded-lg border border-[var(--line)] bg-white overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-[var(--line)] bg-slate-50/80 text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                <th className="px-3 py-2 text-left">Empleat</th>
+                <th className="px-3 py-2 text-center">Horari</th>
+                <th className="px-3 py-2 text-right">Hores</th>
+                <th className="px-3 py-2 text-right">Cost</th>
+                <th className="px-3 py-2 w-8" />
+              </tr>
+            </thead>
+            <tbody>
+              {shifts.map((s) => {
+                const hours = parseHours(s.shiftStart, s.shiftEnd);
+                const emp = employees.find((e) => e.id === s.employeeId);
+                const cost = hours * (emp?.hourlyCost ?? 0);
+                return (
+                  <tr key={s.id} className="border-b border-[var(--line)]/50">
+                    <td className="px-3 py-1.5 text-[13px] font-medium text-slate-800">{s.employeeName}</td>
+                    <td className="px-3 py-1.5 text-center text-[13px] text-slate-600">{s.shiftStart} – {s.shiftEnd}</td>
+                    <td className="px-3 py-1.5 text-right text-[13px] text-slate-600">{hours.toFixed(1)} h</td>
+                    <td className="px-3 py-1.5 text-right text-[13px] font-semibold text-slate-800">{euro(cost)}</td>
+                    <td className="px-3 py-1.5 text-right">
+                      <button type="button" onClick={() => removeShift(s.employeeId)} className="text-slate-400 hover:text-rose-500 transition" title="Treure">
+                        <span className="text-[12px]">✕</span>
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="bg-slate-50/80 font-semibold text-slate-900">
+                <td className="px-3 py-2 text-[13px]">Total</td>
+                <td className="px-3 py-2 text-center text-[13px]">{shifts.length} empleats</td>
+                <td className="px-3 py-2 text-right text-[13px]">{totalHours.toFixed(1)} h</td>
+                <td className="px-3 py-2 text-right text-[13px]">{euro(totalCost)}</td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      ) : (
+        <p className="text-[12px] text-slate-400">Cap empleat assignat. Fes clic a &quot;+ Afegir empleat&quot; per registrar qui ha treballat.</p>
+      )}
+    </div>
   );
 }
 
@@ -436,6 +607,12 @@ function weatherEmoji(code: number): string {
   if (code >= 85 && code <= 86) return "❄️";
   if (code >= 95 && code <= 99) return "⛈️";
   return "🌤️";
+}
+
+function parseHours(start: string, end: string) {
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  return (eh + em / 60) - (sh + sm / 60);
 }
 
 function formatDate(dateStr: string) {

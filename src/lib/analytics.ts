@@ -4,6 +4,7 @@ import {
   listAlerts,
   listBankTransactions,
   listDocuments,
+  listEmployeeShifts,
   listEmployees,
   listHourlySales,
   listInvoiceLines,
@@ -14,7 +15,7 @@ import {
   listTelegramMessages,
   listTelegramUsers,
 } from "@/lib/repositories";
-import type { ChatAnswer, DateFilter, DatePreset, FinancialWorkspace, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, ProductSaleRecord, SalesReport } from "@/lib/types";
+import type { ChatAnswer, DateFilter, DatePreset, Employee, EmployeeShift, FinancialWorkspace, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, ProductSaleRecord, SalesReport } from "@/lib/types";
 
 export function resolveDateFilter(input?: {
   preset?: string;
@@ -269,6 +270,8 @@ export interface SalesWorkspace {
   salesReports: SalesReport[];
   productSales: ProductSaleRecord[];
   hourlySales: HourlySalesEntry[];
+  employeeShifts: EmployeeShift[];
+  employees: Employee[];
   dayStatuses: DayStatus[];
   topProducts: Array<{ productName: string; units: number; amount: number }>;
   totals: {
@@ -285,7 +288,9 @@ export async function getSalesWorkspace(input?: {
   to?: string;
 }): Promise<SalesWorkspace> {
   const filter = resolveDateFilter(input);
-  const [salesReports, productSales, hourlySales] = await Promise.all([listSalesReports(), listProductSales(), listHourlySales()]);
+  const [salesReports, productSales, hourlySales, employees, employeeShifts] = await Promise.all([
+    listSalesReports(), listProductSales(), listHourlySales(), listEmployees(), listEmployeeShifts(filter.from, filter.to),
+  ]);
 
   const fromDate = startOfDaySafe(filter.from);
   const toDate = endOfDaySafe(filter.to);
@@ -343,6 +348,8 @@ export async function getSalesWorkspace(input?: {
     salesReports: scopedSales,
     productSales: scopedProducts,
     hourlySales: scopedHourly,
+    employeeShifts,
+    employees,
     dayStatuses,
     topProducts,
     totals: {

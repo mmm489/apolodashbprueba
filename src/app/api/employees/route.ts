@@ -20,6 +20,7 @@ export async function POST(request: Request) {
     shiftStart: String(shiftStart),
     shiftEnd: String(shiftEnd),
     workingDaysPerMonth: Number(workingDaysPerMonth),
+    hourlyCost: Number(body.hourlyCost ?? 0),
   });
 
   return NextResponse.json(employee, { status: 201 });
@@ -38,6 +39,7 @@ export async function PUT(request: Request) {
     shiftStart: String(shiftStart),
     shiftEnd: String(shiftEnd),
     workingDaysPerMonth: Number(workingDaysPerMonth),
+    hourlyCost: Number(body.hourlyCost ?? 0),
   });
 
   return NextResponse.json({ ok: true });

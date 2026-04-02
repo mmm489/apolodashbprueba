@@ -16,7 +16,7 @@ export default async function VentasPage({
     to: firstValue(params?.to),
   });
 
-  const { dayStatuses, productSales, hourlySales, topProducts, totals, filter } = workspace;
+  const { dayStatuses, productSales, hourlySales, employeeShifts, employees, topProducts, totals, filter } = workspace;
 
   return (
     <AppFrame
@@ -43,6 +43,8 @@ export default async function VentasPage({
         dayStatuses={dayStatuses}
         productSales={productSales}
         hourlySales={hourlySales}
+        employeeShifts={employeeShifts}
+        employees={employees}
       />
     </AppFrame>
   );
