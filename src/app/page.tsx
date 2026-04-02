@@ -136,7 +136,7 @@ export default async function HomePage({
               const pct = maxDowAvg > 0 ? (d.avg / maxDowAvg) * 100 : 0;
               const isBest = d.avg === maxDowAvg && d.avg > 0;
               return (
-                <div key={d.day} className={`rounded-xl border p-3 transition hover:shadow-sm ${isBest ? "border-indigo-200 bg-indigo-50/50" : "border-[var(--line)] bg-slate-50/50"}`}>
+                <div key={d.day} className={`cursor-pointer rounded-xl border p-3 transition hover:-translate-y-0.5 hover:shadow-md ${isBest ? "border-indigo-200 bg-indigo-50/50" : "border-[var(--line)] bg-slate-50/50"}`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className={`text-[14px] font-bold w-8 ${isBest ? "text-indigo-700" : "text-slate-800"}`}>{d.day}</span>
