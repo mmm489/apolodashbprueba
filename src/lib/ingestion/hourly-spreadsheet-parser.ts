@@ -61,6 +61,12 @@ export function parseHourlySpreadsheetReport(fileName: string, buffer: Buffer): 
     raw: true,
   });
 
+  // Validate format: must contain HORA + OPERACIONS headers
+  const allText = textRows.slice(0, 15).flat().map((c) => String(c ?? "").toUpperCase()).join(" ");
+  if (!allText.includes("HORA") || !allText.includes("OPERACIONS")) {
+    throw new Error(`El format del fitxer "${fileName}" no es un Resum Hores valid. Falten capçaleres (HORA, OPERACIONS).`);
+  }
+
   const saleDate =
     extractSaleDate(textRows) ??
     fallbackDateFromFileName(fileName) ??

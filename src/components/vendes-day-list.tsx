@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
-import { CheckCircle2, ChevronDown, ChevronRight, Clock, FileUp, LoaderCircle } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Clock, FileUp, LoaderCircle } from "lucide-react";
 
 import type { DayStatus } from "@/lib/analytics";
 import type { HourlySalesEntry, ProductSaleRecord } from "@/lib/types";
@@ -152,8 +152,8 @@ function DayRow({
         </td>
         <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-end gap-1">
-            {!day.hasArticles && <UploadButton label="Articles" date={day.date} />}
-            {!day.hasHourly && <UploadButton label="Hores" date={day.date} />}
+            {!day.hasArticles && <UploadButton label="Articles" date={day.date} expectedType="articles" />}
+            {!day.hasHourly && <UploadButton label="Hores" date={day.date} expectedType="hores" />}
           </div>
         </td>
       </tr>
@@ -244,38 +244,93 @@ function StatusBadge({ ok }: { ok: boolean }) {
 
 /* ---- Upload button ---- */
 
-function UploadButton({ label, date }: { label: string; date: string }) {
+function UploadButton({ label, date, expectedType }: { label: string; date: string; expectedType: "articles" | "hores" }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isPending, startTransition] = useTransition();
+  const [status, setStatus] = useState<"idle" | "ok" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setStatus("idle");
+    setErrorMsg("");
+
     startTransition(async () => {
-      const formData = new FormData();
-      formData.append("files", file);
-      await fetch("/api/ingest/upload", { method: "POST", body: formData });
-      router.refresh();
+      try {
+        const formData = new FormData();
+        formData.append("files", file);
+        const res = await fetch("/api/ingest/upload", { method: "POST", body: formData });
+        const data = await res.json();
+
+        const processed = data.processed?.[0];
+        if (!processed) {
+          setStatus("error");
+          setErrorMsg("No s'ha pogut processar el fitxer.");
+          return;
+        }
+
+        if (processed.status === "error") {
+          setStatus("error");
+          setErrorMsg(processed.error ?? "Error al processar el fitxer.");
+          return;
+        }
+
+        if (processed.duplicated) {
+          setStatus("error");
+          setErrorMsg("Aquest fitxer ja existeix a la base de dades.");
+          return;
+        }
+
+        // Validate type matches expectation
+        const gotType = processed.documentType;
+        const expectedDocType = expectedType === "articles" ? "sales_report" : "hourly_report";
+        if (gotType !== expectedDocType) {
+          setStatus("error");
+          setErrorMsg(
+            expectedType === "articles"
+              ? "El fitxer no es un Articles Venda. Comprova que puges el fitxer correcte."
+              : "El fitxer no es un Resum Hores. Comprova que puges el fitxer correcte.",
+          );
+          return;
+        }
+
+        setStatus("ok");
+        router.refresh();
+      } catch {
+        setStatus("error");
+        setErrorMsg("Error de connexio al pujar el fitxer.");
+      }
     });
 
-    // Reset input so the same file can be re-selected
     e.target.value = "";
   }
 
   return (
-    <>
-      <button
-        type="button"
-        disabled={isPending}
-        onClick={() => fileInputRef.current?.click()}
-        className="inline-flex items-center gap-1 rounded-lg bg-indigo-50 px-2.5 py-1 text-[11px] font-medium text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50"
-        title={`Pujar ${label} (${date})`}
-      >
-        {isPending ? <LoaderCircle className="size-3 animate-spin" /> : <FileUp className="size-3" />}
-        {label}
-      </button>
+    <div className="inline-flex flex-col items-end gap-1">
+      <div className="inline-flex items-center gap-1">
+        {status === "ok" && <CheckCircle2 className="size-3 text-emerald-500" />}
+        {status === "error" && <AlertCircle className="size-3 text-rose-500" />}
+        <button
+          type="button"
+          disabled={isPending}
+          onClick={() => fileInputRef.current?.click()}
+          className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50 ${
+            status === "error"
+              ? "bg-rose-50 text-rose-700 hover:bg-rose-100"
+              : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+          }`}
+          title={`Pujar ${label} (${date})`}
+        >
+          {isPending ? <LoaderCircle className="size-3 animate-spin" /> : <FileUp className="size-3" />}
+          {label}
+        </button>
+      </div>
+      {status === "error" && errorMsg && (
+        <p className="max-w-[200px] text-right text-[10px] leading-tight text-rose-600">{errorMsg}</p>
+      )}
       <input
         ref={fileInputRef}
         type="file"
@@ -283,7 +338,7 @@ function UploadButton({ label, date }: { label: string; date: string }) {
         className="hidden"
         onChange={handleFileChange}
       />
-    </>
+    </div>
   );
 }
 

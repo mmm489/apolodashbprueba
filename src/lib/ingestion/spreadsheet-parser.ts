@@ -35,6 +35,17 @@ export function parseSpreadsheetSalesReport(fileName: string, buffer: Buffer): E
     raw: true,
   });
 
+  // Validate format: must have expected headers (Codi, Descripció/Descripcio, Unitats, Import)
+  const headerText = textRows.slice(0, 15).flat().map((c) => String(c ?? "").toUpperCase()).join(" ");
+  const hasExpectedHeaders =
+    (headerText.includes("CODI") || headerText.includes("CODIGO")) &&
+    (headerText.includes("DESCRIP") || headerText.includes("PRODUCTO")) &&
+    (headerText.includes("UNITAT") || headerText.includes("UNIDADES")) &&
+    (headerText.includes("IMPORT") || headerText.includes("IMPORTE"));
+  if (!hasExpectedHeaders) {
+    throw new Error(`El format del fitxer "${fileName}" no es un Articles Venda valid. Falten capçaleres (Codi, Descripcio, Unitats, Import).`);
+  }
+
   const saleDate = extractSaleDate(textRows) ?? fallbackDateFromFileName(fileName) ?? new Date().toISOString().slice(0, 10);
   validateDate(saleDate, fileName);
   const itemRows = rawRows
