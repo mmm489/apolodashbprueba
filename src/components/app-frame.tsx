@@ -5,16 +5,13 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
   Bell,
-  Building2,
   ChevronLeft,
   ChevronRight,
-  FileText,
-  Landmark,
   LayoutDashboard,
   Menu,
+  Package,
   Receipt,
   Search,
-  Package,
   Settings,
   ShoppingBag,
   Users,
@@ -26,12 +23,9 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { href: "/", label: "Dashboard", section: "General", icon: LayoutDashboard },
   { href: "/ventas", label: "Vendes", section: "General", icon: ShoppingBag },
-  { href: "/finanzas", label: "Finances", section: "General", icon: Building2 },
   { href: "/gastos", label: "Despeses", section: "General", icon: Receipt },
-  { href: "/tesoreria", label: "Tresoreria", section: "General", icon: Landmark },
   { href: "/empleados", label: "Empleats", section: "General", icon: Users },
   { href: "/productes", label: "Productes", section: "General", icon: Package },
-  { href: "/documentos", label: "Documents", section: "Sistema", icon: FileText },
 ];
 
 export function AppFrame({
