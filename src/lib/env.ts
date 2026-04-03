@@ -4,6 +4,8 @@ const env = {
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN,
   TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET,
   INGESTION_WEBHOOK_SECRET: process.env.INGESTION_WEBHOOK_SECRET,
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID,
   APP_URL: process.env.APP_URL ?? "http://localhost:3000",
   ONEDRIVE_INPUT_DIR: process.env.ONEDRIVE_INPUT_DIR,
   OCR_LANG: process.env.OCR_LANG ?? "spa",

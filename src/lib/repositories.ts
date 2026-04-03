@@ -577,8 +577,8 @@ async function _persistExtractionInner(sql: ReturnType<typeof getSql>, documentI
     const issueDate = raw.issueDate ?? raw.issue_date;
     const totalAmount = raw.totalAmount ?? raw.total_amount;
     if (!supplierName || !issueDate || totalAmount == null) {
-      console.warn("[persistExtraction] Skipping invoice - missing required fields:", { supplierName, issueDate, totalAmount });
-      return;
+      const missing = [!supplierName && "proveidor", !issueDate && "data", totalAmount == null && "import"].filter(Boolean).join(", ");
+      throw new Error(`No s'ha pogut guardar la factura: falten camps (${missing}). Comprova que el document sigui una factura clara.`);
     }
     const id = raw.id ? String(raw.id) : randomUUID();
     const dueDate = raw.dueDate ?? raw.due_date ?? null;

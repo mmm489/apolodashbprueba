@@ -97,13 +97,15 @@ export async function ingestPdfBuffer(input: {
       console.error(`[ingest] persistExtraction error for ${input.fileName}: ${persistError}`);
     }
 
-    const finalStatus = extraction.confidence >= 0.6 ? "validated" : "error";
+    const finalStatus = persistError ? "error" : extraction.confidence >= 0.6 ? "validated" : "error";
     const errorMessage =
-      finalStatus === "error"
-        ? extraction.documentType === "unknown"
-          ? "No se pudo clasificar el documento con suficiente confianza."
-          : "No se pudo extraer el documento con suficiente confianza."
-        : null;
+      persistError
+        ? persistError
+        : finalStatus === "error"
+          ? extraction.documentType === "unknown"
+            ? "No s'ha pogut classificar el document."
+            : "No s'ha pogut extreure el document amb prou confiança."
+          : null;
 
     await updateDocumentProcessingState({
       documentId: document.id,
