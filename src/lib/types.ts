@@ -180,7 +180,7 @@ export interface DashboardSnapshot {
   lastUpdatedAt: string;
 }
 
-export type DatePreset = "7d" | "30d" | "90d" | "month" | "year" | "custom";
+export type DatePreset = "today" | "yesterday" | "7d" | "30d" | "90d" | "month" | "year" | "custom";
 
 export interface DateFilter {
   preset: DatePreset;

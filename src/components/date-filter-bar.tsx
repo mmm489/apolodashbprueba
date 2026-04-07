@@ -5,6 +5,8 @@ import { useState } from "react";
 import { Calendar, ChevronRight } from "lucide-react";
 
 const presets = [
+  { value: "today", label: "Avui" },
+  { value: "yesterday", label: "Ahir" },
   { value: "7d", label: "7 dies" },
   { value: "30d", label: "30 dies" },
   { value: "90d", label: "90 dies" },

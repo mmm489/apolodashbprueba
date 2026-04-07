@@ -38,7 +38,10 @@ export function resolveDateFilter(input?: {
     };
   }
 
+  const yesterday = subDays(now, 1);
   const ranges = {
+    today: { from: now, to: now },
+    yesterday: { from: yesterday, to: yesterday },
     "7d": { from: subDays(now, 7), to: now },
     "30d": { from: subDays(now, 30), to: now },
     "90d": { from: subDays(now, 90), to: now },
@@ -582,7 +585,7 @@ export async function getExpensesWorkspace(input?: {
 }
 
 function normalizePreset(preset?: string): DatePreset {
-  if (preset === "7d" || preset === "30d" || preset === "90d" || preset === "month" || preset === "year" || preset === "custom") {
+  if (preset === "today" || preset === "yesterday" || preset === "7d" || preset === "30d" || preset === "90d" || preset === "month" || preset === "year" || preset === "custom") {
     return preset;
   }
 
