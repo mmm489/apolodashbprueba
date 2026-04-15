@@ -177,6 +177,31 @@ export interface DateFilter {
   to: string;
 }
 
+export interface PeriodTotals {
+  sales: number;
+  orders: number;
+  averageTicket: number;
+  daysWithData: number;
+}
+
+export interface PeriodComparison {
+  current: PeriodTotals;
+  previous: PeriodTotals;
+  lastYear: PeriodTotals;
+  deltaPreviousPct: number;
+  deltaYoYPct: number;
+}
+
+export interface DailyDigest {
+  date: string;
+  sales: number;
+  orders: number;
+  averageTicket: number;
+  vsLastWeek: { sales: number; deltaPct: number } | null;
+  vsLastYear: { sales: number; deltaPct: number } | null;
+  forecastTomorrow: { date: string; sales: number; basedOn: number } | null;
+}
+
 export interface FinancialWorkspace {
   filter: DateFilter;
   snapshot: DashboardSnapshot;
@@ -187,6 +212,8 @@ export interface FinancialWorkspace {
   totalsByCategory: Array<{ label: string; amount: number }>;
   productSales: ProductSaleRecord[];
   topProducts: Array<{ productName: string; units: number; amount: number }>;
+  comparisons: PeriodComparison;
+  dailyDigest: DailyDigest | null;
 }
 
 export interface ExtractionResult {

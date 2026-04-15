@@ -1,4 +1,4 @@
-import { Banknote, Clock, Package, Percent, TrendingUp, Users } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight, Banknote, Clock, Eye, Minus, Package, Percent, Sparkles, TrendingUp, Users } from "lucide-react";
 
 import { AppFrame } from "@/components/app-frame";
 import { DateFilterBar } from "@/components/date-filter-bar";
@@ -19,11 +19,16 @@ export default async function HomePage({
   });
 
   const kpis = workspace.snapshot.kpis;
+  const cmp = workspace.comparisons;
   const foodCostPct = kpis.totalSales > 0 ? (kpis.totalProductCost / kpis.totalSales) * 100 : 0;
   const grossMargin = kpis.totalSales - kpis.totalProductCost;
   const operatingMargin = grossMargin - kpis.totalEmployeeCost;
   const grossMarginPct = kpis.totalSales > 0 ? (grossMargin / kpis.totalSales) * 100 : 0;
   const operatingMarginPct = kpis.totalSales > 0 ? (operatingMargin / kpis.totalSales) * 100 : 0;
+  // Average ticket deltas (compute on totals because cmp.current.averageTicket
+  // already reflects this period's value)
+  const ticketDeltaPrev = pctDelta(cmp.current.averageTicket, cmp.previous.averageTicket);
+  const ticketDeltaYoY = pctDelta(cmp.current.averageTicket, cmp.lastYear.averageTicket);
 
   const salesBarItems = workspace.salesReports.slice(0, 10).map((report) => ({
     label: report.businessDate.slice(5),
@@ -57,14 +62,17 @@ export default async function HomePage({
     >
       <DateFilterBar preset={workspace.filter.preset} from={workspace.filter.from} to={workspace.filter.to} />
 
+      {/* "Què vigilar avui" — daily digest based on the most recent day with data */}
+      {workspace.dailyDigest && <TodayDigest digest={workspace.dailyDigest} foodCostPct={foodCostPct} laborPct={kpis.totalSales > 0 ? (kpis.totalEmployeeCost / kpis.totalSales) * 100 : 0} bestHourLabel={kpis.bestHourLabel} />}
+
       {/* KPI cards */}
       <section className="stagger-children grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <MiniStatCard
           icon={<TrendingUp className="size-4" />}
           label="Total vendes"
           value={euro(kpis.totalSales)}
-          delta={`${workspace.salesReports.length} dies`}
-          positive
+          deltaPrev={cmp.deltaPreviousPct}
+          deltaYoY={cmp.deltaYoYPct}
           color="emerald"
         />
         <MiniStatCard
@@ -93,7 +101,8 @@ export default async function HomePage({
           icon={<Banknote className="size-4" />}
           label="Tiquet mitja"
           value={euro(kpis.averageTicket)}
-          delta={`${kpis.totalSales > 0 ? Math.round(kpis.totalSales / kpis.averageTicket) : 0} clients`}
+          deltaPrev={ticketDeltaPrev}
+          deltaYoY={ticketDeltaYoY}
           color="amber"
         />
       </section>
@@ -237,11 +246,21 @@ const colorMap: Record<string, { bg: string; icon: string; text: string }> = {
 };
 
 function MiniStatCard({
-  icon, label, value, delta, positive, color = "indigo",
+  icon, label, value, delta, positive, color = "indigo", deltaPrev, deltaYoY,
 }: {
-  icon: React.ReactNode; label: string; value: string; delta: string; positive?: boolean; color?: string;
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  delta?: string;
+  positive?: boolean;
+  color?: string;
+  /** Optional: % change vs previous period of same length. Renders as ↗ +X% / ↘ −X%. */
+  deltaPrev?: number;
+  /** Optional: % change vs same period 52 weeks ago (DOW-aligned). */
+  deltaYoY?: number;
 }) {
   const c = colorMap[color] ?? colorMap.indigo;
+  const showDeltas = deltaPrev !== undefined || deltaYoY !== undefined;
   return (
     <article className="group rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
       <div className="flex items-center gap-2">
@@ -249,8 +268,174 @@ function MiniStatCard({
         <span className="text-[13px] font-medium text-slate-500">{label}</span>
       </div>
       <p className="mt-4 text-[26px] font-bold tracking-tight text-slate-900">{value}</p>
-      <p className={`mt-1 text-[13px] font-medium ${positive ? "text-emerald-600" : "text-slate-400"}`}>{delta}</p>
+      {showDeltas ? (
+        <div className="mt-1 flex flex-col gap-0.5">
+          {deltaPrev !== undefined && <DeltaPill label="vs anterior" pct={deltaPrev} />}
+          {deltaYoY !== undefined && <DeltaPill label="vs any passat" pct={deltaYoY} />}
+        </div>
+      ) : (
+        <p className={`mt-1 text-[13px] font-medium ${positive ? "text-emerald-600" : "text-slate-400"}`}>{delta}</p>
+      )}
     </article>
+  );
+}
+
+function DeltaPill({ label, pct }: { label: string; pct: number }) {
+  // Threshold: anything within ±0.5% is treated as flat.
+  const isFlat = Math.abs(pct) < 0.5;
+  const isUp = pct >= 0.5;
+  const Icon = isFlat ? Minus : isUp ? ArrowUpRight : ArrowDownRight;
+  const color = isFlat ? "text-slate-400" : isUp ? "text-emerald-600" : "text-rose-600";
+  const sign = pct > 0 ? "+" : "";
+  return (
+    <span className={`inline-flex items-center gap-1 text-[12px] font-medium ${color}`}>
+      <Icon className="size-3" />
+      <span>{sign}{pct.toFixed(1)}%</span>
+      <span className="text-slate-400">{label}</span>
+    </span>
+  );
+}
+
+function pctDelta(current: number, baseline: number): number {
+  if (baseline <= 0) return 0;
+  return ((current - baseline) / baseline) * 100;
+}
+
+/* ---------- "Què vigilar avui" widget ---------- */
+
+function TodayDigest({
+  digest,
+  foodCostPct,
+  laborPct,
+  bestHourLabel,
+}: {
+  digest: import("@/lib/types").DailyDigest;
+  foodCostPct: number;
+  laborPct: number;
+  bestHourLabel: string;
+}) {
+  const date = new Date(digest.date).toLocaleDateString("ca-ES", { weekday: "long", day: "2-digit", month: "long" });
+  const indicators = [
+    {
+      label: "Vendes",
+      value: euro(digest.sales),
+      delta: digest.vsLastWeek?.deltaPct,
+      deltaLabel: "vs setmana passada",
+    },
+    {
+      label: "Tiquet mitjà",
+      value: euro(digest.averageTicket),
+      delta: digest.vsLastWeek
+        ? pctDelta(digest.averageTicket, digest.vsLastWeek.sales / Math.max(digest.orders, 1))
+        : undefined,
+      deltaLabel: "vs DOW any passat",
+    },
+    {
+      label: "Food cost",
+      value: `${foodCostPct.toFixed(1)}%`,
+      target: 35,
+      currentForTarget: foodCostPct,
+      lowerIsBetter: true,
+    },
+    {
+      label: "Labor cost",
+      value: `${laborPct.toFixed(1)}%`,
+      target: 30,
+      currentForTarget: laborPct,
+      lowerIsBetter: true,
+    },
+    {
+      label: "Hora pic",
+      value: bestHourLabel || "--",
+      hint: "del periode",
+    },
+  ];
+
+  return (
+    <section className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50/80 via-white to-white p-5 shadow-sm">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Eye className="size-5 text-indigo-600" />
+          <div>
+            <p className="text-[18px] font-bold tracking-tight text-slate-900">Què vigilar avui</p>
+            <p className="text-[12px] text-slate-500">Resum del dia més recent — {date}</p>
+          </div>
+        </div>
+        {digest.forecastTomorrow && (
+          <div className="hidden items-center gap-2 rounded-xl bg-violet-50 px-3 py-2 sm:flex">
+            <Sparkles className="size-4 text-violet-600" />
+            <div className="text-right">
+              <p className="text-[11px] font-medium text-violet-700">Previsió demà</p>
+              <p className="text-[15px] font-bold text-violet-900">{euro(digest.forecastTomorrow.sales)}</p>
+              <p className="text-[10px] text-violet-600">mitjana últims {digest.forecastTomorrow.basedOn} mateix dia</p>
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        {indicators.map((ind) => (
+          <DigestCard key={ind.label} {...ind} />
+        ))}
+      </div>
+      {digest.vsLastYear && (
+        <p className="mt-3 text-[12px] text-slate-500">
+          <span className="font-medium">YoY (mateix dia setmana fa 52 setmanes):</span>{" "}
+          {euro(digest.vsLastYear.sales)} →
+          <span className={digest.vsLastYear.deltaPct >= 0 ? "ml-1 font-semibold text-emerald-600" : "ml-1 font-semibold text-rose-600"}>
+            {digest.vsLastYear.deltaPct > 0 ? "+" : ""}{digest.vsLastYear.deltaPct.toFixed(1)}%
+          </span>
+        </p>
+      )}
+    </section>
+  );
+}
+
+function DigestCard({
+  label,
+  value,
+  delta,
+  deltaLabel,
+  target,
+  currentForTarget,
+  lowerIsBetter,
+  hint,
+}: {
+  label: string;
+  value: string;
+  delta?: number;
+  deltaLabel?: string;
+  target?: number;
+  currentForTarget?: number;
+  lowerIsBetter?: boolean;
+  hint?: string;
+}) {
+  let status: "good" | "bad" | "flat" = "flat";
+  if (target !== undefined && currentForTarget !== undefined) {
+    const meets = lowerIsBetter ? currentForTarget <= target : currentForTarget >= target;
+    status = meets ? "good" : "bad";
+  } else if (delta !== undefined) {
+    status = Math.abs(delta) < 0.5 ? "flat" : delta >= 0 ? "good" : "bad";
+  }
+
+  const ringColor = status === "good" ? "ring-emerald-200 bg-emerald-50/50" : status === "bad" ? "ring-rose-200 bg-rose-50/50" : "ring-slate-200 bg-white";
+  const valueColor = status === "good" ? "text-emerald-700" : status === "bad" ? "text-rose-700" : "text-slate-900";
+
+  return (
+    <div className={`rounded-xl ring-1 ${ringColor} p-3`}>
+      <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">{label}</p>
+      <p className={`mt-1 text-[20px] font-bold tracking-tight ${valueColor}`}>{value}</p>
+      {delta !== undefined && deltaLabel && (
+        <p className={`mt-0.5 text-[11px] font-medium ${status === "good" ? "text-emerald-600" : status === "bad" ? "text-rose-600" : "text-slate-400"}`}>
+          {delta > 0 ? "+" : ""}{delta.toFixed(1)}% {deltaLabel}
+        </p>
+      )}
+      {target !== undefined && (
+        <p className="mt-0.5 text-[11px] text-slate-500">
+          Objectiu: {lowerIsBetter ? "<" : ">"} {target}%
+        </p>
+      )}
+      {hint && <p className="mt-0.5 text-[11px] text-slate-400">{hint}</p>}
+    </div>
   );
 }
 

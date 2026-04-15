@@ -143,18 +143,75 @@ export function VendesSummary({
       </div>
 
       {/* Top products */}
-      <div className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
-        <div className="mb-4">
+      <TopProducts topProducts={topProducts} costByName={costByName} />
+    </section>
+  );
+}
+
+/* ---- Top products with sort toggle (import vs marge) ---- */
+
+function TopProducts({
+  topProducts,
+  costByName,
+}: {
+  topProducts: Array<{ productName: string; units: number; amount: number }>;
+  costByName: Map<string, number>;
+}) {
+  const [sortBy, setSortBy] = useState<"amount" | "margin">("amount");
+
+  // Enrich with margin info first so we can sort by it.
+  const enriched = topProducts.map((p) => {
+    const unitCost = costByName.get(p.productName.toLowerCase()) ?? 0;
+    const totalCost = unitCost * p.units;
+    const margin = p.amount - totalCost;
+    return { ...p, unitCost, totalCost, margin, hasCost: unitCost > 0 };
+  });
+
+  const sorted = sortBy === "margin"
+    // Products without a unit cost are pushed to the end so we don't promote
+    // them as "high margin" just because their cost is unknown.
+    ? [...enriched].sort((a, b) => {
+        if (a.hasCost !== b.hasCost) return a.hasCost ? -1 : 1;
+        return b.margin - a.margin;
+      })
+    : [...enriched].sort((a, b) => b.amount - a.amount);
+
+  const top15 = sorted.slice(0, 15);
+  const maxValue = sortBy === "margin"
+    ? Math.max(...top15.map((p) => Math.max(p.margin, 0)), 1)
+    : top15[0]?.amount ?? 1;
+
+  return (
+    <div className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
           <p className="text-[20px] font-bold tracking-tight text-slate-900">Top productes</p>
-          <p className="mt-0.5 text-[13px] text-slate-500">Ranking per import acumulat</p>
+          <p className="mt-0.5 text-[13px] text-slate-500">
+            Ranking {sortBy === "margin" ? "per marge €" : "per import"}
+          </p>
         </div>
-        <div className="space-y-2">
-          {topProducts.slice(0, 15).map((p, i) => {
-            const maxAmount = topProducts[0]?.amount ?? 1;
-            const pct = (p.amount / maxAmount) * 100;
-            const unitCost = costByName.get(p.productName.toLowerCase()) ?? 0;
-            const totalCost = unitCost * p.units;
-            const margin = p.amount - totalCost;
+        <div className="inline-flex rounded-lg bg-slate-100 p-0.5 text-[12px] font-medium">
+          <button
+            type="button"
+            onClick={() => setSortBy("amount")}
+            className={`rounded-md px-2.5 py-1 transition ${sortBy === "amount" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+          >
+            Import
+          </button>
+          <button
+            type="button"
+            onClick={() => setSortBy("margin")}
+            className={`rounded-md px-2.5 py-1 transition ${sortBy === "margin" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+          >
+            Marge
+          </button>
+        </div>
+      </div>
+      <div className="space-y-2">
+        {top15.map((p, i) => {
+            const refValue = sortBy === "margin" ? Math.max(p.margin, 0) : p.amount;
+            const pct = maxValue > 0 ? (refValue / maxValue) * 100 : 0;
+            const { unitCost, totalCost, margin } = p;
             return (
               <div key={p.productName} className="rounded-xl border border-[var(--line)] bg-slate-50/50 p-3 transition hover:bg-white hover:shadow-sm">
                 <div className="flex items-center gap-3">
@@ -181,9 +238,8 @@ export function VendesSummary({
               </div>
             );
           })}
-        </div>
       </div>
-    </section>
+    </div>
   );
 }
 

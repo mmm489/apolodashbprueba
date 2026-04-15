@@ -1,4 +1,4 @@
-import { endOfDay, endOfMonth, endOfYear, formatISO, parseISO, startOfMonth, startOfYear, subDays } from "date-fns";
+import { addDays, differenceInCalendarDays, endOfDay, endOfMonth, endOfYear, formatISO, parseISO, startOfMonth, startOfYear, subDays, subWeeks } from "date-fns";
 
 import {
   listAlerts,
@@ -16,7 +16,7 @@ import {
   listTelegramMessages,
   listTelegramUsers,
 } from "@/lib/repositories";
-import type { ChatAnswer, DateFilter, DatePreset, Employee, EmployeeShift, FinancialWorkspace, HourlyProductSale, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, ProductCost, ProductSaleRecord, SalesReport } from "@/lib/types";
+import type { ChatAnswer, DailyDigest as DailyDigestType, DateFilter, DatePreset, Employee, EmployeeShift, FinancialWorkspace, HourlyProductSale, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, ProductCost, ProductSaleRecord, SalesReport } from "@/lib/types";
 
 export function resolveDateFilter(input?: {
   preset?: string;
@@ -64,10 +64,14 @@ export async function getFinancialWorkspace(input?: {
   to?: string;
 }): Promise<FinancialWorkspace> {
   const filter = resolveDateFilter(input);
-  const [documents, salesReports, hourlySales, invoices, payrolls, productSales, alerts, telegramUsers, telegramMessages, employees, productCosts, employeeShifts] =
+  // Extend the sales query to cover the previous period and the same period
+  // 52 weeks earlier (DOW-aligned year-over-year) for comparison metrics.
+  const comparisonRange = buildComparisonRange(filter);
+  const [documents, salesReports, extendedSales, hourlySales, invoices, payrolls, productSales, alerts, telegramUsers, telegramMessages, employees, productCosts, employeeShifts] =
     await Promise.all([
       listDocuments(filter.from, filter.to),
       listSalesReports(filter.from, filter.to),
+      listSalesReports(comparisonRange.from, comparisonRange.to),
       listHourlySales(filter.from, filter.to),
       listInvoices(filter.from, filter.to),
       listPayrolls(filter.from, filter.to),
@@ -97,6 +101,9 @@ export async function getFinancialWorkspace(input?: {
   const totalPayroll = scopedPayrolls.reduce((sum, item) => sum + item.grossAmount, 0);
   const totalOrders = scopedSales.reduce((sum, item) => sum + item.orderCount, 0);
   const averageTicket = totalOrders > 0 ? totalSales / totalOrders : 0;
+
+  const comparisons = computePeriodComparisons(extendedSales, filter);
+  const dailyDigest = computeDailyDigest(extendedSales);
 
   const hourlyPerformance = scopedHourly
     .reduce<Array<{ hour: string; sales: number }>>((acc, item) => {
@@ -200,6 +207,8 @@ export async function getFinancialWorkspace(input?: {
     productSales: scopedProductSales,
     topProducts,
     totalsByCategory,
+    comparisons,
+    dailyDigest,
   };
 }
 
@@ -592,6 +601,120 @@ function endOfDaySafe(value: string) {
 function isDateInRange(value: string, from: Date, to: Date) {
   const date = new Date(value);
   return date >= from && date <= to;
+}
+
+/* ---------- Daily digest ("Què vigilar avui") ----------
+ *
+ * DailyDigest type lives in types.ts so FinancialWorkspace can reference it. */
+
+/** Builds the today/forecast digest from a wide window of sales reports. */
+export function computeDailyDigest(reports: SalesReport[]): DailyDigestType | null {
+  if (!reports.length) return null;
+  const sortedDesc = [...reports].sort((a, b) => b.businessDate.localeCompare(a.businessDate));
+  const today = sortedDesc[0];
+  const todayDate = parseISO(today.businessDate);
+
+  // Same DOW comparisons
+  const findReport = (date: Date) => {
+    const iso = formatISO(date, { representation: "date" });
+    return reports.find((r) => r.businessDate === iso) ?? null;
+  };
+  const lastWeekReport = findReport(addDays(todayDate, -7));
+  const lastYearReport = findReport(subWeeks(todayDate, 52));
+
+  // Forecast: average of last 4 same-DOW values (excluding today itself)
+  const sameDowSales: number[] = [];
+  for (let weeksBack = 1; weeksBack <= 12 && sameDowSales.length < 4; weeksBack++) {
+    const r = findReport(addDays(todayDate, -7 * weeksBack));
+    if (r) sameDowSales.push(r.totalSales);
+  }
+  const forecastSales = sameDowSales.length > 0
+    ? sameDowSales.reduce((s, v) => s + v, 0) / sameDowSales.length
+    : 0;
+  const tomorrowDate = formatISO(addDays(todayDate, 1), { representation: "date" });
+
+  return {
+    date: today.businessDate,
+    sales: today.totalSales,
+    orders: today.orderCount,
+    averageTicket: today.averageTicket,
+    vsLastWeek: lastWeekReport
+      ? { sales: lastWeekReport.totalSales, deltaPct: pct(today.totalSales, lastWeekReport.totalSales) }
+      : null,
+    vsLastYear: lastYearReport
+      ? { sales: lastYearReport.totalSales, deltaPct: pct(today.totalSales, lastYearReport.totalSales) }
+      : null,
+    forecastTomorrow: sameDowSales.length > 0
+      ? { date: tomorrowDate, sales: forecastSales, basedOn: sameDowSales.length }
+      : null,
+  };
+}
+
+/* ---------- Period comparisons ----------
+ *
+ * PeriodTotals and PeriodComparison live in types.ts so the FinancialWorkspace
+ * type can reference them without a circular import. */
+
+/** Returns the widest range we need to fetch so we can compute comparisons. */
+function buildComparisonRange(filter: DateFilter): { from: string; to: string } {
+  const from = parseISO(filter.from);
+  const to = parseISO(filter.to);
+  const lengthDays = differenceInCalendarDays(to, from) + 1;
+  const previousFrom = addDays(from, -lengthDays);
+  const yoyFrom = subWeeks(from, 52);
+  const earliest = previousFrom < yoyFrom ? previousFrom : yoyFrom;
+  return {
+    from: formatISO(earliest, { representation: "date" }),
+    to: formatISO(to, { representation: "date" }),
+  };
+}
+
+function sumReports(reports: SalesReport[], from: string, to: string): PeriodTotals {
+  const scoped = reports.filter((r) => r.businessDate >= from && r.businessDate <= to);
+  const sales = scoped.reduce((sum, r) => sum + r.totalSales, 0);
+  const orders = scoped.reduce((sum, r) => sum + r.orderCount, 0);
+  return {
+    sales,
+    orders,
+    averageTicket: orders > 0 ? sales / orders : 0,
+    daysWithData: scoped.length,
+  };
+}
+
+function pct(current: number, baseline: number): number {
+  if (baseline <= 0) return 0;
+  return ((current - baseline) / baseline) * 100;
+}
+
+/** Computes current / previous / YoY totals for the selected period.
+ *
+ * - previous = same-length window immediately before the current one.
+ * - lastYear = same window shifted back 52 weeks (DOW-aligned). Saturday
+ *   compares with Saturday, Monday with Monday, etc. */
+export function computePeriodComparisons(
+  reports: SalesReport[],
+  filter: DateFilter,
+): PeriodComparison {
+  const from = parseISO(filter.from);
+  const to = parseISO(filter.to);
+  const lengthDays = differenceInCalendarDays(to, from) + 1;
+
+  const previousFrom = formatISO(addDays(from, -lengthDays), { representation: "date" });
+  const previousTo = formatISO(addDays(from, -1), { representation: "date" });
+  const yoyFrom = formatISO(subWeeks(from, 52), { representation: "date" });
+  const yoyTo = formatISO(subWeeks(to, 52), { representation: "date" });
+
+  const current = sumReports(reports, filter.from, filter.to);
+  const previous = sumReports(reports, previousFrom, previousTo);
+  const lastYear = sumReports(reports, yoyFrom, yoyTo);
+
+  return {
+    current,
+    previous,
+    lastYear,
+    deltaPreviousPct: pct(current.sales, previous.sales),
+    deltaYoYPct: pct(current.sales, lastYear.sales),
+  };
 }
 
 /** Computes hours between two "HH:MM" times. If end < start, assumes the shift
