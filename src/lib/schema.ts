@@ -155,4 +155,15 @@ CREATE TABLE IF NOT EXISTS employee_shifts (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(employee_id, business_date)
 );
+
+CREATE INDEX IF NOT EXISTS idx_sales_reports_business_date ON sales_reports(business_date DESC);
+CREATE INDEX IF NOT EXISTS idx_hourly_sales_business_date ON hourly_sales(business_date DESC);
+CREATE INDEX IF NOT EXISTS idx_product_sales_business_date ON product_sales(business_date DESC);
+CREATE INDEX IF NOT EXISTS idx_hourly_product_sales_business_date ON hourly_product_sales(business_date DESC);
+CREATE INDEX IF NOT EXISTS idx_invoices_issue_date ON invoices(issue_date DESC);
+CREATE INDEX IF NOT EXISTS idx_invoice_lines_invoice_id ON invoice_lines(invoice_id);
+CREATE INDEX IF NOT EXISTS idx_bank_transactions_booked_at ON bank_transactions(booked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_payrolls_pay_period ON payrolls(pay_period DESC);
+CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_employee_shifts_business_date ON employee_shifts(business_date DESC);
 `;

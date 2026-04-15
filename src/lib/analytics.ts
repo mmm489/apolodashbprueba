@@ -67,13 +67,13 @@ export async function getFinancialWorkspace(input?: {
   const filter = resolveDateFilter(input);
   const [documents, salesReports, hourlySales, invoices, payrolls, bankTransactions, productSales, alerts, telegramUsers, telegramMessages, employees, productCosts, employeeShifts] =
     await Promise.all([
-      listDocuments(),
-      listSalesReports(),
-      listHourlySales(),
-      listInvoices(),
-      listPayrolls(),
-      listBankTransactions(),
-      listProductSales(),
+      listDocuments(filter.from, filter.to),
+      listSalesReports(filter.from, filter.to),
+      listHourlySales(filter.from, filter.to),
+      listInvoices(filter.from, filter.to),
+      listPayrolls(filter.from, filter.to),
+      listBankTransactions(filter.from, filter.to),
+      listProductSales(filter.from, filter.to),
       listAlerts(),
       listTelegramUsers(),
       listTelegramMessages(),
@@ -319,7 +319,13 @@ export async function getSalesWorkspace(input?: {
 }): Promise<SalesWorkspace> {
   const filter = resolveDateFilter(input);
   const [salesReports, productSales, hourlySales, hourlyProductSales, employees, employeeShifts, productCosts] = await Promise.all([
-    listSalesReports(), listProductSales(), listHourlySales(), listHourlyProductSales(), listEmployees(), listEmployeeShifts(filter.from, filter.to), listProductCosts(),
+    listSalesReports(filter.from, filter.to),
+    listProductSales(filter.from, filter.to),
+    listHourlySales(filter.from, filter.to),
+    listHourlyProductSales(filter.from, filter.to),
+    listEmployees(),
+    listEmployeeShifts(filter.from, filter.to),
+    listProductCosts(),
   ]);
 
   const fromDate = startOfDaySafe(filter.from);
@@ -448,7 +454,10 @@ export async function getExpensesWorkspace(input?: {
   category?: string;
 }): Promise<ExpensesWorkspace> {
   const filter = resolveDateFilter(input);
-  const [invoices, invoiceLines] = await Promise.all([listInvoices(), listInvoiceLines()]);
+  const [invoices, invoiceLines] = await Promise.all([
+    listInvoices(filter.from, filter.to),
+    listInvoiceLines(filter.from, filter.to),
+  ]);
 
   const fromDate = startOfDaySafe(filter.from);
   const toDate = endOfDaySafe(filter.to);

@@ -34,23 +34,27 @@ import type {
 } from "@/lib/types";
 import { toNumber } from "@/lib/utils";
 
-export async function listDocuments() {
+export async function listDocuments(from?: string, to?: string) {
   if (!hasDatabase()) {
     return mockDocuments;
   }
 
   const sql = getSql();
-  const rows = await sql`SELECT id, file_name, source_path, document_type, status, confidence, extractor_version, error_message, created_at FROM documents ORDER BY created_at DESC LIMIT 10`;
+  const rows = from && to
+    ? await sql`SELECT id, file_name, source_path, document_type, status, confidence, extractor_version, error_message, created_at FROM documents WHERE created_at::date >= ${from} AND created_at::date <= ${to} ORDER BY created_at DESC`
+    : await sql`SELECT id, file_name, source_path, document_type, status, confidence, extractor_version, error_message, created_at FROM documents ORDER BY created_at DESC LIMIT 50`;
   return rows.map(mapDocument);
 }
 
-export async function listSalesReports() {
+export async function listSalesReports(from?: string, to?: string) {
   if (!hasDatabase()) {
     return mockSalesReports;
   }
 
   const sql = getSql();
-  const rows = await sql`SELECT id, business_date, total_sales, order_count, average_ticket, payment_mix FROM sales_reports ORDER BY business_date DESC LIMIT 60`;
+  const rows = from && to
+    ? await sql`SELECT id, business_date, total_sales, order_count, average_ticket, payment_mix FROM sales_reports WHERE business_date >= ${from} AND business_date <= ${to} ORDER BY business_date DESC`
+    : await sql`SELECT id, business_date, total_sales, order_count, average_ticket, payment_mix FROM sales_reports ORDER BY business_date DESC LIMIT 400`;
   return rows.map((row) => ({
     id: String(row.id),
     businessDate: normalizeDate(row.business_date),
@@ -61,13 +65,15 @@ export async function listSalesReports() {
   })) satisfies SalesReport[];
 }
 
-export async function listHourlySales() {
+export async function listHourlySales(from?: string, to?: string) {
   if (!hasDatabase()) {
     return mockHourlySales;
   }
 
   const sql = getSql();
-  const rows = await sql`SELECT id, business_date, hour_label, sales, order_count FROM hourly_sales ORDER BY business_date DESC, hour_label ASC LIMIT 120`;
+  const rows = from && to
+    ? await sql`SELECT id, business_date, hour_label, sales, order_count FROM hourly_sales WHERE business_date >= ${from} AND business_date <= ${to} ORDER BY business_date DESC, hour_label ASC`
+    : await sql`SELECT id, business_date, hour_label, sales, order_count FROM hourly_sales ORDER BY business_date DESC, hour_label ASC LIMIT 10000`;
   return rows.map((row) => ({
     id: String(row.id),
     businessDate: normalizeDate(row.business_date),
@@ -77,11 +83,13 @@ export async function listHourlySales() {
   })) satisfies HourlySalesEntry[];
 }
 
-export async function listHourlyProductSales() {
+export async function listHourlyProductSales(from?: string, to?: string) {
   if (!hasDatabase()) return [];
 
   const sql = getSql();
-  const rows = await sql`SELECT id, business_date, hour_label, product_code, product_name, units, amount FROM hourly_product_sales ORDER BY business_date DESC, hour_label ASC LIMIT 2000`;
+  const rows = from && to
+    ? await sql`SELECT id, business_date, hour_label, product_code, product_name, units, amount FROM hourly_product_sales WHERE business_date >= ${from} AND business_date <= ${to} ORDER BY business_date DESC, hour_label ASC`
+    : await sql`SELECT id, business_date, hour_label, product_code, product_name, units, amount FROM hourly_product_sales ORDER BY business_date DESC, hour_label ASC LIMIT 50000`;
   return rows.map((row) => ({
     id: String(row.id),
     businessDate: normalizeDate(row.business_date),
@@ -93,13 +101,15 @@ export async function listHourlyProductSales() {
   })) satisfies HourlyProductSale[];
 }
 
-export async function listInvoices() {
+export async function listInvoices(from?: string, to?: string) {
   if (!hasDatabase()) {
     return mockInvoices;
   }
 
   const sql = getSql();
-  const rows = await sql`SELECT id, supplier_name, issue_date, due_date, total_amount, tax_amount, category FROM invoices ORDER BY issue_date DESC LIMIT 60`;
+  const rows = from && to
+    ? await sql`SELECT id, supplier_name, issue_date, due_date, total_amount, tax_amount, category FROM invoices WHERE issue_date >= ${from} AND issue_date <= ${to} ORDER BY issue_date DESC`
+    : await sql`SELECT id, supplier_name, issue_date, due_date, total_amount, tax_amount, category FROM invoices ORDER BY issue_date DESC LIMIT 500`;
   return rows.map((row) => ({
     id: String(row.id),
     supplierName: String(row.supplier_name),
@@ -111,11 +121,13 @@ export async function listInvoices() {
   })) satisfies InvoiceRecord[];
 }
 
-export async function listInvoiceLines() {
+export async function listInvoiceLines(from?: string, to?: string) {
   if (!hasDatabase()) return [];
 
   const sql = getSql();
-  const rows = await sql`SELECT id, invoice_id, description, quantity, unit_price, amount, vat_rate, vat_amount FROM invoice_lines ORDER BY invoice_id`;
+  const rows = from && to
+    ? await sql`SELECT il.id, il.invoice_id, il.description, il.quantity, il.unit_price, il.amount, il.vat_rate, il.vat_amount FROM invoice_lines il JOIN invoices i ON i.id = il.invoice_id WHERE i.issue_date >= ${from} AND i.issue_date <= ${to} ORDER BY il.invoice_id`
+    : await sql`SELECT id, invoice_id, description, quantity, unit_price, amount, vat_rate, vat_amount FROM invoice_lines ORDER BY invoice_id`;
   return rows.map((row) => ({
     id: String(row.id),
     invoiceId: String(row.invoice_id),
@@ -128,13 +140,15 @@ export async function listInvoiceLines() {
   })) satisfies InvoiceLineRecord[];
 }
 
-export async function listProductSales() {
+export async function listProductSales(from?: string, to?: string) {
   if (!hasDatabase()) {
     return mockProductSales;
   }
 
   const sql = getSql();
-  const rows = await sql`SELECT id, sales_report_id, business_date, product_code, product_name, units, amount FROM product_sales ORDER BY business_date DESC LIMIT 500`;
+  const rows = from && to
+    ? await sql`SELECT id, sales_report_id, business_date, product_code, product_name, units, amount FROM product_sales WHERE business_date >= ${from} AND business_date <= ${to} ORDER BY business_date DESC`
+    : await sql`SELECT id, sales_report_id, business_date, product_code, product_name, units, amount FROM product_sales ORDER BY business_date DESC LIMIT 20000`;
   return rows.map((row) => ({
     id: String(row.id),
     salesReportId: String(row.sales_report_id),
@@ -146,13 +160,17 @@ export async function listProductSales() {
   })) satisfies ProductSaleRecord[];
 }
 
-export async function listPayrolls() {
+export async function listPayrolls(from?: string, to?: string) {
   if (!hasDatabase()) {
     return mockPayrolls;
   }
 
   const sql = getSql();
-  const rows = await sql`SELECT id, employee_name, pay_period, gross_amount, net_amount FROM payrolls ORDER BY pay_period DESC LIMIT 60`;
+  const fromMonth = from ? from.slice(0, 7) : undefined;
+  const toMonth = to ? to.slice(0, 7) : undefined;
+  const rows = fromMonth && toMonth
+    ? await sql`SELECT id, employee_name, pay_period, gross_amount, net_amount FROM payrolls WHERE pay_period >= ${fromMonth} AND pay_period <= ${toMonth} ORDER BY pay_period DESC`
+    : await sql`SELECT id, employee_name, pay_period, gross_amount, net_amount FROM payrolls ORDER BY pay_period DESC LIMIT 200`;
   return rows.map((row) => ({
     id: String(row.id),
     employeeName: String(row.employee_name),
@@ -162,13 +180,15 @@ export async function listPayrolls() {
   })) satisfies PayrollRecord[];
 }
 
-export async function listBankTransactions() {
+export async function listBankTransactions(from?: string, to?: string) {
   if (!hasDatabase()) {
     return mockBankTransactions;
   }
 
   const sql = getSql();
-  const rows = await sql`SELECT id, booked_at, concept, amount, direction, category FROM bank_transactions ORDER BY booked_at DESC LIMIT 120`;
+  const rows = from && to
+    ? await sql`SELECT id, booked_at, concept, amount, direction, category FROM bank_transactions WHERE booked_at::date >= ${from} AND booked_at::date <= ${to} ORDER BY booked_at DESC`
+    : await sql`SELECT id, booked_at, concept, amount, direction, category FROM bank_transactions ORDER BY booked_at DESC LIMIT 500`;
   return rows.map((row) => ({
     id: String(row.id),
     bookedAt: new Date(String(row.booked_at)).toISOString(),
@@ -628,14 +648,30 @@ async function _persistExtractionInner(sql: ReturnType<typeof getSql>, documentI
   }
 }
 
-/** Normalizes a DATE column value to "YYYY-MM-DD" regardless of driver format. */
+/** Normalizes a DATE column value to "YYYY-MM-DD" regardless of driver format.
+ * IMPORTANT: for JS Date objects returned by the driver, we must use the LOCAL
+ * date parts (not toISOString) because the Neon driver returns DATE columns as
+ * local-midnight Date instances. Using toISOString() would shift the date back
+ * one day in positive-UTC timezones (e.g. Europe/Madrid = GMT+1/+2). */
 function normalizeDate(value: unknown): string {
+  if (value instanceof Date) {
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, "0");
+    const d = String(value.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
   const str = String(value);
-  // Already ISO date format
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-  // ISO datetime or other parseable format
+  // ISO date or datetime: just take the first 10 chars if they match YYYY-MM-DD
+  const match = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) return `${match[1]}-${match[2]}-${match[3]}`;
+  // Legacy fallback: parse and use local parts
   const d = new Date(str);
-  if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  if (!Number.isNaN(d.getTime())) {
+    const y = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${y}-${mm}-${dd}`;
+  }
   return str.slice(0, 10);
 }
 
