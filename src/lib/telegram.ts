@@ -65,7 +65,6 @@ Tens acces a la base de dades del negoci amb aquestes taules:
 - employees: empleats (name, hourly_cost, shift_start, shift_end)
 - employee_shifts: torns reals (employee_id, business_date, shift_start, shift_end)
 - product_costs: cost unitari productes (product_code, product_name, category, unit_cost)
-- bank_transactions: moviments bancaris (booked_at, concept, amount, direction, category)
 - payrolls: nomines (employee_name, pay_period, gross_amount, net_amount)
 
 Quan et facin una pregunta:

@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import { getSql, hasDatabase } from "@/lib/db";
 import {
   mockAlerts,
-  mockBankTransactions,
   mockDocuments,
   mockEmployees,
   mockHourlySales,
@@ -16,7 +15,6 @@ import {
 } from "@/lib/mock-data";
 import type {
   AlertRecord,
-  BankTransaction,
   DocumentRecord,
   Employee,
   EmployeeShift,
@@ -178,25 +176,6 @@ export async function listPayrolls(from?: string, to?: string) {
     grossAmount: toNumber(row.gross_amount),
     netAmount: toNumber(row.net_amount),
   })) satisfies PayrollRecord[];
-}
-
-export async function listBankTransactions(from?: string, to?: string) {
-  if (!hasDatabase()) {
-    return mockBankTransactions;
-  }
-
-  const sql = getSql();
-  const rows = from && to
-    ? await sql`SELECT id, booked_at, concept, amount, direction, category FROM bank_transactions WHERE booked_at::date >= ${from} AND booked_at::date <= ${to} ORDER BY booked_at DESC`
-    : await sql`SELECT id, booked_at, concept, amount, direction, category FROM bank_transactions ORDER BY booked_at DESC LIMIT 500`;
-  return rows.map((row) => ({
-    id: String(row.id),
-    bookedAt: new Date(String(row.booked_at)).toISOString(),
-    concept: String(row.concept),
-    amount: toNumber(row.amount),
-    direction: row.direction === "out" ? "out" : "in",
-    category: String(row.category),
-  })) satisfies BankTransaction[];
 }
 
 export async function listAlerts() {
@@ -638,17 +617,6 @@ async function _persistExtractionInner(sql: ReturnType<typeof getSql>, documentI
       ON CONFLICT (id) DO NOTHING
     `;
     return;
-  }
-
-  if (result.documentType === "bank_statement") {
-    const items = result.normalizedData as BankTransaction[];
-    for (const item of items) {
-      await sql`
-        INSERT INTO bank_transactions (id, document_id, booked_at, concept, amount, direction, category)
-        VALUES (${item.id}, ${documentId}, ${item.bookedAt}, ${item.concept}, ${item.amount}, ${item.direction}, ${item.category})
-        ON CONFLICT (id) DO NOTHING
-      `;
-    }
   }
 }
 

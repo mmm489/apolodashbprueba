@@ -2,7 +2,6 @@ import { endOfDay, endOfMonth, endOfYear, formatISO, parseISO, startOfMonth, sta
 
 import {
   listAlerts,
-  listBankTransactions,
   listDocuments,
   listEmployeeShifts,
   listEmployees,
@@ -65,14 +64,13 @@ export async function getFinancialWorkspace(input?: {
   to?: string;
 }): Promise<FinancialWorkspace> {
   const filter = resolveDateFilter(input);
-  const [documents, salesReports, hourlySales, invoices, payrolls, bankTransactions, productSales, alerts, telegramUsers, telegramMessages, employees, productCosts, employeeShifts] =
+  const [documents, salesReports, hourlySales, invoices, payrolls, productSales, alerts, telegramUsers, telegramMessages, employees, productCosts, employeeShifts] =
     await Promise.all([
       listDocuments(filter.from, filter.to),
       listSalesReports(filter.from, filter.to),
       listHourlySales(filter.from, filter.to),
       listInvoices(filter.from, filter.to),
       listPayrolls(filter.from, filter.to),
-      listBankTransactions(filter.from, filter.to),
       listProductSales(filter.from, filter.to),
       listAlerts(),
       listTelegramUsers(),
@@ -90,16 +88,12 @@ export async function getFinancialWorkspace(input?: {
   const scopedSales = salesReports.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
   const scopedInvoices = invoices.filter((item) => isDateInRange(item.issueDate, fromDate, toDate));
   const scopedPayrolls = payrolls.filter((item) => item.payPeriod >= payPeriodStart && item.payPeriod <= payPeriodEnd);
-  const scopedBank = bankTransactions.filter((item) => isDateInRange(item.bookedAt, fromDate, toDate));
   const scopedHourly = hourlySales.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
   const scopedProductSales = productSales.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
   const scopedDocuments = documents.filter((item) => isDateInRange(item.createdAt, fromDate, toDate));
 
   const totalSales = scopedSales.reduce((sum, item) => sum + item.totalSales, 0);
-  const invoiceExpenses = scopedInvoices.reduce((sum, item) => sum + item.totalAmount, 0);
-  const bankOutflows = scopedBank.filter((item) => item.direction === "out").reduce((sum, item) => sum + item.amount, 0);
-  const bankInflows = scopedBank.filter((item) => item.direction === "in").reduce((sum, item) => sum + item.amount, 0);
-  const totalExpenses = invoiceExpenses + bankOutflows;
+  const totalExpenses = scopedInvoices.reduce((sum, item) => sum + item.totalAmount, 0);
   const totalPayroll = scopedPayrolls.reduce((sum, item) => sum + item.grossAmount, 0);
   const totalOrders = scopedSales.reduce((sum, item) => sum + item.orderCount, 0);
   const averageTicket = totalOrders > 0 ? totalSales / totalOrders : 0;
@@ -117,7 +111,6 @@ export async function getFinancialWorkspace(input?: {
     .sort((a, b) => b.sales - a.sales);
 
   const bestHour = hourlyPerformance[0] ?? { hour: "--", sales: 0 };
-  const bankGap = totalSales - bankInflows;
   const estimatedMargin = totalSales - totalExpenses - totalPayroll;
 
   const totalMonthlyHours = employees.reduce((sum, emp) => {
@@ -182,7 +175,6 @@ export async function getFinancialWorkspace(input?: {
         averageTicket,
         bestHourLabel: bestHour.hour,
         bestHourSales: bestHour.sales,
-        bankGap,
         estimatedMargin,
         activeSuppliers: new Set(scopedInvoices.map((item) => item.supplierName)).size,
         totalMonthlyHours,
@@ -207,15 +199,9 @@ export async function getFinancialWorkspace(input?: {
     hourlySales: scopedHourly,
     invoices: scopedInvoices,
     payrolls: scopedPayrolls,
-    bankTransactions: scopedBank,
     productSales: scopedProductSales,
     topProducts,
     totalsByCategory,
-    cashFlowSummary: {
-      inflows: bankInflows,
-      outflows: bankOutflows,
-      net: bankInflows - bankOutflows,
-    },
   };
 }
 
@@ -254,23 +240,16 @@ export async function answerBusinessQuestion(question: string): Promise<ChatAnsw
     };
   }
 
-  if (normalizedQuestion.includes("banc") || normalizedQuestion.includes("descuadr")) {
-    return {
-      answer: `La diferencia entre vendes registrades i ingressos bancaris es ${formatCurrency(snapshot.kpis.bankGap)}. Els cobraments bancaris sumen ${formatCurrency(workspace.cashFlowSummary.inflows)}.`,
-      sources: ["sales_reports", "bank_transactions"],
-    };
-  }
-
   if (normalizedQuestion.includes("proveidor") || normalizedQuestion.includes("despes") || normalizedQuestion.includes("gasto")) {
     return {
-      answer: `Les despeses acumulades de proveidors i sortides bancaries sumen ${formatCurrency(snapshot.kpis.totalExpenses)}. Hi ha ${snapshot.kpis.activeSuppliers} proveidors actius en el periode.`,
-      sources: ["invoices", "bank_transactions"],
+      answer: `Les despeses acumulades de proveidors sumen ${formatCurrency(snapshot.kpis.totalExpenses)}. Hi ha ${snapshot.kpis.activeSuppliers} proveidors actius en el periode.`,
+      sources: ["invoices"],
     };
   }
 
   return {
     answer:
-      "Puc ajudar-te amb vendes, millors hores, despeses, nomines, banc i marge. Prova una pregunta mes concreta per respondre't amb xifres.",
+      "Puc ajudar-te amb vendes, millors hores, despeses, nomines i marge. Prova una pregunta mes concreta per respondre't amb xifres.",
     sources: ["daily_kpis"],
   };
 }

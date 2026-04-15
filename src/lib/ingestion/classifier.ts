@@ -7,10 +7,6 @@ export function classifyDocument(fileName: string, text: string): DocumentType {
     return "payroll";
   }
 
-  if (sample.includes("extracto") || sample.includes("extracte") || sample.includes("banco") || sample.includes("banc") || sample.includes("iban")) {
-    return "bank_statement";
-  }
-
   if (sample.includes("hora") || sample.includes("franja")) {
     return "hourly_report";
   }

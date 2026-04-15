@@ -72,16 +72,6 @@ CREATE TABLE IF NOT EXISTS payrolls (
   net_amount NUMERIC(12,2) NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS bank_transactions (
-  id TEXT PRIMARY KEY,
-  document_id TEXT REFERENCES documents(id) ON DELETE CASCADE,
-  booked_at TIMESTAMPTZ NOT NULL,
-  concept TEXT NOT NULL,
-  amount NUMERIC(12,2) NOT NULL,
-  direction TEXT NOT NULL,
-  category TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS alerts (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
@@ -162,7 +152,6 @@ CREATE INDEX IF NOT EXISTS idx_product_sales_business_date ON product_sales(busi
 CREATE INDEX IF NOT EXISTS idx_hourly_product_sales_business_date ON hourly_product_sales(business_date DESC);
 CREATE INDEX IF NOT EXISTS idx_invoices_issue_date ON invoices(issue_date DESC);
 CREATE INDEX IF NOT EXISTS idx_invoice_lines_invoice_id ON invoice_lines(invoice_id);
-CREATE INDEX IF NOT EXISTS idx_bank_transactions_booked_at ON bank_transactions(booked_at DESC);
 CREATE INDEX IF NOT EXISTS idx_payrolls_pay_period ON payrolls(pay_period DESC);
 CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_employee_shifts_business_date ON employee_shifts(business_date DESC);

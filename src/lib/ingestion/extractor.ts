@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { askClaudeForStructuredData, askClaudeFromImage, askClaudeFromPdf, extractInvoiceFromPdf, extractInvoiceFromText, type VisionMediaType } from "@/lib/ai/claude";
 import { classifyDocument } from "@/lib/ingestion/classifier";
-import type { BankTransaction, ExtractionResult, HourlySalesEntry, InvoiceRecord, PayrollRecord, SalesReport } from "@/lib/types";
+import type { ExtractionResult, HourlySalesEntry, InvoiceRecord, PayrollRecord, SalesReport } from "@/lib/types";
 
 const salesSchema = z.object({
   businessDate: z.string(),
@@ -47,16 +47,6 @@ const hourlySchema = z.array(
     hour: z.string(),
     sales: z.number(),
     orderCount: z.number(),
-  }),
-);
-
-const bankSchema = z.array(
-  z.object({
-    bookedAt: z.string(),
-    concept: z.string(),
-    amount: z.number(),
-    direction: z.enum(["in", "out"]),
-    category: z.string(),
   }),
 );
 
@@ -521,13 +511,6 @@ function normalizeByType(documentType: ExtractionResult["documentType"], payload
     }
   }
 
-  if (documentType === "bank_statement") {
-    const result = bankSchema.safeParse(coerced);
-    if (result.success) {
-      return result.data.map((item) => ({ id: randomUUID(), ...item })) satisfies BankTransaction[];
-    }
-  }
-
   return (payload as Record<string, unknown>) ?? {};
 }
 
@@ -620,7 +603,6 @@ function normalizeDocumentType(type: string, fallback: ExtractionResult["documen
   if (lower.includes("invoice") || lower.includes("factura") || lower.includes("bill") || lower.includes("receipt")) return "invoice";
   if (lower.includes("sales") || lower.includes("venta")) return "sales_report";
   if (lower.includes("payroll") || lower.includes("nomina")) return "payroll";
-  if (lower.includes("bank") || lower.includes("extracto")) return "bank_statement";
   if (lower.includes("hourly") || lower.includes("hora")) return "hourly_report";
   return fallback;
 }

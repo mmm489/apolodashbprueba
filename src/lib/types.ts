@@ -3,7 +3,6 @@ export type DocumentType =
   | "sales_report"
   | "hourly_report"
   | "payroll"
-  | "bank_statement"
   | "unknown";
 
 export type ProcessingStatus = "received" | "processing" | "extracted" | "validated" | "error";
@@ -76,15 +75,6 @@ export interface PayrollRecord {
   netAmount: number;
 }
 
-export interface BankTransaction {
-  id: string;
-  bookedAt: string;
-  concept: string;
-  amount: number;
-  direction: "in" | "out";
-  category: string;
-}
-
 export interface AlertRecord {
   id: string;
   title: string;
@@ -155,7 +145,6 @@ export interface KpiSnapshot {
   averageTicket: number;
   bestHourLabel: string;
   bestHourSales: number;
-  bankGap: number;
   estimatedMargin: number;
   activeSuppliers: number;
   totalMonthlyHours: number;
@@ -195,13 +184,7 @@ export interface FinancialWorkspace {
   hourlySales: HourlySalesEntry[];
   invoices: InvoiceRecord[];
   payrolls: PayrollRecord[];
-  bankTransactions: BankTransaction[];
   totalsByCategory: Array<{ label: string; amount: number }>;
-  cashFlowSummary: {
-    inflows: number;
-    outflows: number;
-    net: number;
-  };
   productSales: ProductSaleRecord[];
   topProducts: Array<{ productName: string; units: number; amount: number }>;
 }
@@ -215,7 +198,6 @@ export interface ExtractionResult {
     | SalesReport
     | InvoiceRecord
     | PayrollRecord
-    | BankTransaction[]
     | HourlySalesEntry[]
     | Record<string, unknown>;
   auxiliaryData?: {

@@ -1,6 +1,5 @@
 import type {
   AlertRecord,
-  BankTransaction,
   DocumentRecord,
   Employee,
   HourlySalesEntry,
@@ -42,16 +41,6 @@ export const mockDocuments: DocumentRecord[] = [
     confidence: 0.92,
     extractorVersion: "v1",
     createdAt: "2026-03-23T06:30:00.000Z",
-  },
-  {
-    id: "doc_4",
-    fileName: "extracto-banco-marzo.pdf",
-    sourcePath: "OneDrive/banco/extracto-banco-marzo.pdf",
-    documentType: "bank_statement",
-    status: "processing",
-    confidence: 0.84,
-    extractorVersion: "v1",
-    createdAt: "2026-03-23T07:05:00.000Z",
   },
 ];
 
@@ -138,35 +127,9 @@ export const mockProductSales: ProductSaleRecord[] = [
   { id: "prod_6", salesReportId: "sale_3", businessDate: "2026-03-22", productCode: "97", productName: "CUCURUTXO S", units: 4, amount: 14.36 },
 ];
 
-export const mockBankTransactions: BankTransaction[] = [
-  {
-    id: "txn_1",
-    bookedAt: "2026-03-22T22:55:00.000Z",
-    concept: "Ingresos TPV fin de dia",
-    amount: 1498,
-    direction: "in",
-    category: "ventas",
-  },
-  {
-    id: "txn_2",
-    bookedAt: "2026-03-23T10:00:00.000Z",
-    concept: "Pago Lacteos Costa",
-    amount: 410.7,
-    direction: "out",
-    category: "proveedor",
-  },
-];
-
 export const mockAlerts: AlertRecord[] = [
   {
     id: "alert_1",
-    title: "Descuadre leve entre ventas y banco",
-    description: "Las ventas del 22 de marzo superan en 76,40 EUR el ingreso bancario registrado.",
-    severity: "medium",
-    createdAt: "2026-03-23T08:00:00.000Z",
-  },
-  {
-    id: "alert_2",
     title: "Pico de ventas entre las 18:00 y 19:00",
     description: "La franja de tarde sigue siendo la de mayor rendimiento y conviene reforzar personal y stock.",
     severity: "low",
