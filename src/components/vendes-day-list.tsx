@@ -5,41 +5,8 @@ import { useRef, useState, useTransition } from "react";
 import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Clock, FileUp, LoaderCircle, RefreshCw, Users } from "lucide-react";
 
 import type { DayStatus } from "@/lib/analytics";
+import { classifyFamily } from "@/lib/product-families";
 import type { Employee, EmployeeShift, HourlyProductSale, HourlySalesEntry, ProductCost, ProductSaleRecord } from "@/lib/types";
-
-/* ---- Family classification (from ventas-tabs) ---- */
-
-const familyRules: Array<{ name: string; color: string; keywords: string[] }> = [
-  { name: "Gelats", color: "bg-pink-500", keywords: ["cucurutxo", "pot l", "pot m", "pot s", "tupper"] },
-  { name: "Cafes", color: "bg-amber-700", keywords: ["cafe", "cafè", "café", "capuccino", "tallat", "expresso", "descafeinat", "descafeïnat", "xocolata a la tassa", "cola cao", "bombo", "cafe casa", "cafe veïns", "cafe veins"] },
-  { name: "Begudes", color: "bg-sky-500", keywords: ["7up", "aigua", "aquarius", "begudes", "bitter", "cacaolat", "coke", "damm", "estrella", "fanta", "free damm", "granini", "nestea", "tonica", "casa hi cream"] },
-  { name: "Crepes", color: "bg-yellow-500", keywords: ["crepe", "crepre", "mediterraneo", "mixto", "quesos"] },
-  { name: "Hi Pop", color: "bg-violet-500", keywords: ["waffle", "sandwich waffle", "sandwic waffle", "hi pop", "sandwic kinder", "sandwich nutella", "sandwich pistatxo", "sandwich xocolata", "sandwich salsa"] },
-  { name: "Xurros", color: "bg-orange-500", keywords: ["xurro", "xurros", "xocolata & xurros"] },
-  { name: "Batuts", color: "bg-purple-500", keywords: ["batut"] },
-  { name: "Especialitats", color: "bg-teal-500", keywords: ["matcha", "pistacho latte", "chai", "special"] },
-  { name: "Frappes", color: "bg-cyan-500", keywords: ["frappe", "frapuccino"] },
-  { name: "Smoothies", color: "bg-lime-500", keywords: ["smoothie"] },
-  { name: "Frozen Iogurt", color: "bg-fuchsia-500", keywords: ["pot iogurt", "açai", "acai"] },
-  { name: "Granissats", color: "bg-blue-400", keywords: ["granitzat", "granissat"] },
-  { name: "Receptes", color: "bg-rose-500", keywords: ["cookies cream", "kinder delight", "lotus receta", "nutella & go", "oreo ice", "pistacho receta", "macha receta", "yogurt pasi"] },
-  { name: "Ice Drinks", color: "bg-sky-400", keywords: ["iced ", "milk cafe", "milk mango", "milk maracuia"] },
-  { name: "Berlines", color: "bg-amber-500", keywords: ["max kinder", "max lotus", "max oreo", "max pistacho", "mini donut", "berlines"] },
-  { name: "Dought", color: "bg-red-400", keywords: ["doght", "dought"] },
-  { name: "Infusions", color: "bg-green-400", keywords: ["menta poleo", "english breakfast", "te vert", "camamilla", "roibos"] },
-  { name: "Orxata", color: "bg-amber-300", keywords: ["orxata"] },
-  { name: "Xips", color: "bg-stone-400", keywords: ["patates xips"] },
-  { name: "Toppings i extres", color: "bg-slate-500", keywords: ["sabor ", "salsa", "topping", "nutella 0", "nutella 1", "crispy", "brownie", "lacasitos", "lotus pols", "maduixa natural", "nata ", "nube ", "oreo pols", "platan natural", "sucre ", "crumble", "pistatxo pols", "gelat avellana", "gelat dulce", "gelat iogurt", "gelat kinder", "gelat lotus", "gelat maduixa", "gelat nata", "gelat oreo", "gelat açai", "gelat vainilla", "gelat xocolata", "gelat cafe", "gelat cheesecake", "gelat ferrero", "gelat menta", "gelat pistaxo", "gelat nutella", "gelat crispetes", "gelat maracuia", "gelat mango", "gelat coco", "xoco maduixa", "melmalada", "caramel salat", "xocolata pistatxo", "xocolata blanca"] },
-  { name: "Varios", color: "bg-gray-400", keywords: ["gel", "suplement", "varios", "descafeinat sobre", "sense sucre", "sucre more", "llet sense", "llet vegetal"] },
-];
-
-function classifyFamily(productName: string) {
-  const lower = productName.toLowerCase();
-  for (const rule of familyRules) {
-    if (rule.keywords.some((kw) => lower.includes(kw))) return { name: rule.name, color: rule.color };
-  }
-  return { name: "Altres", color: "bg-slate-400" };
-}
 
 interface FamilyGroup {
   name: string;
