@@ -16,7 +16,8 @@ import {
   listTelegramMessages,
   listTelegramUsers,
 } from "@/lib/repositories";
-import type { ChatAnswer, DailyDigest as DailyDigestType, DateFilter, DatePreset, Employee, EmployeeShift, FinancialWorkspace, HourlyProductSale, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, ProductCost, ProductSaleRecord, SalesReport } from "@/lib/types";
+import { classifyFamily } from "@/lib/product-families";
+import type { ChatAnswer, DailyDigest as DailyDigestType, DateFilter, DatePreset, Employee, EmployeeShift, FamilyMovement, FinancialWorkspace, HourlyProductSale, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, ProductCost, ProductSaleRecord, SalesReport } from "@/lib/types";
 
 export function resolveDateFilter(input?: {
   preset?: string;
@@ -67,7 +68,7 @@ export async function getFinancialWorkspace(input?: {
   // Extend the sales query to cover the previous period and the same period
   // 52 weeks earlier (DOW-aligned year-over-year) for comparison metrics.
   const comparisonRange = buildComparisonRange(filter);
-  const [documents, salesReports, extendedSales, hourlySales, invoices, payrolls, productSales, alerts, telegramUsers, telegramMessages, employees, productCosts, employeeShifts] =
+  const [documents, salesReports, extendedSales, hourlySales, invoices, payrolls, productSales, previousProductSales, alerts, telegramUsers, telegramMessages, employees, productCosts, employeeShifts] =
     await Promise.all([
       listDocuments(filter.from, filter.to),
       listSalesReports(filter.from, filter.to),
@@ -76,6 +77,7 @@ export async function getFinancialWorkspace(input?: {
       listInvoices(filter.from, filter.to),
       listPayrolls(filter.from, filter.to),
       listProductSales(filter.from, filter.to),
+      listProductSales(buildPreviousPeriodRange(filter).from, buildPreviousPeriodRange(filter).to),
       listAlerts(),
       listTelegramUsers(),
       listTelegramMessages(),
@@ -103,7 +105,12 @@ export async function getFinancialWorkspace(input?: {
   const averageTicket = totalOrders > 0 ? totalSales / totalOrders : 0;
 
   const comparisons = computePeriodComparisons(extendedSales, filter);
-  const dailyDigest = computeDailyDigest(extendedSales);
+  // For the digest forecast we need historical temperatures for the last few
+  // same-DOW days plus tomorrow's forecast. Pull a 5-week window ending the
+  // day after the most recent sales report.
+  const digestWeather = await fetchWeatherForDigest(extendedSales);
+  const dailyDigest = computeDailyDigest(extendedSales, digestWeather);
+  const familyMovements = computeFamilyMovements(scopedProductSales, previousProductSales);
 
   const hourlyPerformance = scopedHourly
     .reduce<Array<{ hour: string; sales: number }>>((acc, item) => {
@@ -209,6 +216,7 @@ export async function getFinancialWorkspace(input?: {
     totalsByCategory,
     comparisons,
     dailyDigest,
+    familyMovements,
   };
 }
 
@@ -607,8 +615,16 @@ function isDateInRange(value: string, from: Date, to: Date) {
  *
  * DailyDigest type lives in types.ts so FinancialWorkspace can reference it. */
 
-/** Builds the today/forecast digest from a wide window of sales reports. */
-export function computeDailyDigest(reports: SalesReport[]): DailyDigestType | null {
+/** Builds the today/forecast digest from a wide window of sales reports.
+ *
+ * @param weather Optional map of date → DayWeather. When provided, the
+ *   forecastTomorrow is adjusted by a temperature factor based on how warm
+ *   tomorrow is vs the avg temperature of the same-DOW historical sample.
+ *   For ice cream / gelateria, hotter days correlate with higher sales. */
+export function computeDailyDigest(
+  reports: SalesReport[],
+  weather?: Map<string, DayWeather>,
+): DailyDigestType | null {
   if (!reports.length) return null;
   const sortedDesc = [...reports].sort((a, b) => b.businessDate.localeCompare(a.businessDate));
   const today = sortedDesc[0];
@@ -622,16 +638,40 @@ export function computeDailyDigest(reports: SalesReport[]): DailyDigestType | nu
   const lastWeekReport = findReport(addDays(todayDate, -7));
   const lastYearReport = findReport(subWeeks(todayDate, 52));
 
-  // Forecast: average of last 4 same-DOW values (excluding today itself)
-  const sameDowSales: number[] = [];
-  for (let weeksBack = 1; weeksBack <= 12 && sameDowSales.length < 4; weeksBack++) {
-    const r = findReport(addDays(todayDate, -7 * weeksBack));
-    if (r) sameDowSales.push(r.totalSales);
+  // Forecast: average of last 4 same-DOW values (excluding today itself).
+  // Track the corresponding dates so we can read their historical temps.
+  const sameDowSamples: Array<{ date: string; sales: number }> = [];
+  for (let weeksBack = 1; weeksBack <= 12 && sameDowSamples.length < 4; weeksBack++) {
+    const sampleDate = addDays(todayDate, -7 * weeksBack);
+    const r = findReport(sampleDate);
+    if (r) {
+      sameDowSamples.push({ date: formatISO(sampleDate, { representation: "date" }), sales: r.totalSales });
+    }
   }
-  const forecastSales = sameDowSales.length > 0
-    ? sameDowSales.reduce((s, v) => s + v, 0) / sameDowSales.length
+  const baselineSales = sameDowSamples.length > 0
+    ? sameDowSamples.reduce((s, v) => s + v.sales, 0) / sameDowSamples.length
     : 0;
   const tomorrowDate = formatISO(addDays(todayDate, 1), { representation: "date" });
+
+  // Temperature factor (only when weather data is available).
+  // Heuristic for ice cream: each +1°C above the historical baseline lifts
+  // expected sales ~5%, with a hard clamp of ±30% so we don't extrapolate
+  // wildly outside the observed range.
+  let tempFactor = 1;
+  let tomorrowTempMax: number | null = null;
+  let avgHistoricalTempMax: number | null = null;
+  if (weather && sameDowSamples.length > 0) {
+    const tomorrowW = weather.get(tomorrowDate);
+    const sampleTemps = sameDowSamples
+      .map((s) => weather.get(s.date)?.tempMax)
+      .filter((t): t is number => typeof t === "number");
+    if (tomorrowW && sampleTemps.length > 0) {
+      tomorrowTempMax = tomorrowW.tempMax;
+      avgHistoricalTempMax = sampleTemps.reduce((s, t) => s + t, 0) / sampleTemps.length;
+      const tempDelta = tomorrowTempMax - avgHistoricalTempMax;
+      tempFactor = Math.max(0.7, Math.min(1.3, 1 + tempDelta * 0.05));
+    }
+  }
 
   return {
     date: today.businessDate,
@@ -644,8 +684,16 @@ export function computeDailyDigest(reports: SalesReport[]): DailyDigestType | nu
     vsLastYear: lastYearReport
       ? { sales: lastYearReport.totalSales, deltaPct: pct(today.totalSales, lastYearReport.totalSales) }
       : null,
-    forecastTomorrow: sameDowSales.length > 0
-      ? { date: tomorrowDate, sales: forecastSales, basedOn: sameDowSales.length }
+    forecastTomorrow: sameDowSamples.length > 0
+      ? {
+          date: tomorrowDate,
+          sales: baselineSales * tempFactor,
+          baselineSales,
+          basedOn: sameDowSamples.length,
+          tempFactor,
+          tomorrowTempMax,
+          avgHistoricalTempMax,
+        }
       : null,
   };
 }
@@ -715,6 +763,77 @@ export function computePeriodComparisons(
     deltaPreviousPct: pct(current.sales, previous.sales),
     deltaYoYPct: pct(current.sales, lastYear.sales),
   };
+}
+
+/** Returns the date range immediately preceding the selected filter, with
+ * the same length, in YYYY-MM-DD form. */
+function buildPreviousPeriodRange(filter: DateFilter): { from: string; to: string } {
+  const from = parseISO(filter.from);
+  const to = parseISO(filter.to);
+  const lengthDays = differenceInCalendarDays(to, from) + 1;
+  return {
+    from: formatISO(addDays(from, -lengthDays), { representation: "date" }),
+    to: formatISO(addDays(from, -1), { representation: "date" }),
+  };
+}
+
+/** Aggregates product sales by family for the current and previous period and
+ * returns the families ranked by absolute % change so the dashboard can
+ * highlight winners and losers. Families with no current AND no previous
+ * sales are excluded. */
+export function computeFamilyMovements(
+  currentSales: ProductSaleRecord[],
+  previousSales: ProductSaleRecord[],
+): FamilyMovement[] {
+  const aggregate = (rows: ProductSaleRecord[]) => {
+    const map = new Map<string, { sales: number; color: string }>();
+    for (const r of rows) {
+      const fam = classifyFamily(r.productName);
+      const existing = map.get(fam.name);
+      if (existing) {
+        existing.sales += r.amount;
+      } else {
+        map.set(fam.name, { sales: r.amount, color: fam.color });
+      }
+    }
+    return map;
+  };
+  const currentMap = aggregate(currentSales);
+  const previousMap = aggregate(previousSales);
+  const allFamilies = new Set<string>([...currentMap.keys(), ...previousMap.keys()]);
+
+  const movements: FamilyMovement[] = [];
+  for (const fam of allFamilies) {
+    const current = currentMap.get(fam);
+    const previous = previousMap.get(fam);
+    const currentSales = current?.sales ?? 0;
+    const previousSales = previous?.sales ?? 0;
+    if (currentSales === 0 && previousSales === 0) continue;
+    movements.push({
+      family: fam,
+      color: current?.color ?? previous?.color ?? "bg-slate-400",
+      currentSales,
+      previousSales,
+      deltaPct: pct(currentSales, previousSales),
+      deltaEur: currentSales - previousSales,
+    });
+  }
+  // Sort by deltaEur descending (biggest growth first) so winners are at the
+  // top and losers at the bottom — the UI can slice both ends as needed.
+  movements.sort((a, b) => b.deltaEur - a.deltaEur);
+  return movements;
+}
+
+/** Fetches a 5-week weather window ending the day after the most recent
+ * sales report, so computeDailyDigest has temperatures for the same-DOW
+ * historical samples plus tomorrow's forecast. */
+async function fetchWeatherForDigest(reports: SalesReport[]): Promise<Map<string, DayWeather>> {
+  if (!reports.length) return new Map();
+  const sortedDesc = [...reports].sort((a, b) => b.businessDate.localeCompare(a.businessDate));
+  const lastDay = parseISO(sortedDesc[0].businessDate);
+  const from = formatISO(addDays(lastDay, -35), { representation: "date" });
+  const to = formatISO(addDays(lastDay, 1), { representation: "date" });
+  return fetchWeatherData(from, to);
 }
 
 /** Computes hours between two "HH:MM" times. If end < start, assumes the shift

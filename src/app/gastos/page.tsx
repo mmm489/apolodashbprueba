@@ -58,33 +58,116 @@ export default async function GastosPage({
         totals={{ totalGross: totals.totalGross, totalVat: totals.totalVat }}
       />
 
-      {/* Breakdowns */}
+      {/* Supplier analysis + category breakdown */}
       {rows.length > 0 ? (
-        <section className="grid gap-4 xl:grid-cols-2">
-          <SectionCard title="Per proveidor" eyebrow="Desglossament" description="Despesa agrupada per proveidor.">
-            <div className="space-y-2">
-              {groupByField(rows, "supplierName").map(([name, amount]) => (
-                <div key={name} className="flex items-center justify-between rounded-xl border border-[var(--line)] bg-slate-50/50 p-3 transition hover:bg-white hover:shadow-sm">
-                  <p className="text-[13px] font-semibold text-slate-800">{name}</p>
-                  <span className="rounded-lg bg-rose-50 px-2.5 py-1 text-[13px] font-semibold text-rose-700">{euro(amount)}</span>
-                </div>
-              ))}
-            </div>
-          </SectionCard>
+        <section className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
+          <SupplierAnalysis invoices={invoices} totalGross={totals.totalGross} />
 
           <SectionCard title="Per categoria" eyebrow="Desglossament" description="Despesa agrupada per tipus de despesa.">
             <div className="space-y-2">
-              {groupByField(rows, "category").map(([name, amount]) => (
-                <div key={name} className="flex items-center justify-between rounded-xl border border-[var(--line)] bg-slate-50/50 p-3 transition hover:bg-white hover:shadow-sm">
-                  <p className="text-[13px] font-semibold text-slate-800">{name.replaceAll("_", " ")}</p>
-                  <span className="rounded-lg bg-amber-50 px-2.5 py-1 text-[13px] font-semibold text-amber-700">{euro(amount)}</span>
-                </div>
-              ))}
+              {groupByField(rows, "category").map(([name, amount]) => {
+                const pct = totals.totalGross > 0 ? (amount / totals.totalGross) * 100 : 0;
+                return (
+                  <div key={name} className="rounded-xl border border-[var(--line)] bg-slate-50/50 p-3 transition hover:bg-white hover:shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[13px] font-semibold text-slate-800">{name.replaceAll("_", " ")}</p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-slate-400">{pct.toFixed(1)}%</span>
+                        <span className="rounded-lg bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-700">{euro(amount)}</span>
+                      </div>
+                    </div>
+                    <div className="mt-1.5 h-1 w-full rounded-full bg-slate-200 overflow-hidden">
+                      <div className="h-full rounded-full bg-amber-400 transition-all" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </SectionCard>
         </section>
       ) : null}
     </AppFrame>
+  );
+}
+
+/* ---------- Supplier analysis ---------- */
+
+function SupplierAnalysis({
+  invoices,
+  totalGross,
+}: {
+  invoices: Array<{ id: string; supplierName: string; totalAmount: number; issueDate: string }>;
+  totalGross: number;
+}) {
+  // Aggregate per supplier
+  type SupplierAgg = { name: string; total: number; count: number; lastDate: string };
+  const map = new Map<string, SupplierAgg>();
+  for (const inv of invoices) {
+    const existing = map.get(inv.supplierName);
+    if (existing) {
+      existing.total += inv.totalAmount;
+      existing.count += 1;
+      if (inv.issueDate > existing.lastDate) existing.lastDate = inv.issueDate;
+    } else {
+      map.set(inv.supplierName, { name: inv.supplierName, total: inv.totalAmount, count: 1, lastDate: inv.issueDate });
+    }
+  }
+  const ranked = [...map.values()].sort((a, b) => b.total - a.total);
+  const top = ranked.slice(0, 12);
+  const top3Pct = totalGross > 0
+    ? (ranked.slice(0, 3).reduce((s, r) => s + r.total, 0) / totalGross) * 100
+    : 0;
+  const concentrationLabel = top3Pct >= 70 ? "alta" : top3Pct >= 50 ? "mitjana" : "baixa";
+  const concentrationColor = top3Pct >= 70 ? "bg-rose-50 text-rose-700" : top3Pct >= 50 ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700";
+  const max = top[0]?.total ?? 1;
+
+  return (
+    <section className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm transition-shadow hover:shadow-md">
+      <div className="mb-5 space-y-1">
+        <span className="inline-block rounded-md bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-indigo-600">
+          Anàlisi
+        </span>
+        <div className="flex items-center gap-2">
+          <h2 className="text-[20px] font-bold tracking-tight text-slate-900">Per proveïdor</h2>
+          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${concentrationColor}`}>
+            top-3 = {top3Pct.toFixed(0)}% · {concentrationLabel}
+          </span>
+        </div>
+        <p className="text-[13px] leading-relaxed text-slate-500">
+          {ranked.length} proveïdors actius en el període. Si la concentració del top-3 és alta, depens massa de pocs proveïdors.
+        </p>
+      </div>
+      <div className="space-y-2">
+        {top.map((s, i) => {
+          const pct = totalGross > 0 ? (s.total / totalGross) * 100 : 0;
+          const widthPct = max > 0 ? (s.total / max) * 100 : 0;
+          const avg = s.count > 0 ? s.total / s.count : 0;
+          return (
+            <div key={s.name} className="rounded-xl border border-[var(--line)] bg-slate-50/50 p-3 transition hover:bg-white hover:shadow-sm">
+              <div className="flex items-center gap-3">
+                <span className={`flex size-6 items-center justify-center rounded-lg text-[11px] font-bold ${i < 3 ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-500"}`}>
+                  {i + 1}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[13px] font-semibold text-slate-800 truncate">{s.name}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[11px] text-slate-400">{s.count} fact.</span>
+                      <span className="text-[11px] text-slate-400">mitja {euro(avg)}</span>
+                      <span className="text-[11px] text-slate-400">{pct.toFixed(1)}%</span>
+                      <span className="rounded-lg bg-rose-50 px-2 py-0.5 text-[12px] font-semibold text-rose-700">{euro(s.total)}</span>
+                    </div>
+                  </div>
+                  <div className="mt-1.5 h-1 w-full rounded-full bg-slate-200 overflow-hidden">
+                    <div className="h-full rounded-full bg-rose-400 transition-all" style={{ width: `${widthPct}%` }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

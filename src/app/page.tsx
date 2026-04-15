@@ -132,6 +132,11 @@ export default async function HomePage({
         </div>
       </section>
 
+      {/* Family movements: who's growing, who's falling */}
+      {workspace.familyMovements.length > 0 && (
+        <FamilyMovements movements={workspace.familyMovements} />
+      )}
+
       {/* Day of week + Expense breakdown */}
       <section className="grid gap-5 xl:grid-cols-2">
         {/* Day of week */}
@@ -367,7 +372,26 @@ function TodayDigest({
             <div className="text-right">
               <p className="text-[11px] font-medium text-violet-700">Previsió demà</p>
               <p className="text-[15px] font-bold text-violet-900">{euro(digest.forecastTomorrow.sales)}</p>
-              <p className="text-[10px] text-violet-600">mitjana últims {digest.forecastTomorrow.basedOn} mateix dia</p>
+              <p className="text-[10px] text-violet-600">
+                mitjana últims {digest.forecastTomorrow.basedOn} mateix dia
+                {digest.forecastTomorrow.tempFactor !== 1 && (
+                  <>
+                    {" "}·{" "}
+                    <span className={digest.forecastTomorrow.tempFactor > 1 ? "font-semibold text-amber-600" : "font-semibold text-sky-600"}>
+                      {digest.forecastTomorrow.tempFactor > 1 ? "+" : ""}
+                      {((digest.forecastTomorrow.tempFactor - 1) * 100).toFixed(0)}% per temperatura
+                    </span>
+                  </>
+                )}
+              </p>
+              {digest.forecastTomorrow.tomorrowTempMax !== null && (
+                <p className="text-[10px] text-violet-500">
+                  Demà {digest.forecastTomorrow.tomorrowTempMax.toFixed(0)}°C
+                  {digest.forecastTomorrow.avgHistoricalTempMax !== null && (
+                    <> vs mitjana {digest.forecastTomorrow.avgHistoricalTempMax.toFixed(0)}°C</>
+                  )}
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -387,6 +411,95 @@ function TodayDigest({
         </p>
       )}
     </section>
+  );
+}
+
+function FamilyMovements({ movements }: { movements: import("@/lib/types").FamilyMovement[] }) {
+  // Pick top 3 winners (highest +€) and top 3 losers (most negative €). Both
+  // lists are derived from the same array which is already sorted desc by €
+  // delta in computeFamilyMovements.
+  const winners = movements.filter((m) => m.deltaEur > 0).slice(0, 3);
+  const losers = [...movements].filter((m) => m.deltaEur < 0).sort((a, b) => a.deltaEur - b.deltaEur).slice(0, 3);
+
+  if (winners.length === 0 && losers.length === 0) return null;
+
+  return (
+    <section className="grid gap-5 xl:grid-cols-2">
+      <FamilyMovementCard
+        title="Famílies que creixen"
+        description="vs període anterior de la mateixa durada"
+        items={winners}
+        positive
+      />
+      <FamilyMovementCard
+        title="Famílies que cauen"
+        description="vs període anterior de la mateixa durada"
+        items={losers}
+      />
+    </section>
+  );
+}
+
+function FamilyMovementCard({
+  title,
+  description,
+  items,
+  positive,
+}: {
+  title: string;
+  description: string;
+  items: import("@/lib/types").FamilyMovement[];
+  positive?: boolean;
+}) {
+  return (
+    <div className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
+      <div className="mb-4 flex items-center gap-2">
+        {positive ? (
+          <ArrowUpRight className="size-5 text-emerald-600" />
+        ) : (
+          <ArrowDownRight className="size-5 text-rose-600" />
+        )}
+        <div>
+          <p className="text-[18px] font-bold tracking-tight text-slate-900">{title}</p>
+          <p className="text-[12px] text-slate-500">{description}</p>
+        </div>
+      </div>
+      {items.length === 0 ? (
+        <p className="rounded-xl bg-slate-50 p-3 text-center text-[13px] text-slate-400">
+          Cap família amb canvi significatiu
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {items.map((m) => {
+            const sign = m.deltaEur > 0 ? "+" : "";
+            const pctSign = m.deltaPct > 0 ? "+" : "";
+            const tone = positive ? "text-emerald-700" : "text-rose-700";
+            const bg = positive ? "bg-emerald-50" : "bg-rose-50";
+            return (
+              <div key={m.family} className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-slate-50/50 p-3">
+                <span className={`size-3 rounded-full shrink-0 ${m.color}`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[14px] font-semibold text-slate-800 truncate">{m.family}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[11px] text-slate-400">
+                        {euro(m.previousSales)} → {euro(m.currentSales)}
+                      </span>
+                      <span className={`rounded-lg ${bg} px-2 py-0.5 text-[12px] font-semibold ${tone}`}>
+                        {sign}{euro(m.deltaEur)}
+                      </span>
+                      <span className={`text-[12px] font-semibold ${tone}`}>
+                        {pctSign}{m.deltaPct.toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 

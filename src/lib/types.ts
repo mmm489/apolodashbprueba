@@ -199,7 +199,30 @@ export interface DailyDigest {
   averageTicket: number;
   vsLastWeek: { sales: number; deltaPct: number } | null;
   vsLastYear: { sales: number; deltaPct: number } | null;
-  forecastTomorrow: { date: string; sales: number; basedOn: number } | null;
+  forecastTomorrow: {
+    date: string;
+    /** Forecasted sales after applying the temperature factor. */
+    sales: number;
+    /** Baseline (avg of N last same-DOW values, no weather). */
+    baselineSales: number;
+    /** Number of historical same-DOW samples averaged. */
+    basedOn: number;
+    /** Temperature factor applied (1.0 = no adjustment, >1 hotter, <1 cooler). */
+    tempFactor: number;
+    /** Tomorrow's forecasted max temperature, if available. */
+    tomorrowTempMax: number | null;
+    /** Average max temp of the same-DOW history used as baseline. */
+    avgHistoricalTempMax: number | null;
+  } | null;
+}
+
+export interface FamilyMovement {
+  family: string;
+  color: string;
+  currentSales: number;
+  previousSales: number;
+  deltaPct: number;
+  deltaEur: number;
 }
 
 export interface FinancialWorkspace {
@@ -214,6 +237,7 @@ export interface FinancialWorkspace {
   topProducts: Array<{ productName: string; units: number; amount: number }>;
   comparisons: PeriodComparison;
   dailyDigest: DailyDigest | null;
+  familyMovements: FamilyMovement[];
 }
 
 export interface ExtractionResult {
