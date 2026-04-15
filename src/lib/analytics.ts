@@ -113,13 +113,12 @@ export async function getFinancialWorkspace(input?: {
   const bestHour = hourlyPerformance[0] ?? { hour: "--", sales: 0 };
   const estimatedMargin = totalSales - totalExpenses - totalPayroll;
 
-  const totalMonthlyHours = employees.reduce((sum, emp) => {
-    const [sh, sm] = emp.shiftStart.split(":").map(Number);
-    const [eh, em] = emp.shiftEnd.split(":").map(Number);
-    const hoursPerDay = (eh + em / 60) - (sh + sm / 60);
-    return sum + hoursPerDay * emp.workingDaysPerMonth;
-  }, 0);
-  const productivityPerHour = totalMonthlyHours > 0 ? totalSales / totalMonthlyHours : 0;
+  // Total hours worked in the period (from real shifts, not theoretical monthly hours)
+  const totalHoursWorked = employeeShifts.reduce(
+    (sum, shift) => sum + computeShiftHours(shift.shiftStart, shift.shiftEnd),
+    0,
+  );
+  const productivityPerHour = totalHoursWorked > 0 ? totalSales / totalHoursWorked : 0;
 
   // Product cost: sum(unit_cost * units_sold) for products in the period
   const costMap = new Map<string, number>();
@@ -130,13 +129,12 @@ export async function getFinancialWorkspace(input?: {
     return sum + unitCost * item.units;
   }, 0);
 
-  // Employee cost: sum(hours * hourly_cost) for shifts in the period
+  // Employee cost: sum(hours * hourly_cost) for shifts in the period (uses real shifts)
+  const employeeById = new Map(employees.map((e) => [e.id, e] as const));
   const totalEmployeeCost = employeeShifts.reduce((sum, shift) => {
-    const emp = employees.find((e) => e.id === shift.employeeId);
+    const emp = employeeById.get(shift.employeeId);
     if (!emp) return sum;
-    const [sh, sm] = shift.shiftStart.split(":").map(Number);
-    const [eh, em] = shift.shiftEnd.split(":").map(Number);
-    const hours = (eh + em / 60) - (sh + sm / 60);
+    const hours = computeShiftHours(shift.shiftStart, shift.shiftEnd);
     return sum + hours * emp.hourlyCost;
   }, 0);
 
@@ -177,7 +175,7 @@ export async function getFinancialWorkspace(input?: {
         bestHourSales: bestHour.sales,
         estimatedMargin,
         activeSuppliers: new Set(scopedInvoices.map((item) => item.supplierName)).size,
-        totalMonthlyHours,
+        totalHoursWorked,
         productivityPerHour,
         totalProductCost,
         totalEmployeeCost,
@@ -594,6 +592,18 @@ function endOfDaySafe(value: string) {
 function isDateInRange(value: string, from: Date, to: Date) {
   const date = new Date(value);
   return date >= from && date <= to;
+}
+
+/** Computes hours between two "HH:MM" times. If end < start, assumes the shift
+ * crosses midnight (e.g. 22:00–02:00 = 4 h), adding 24 h to the end. */
+function computeShiftHours(start: string, end: string): number {
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  if ([sh, sm, eh, em].some((n) => Number.isNaN(n))) return 0;
+  const startHours = sh + sm / 60;
+  let endHours = eh + em / 60;
+  if (endHours < startHours) endHours += 24;
+  return endHours - startHours;
 }
 
 function formatCurrency(value: number) {

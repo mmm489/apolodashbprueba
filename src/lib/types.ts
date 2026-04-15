@@ -147,7 +147,7 @@ export interface KpiSnapshot {
   bestHourSales: number;
   estimatedMargin: number;
   activeSuppliers: number;
-  totalMonthlyHours: number;
+  totalHoursWorked: number;
   productivityPerHour: number;
   totalProductCost: number;
   totalEmployeeCost: number;
