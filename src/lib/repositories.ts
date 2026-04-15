@@ -261,19 +261,6 @@ export async function upsertProductCost(input: {
   `;
 }
 
-export async function syncProductCostsFromSales() {
-  if (!hasDatabase()) return;
-
-  const sql = getSql();
-  // Insert any product from product_sales that doesn't exist yet in product_costs
-  await sql`
-    INSERT INTO product_costs (id, product_code, product_name, category, unit_cost)
-    SELECT gen_random_uuid()::text, ps.product_code, ps.product_name, 'Altres', 0
-    FROM (SELECT DISTINCT product_code, product_name FROM product_sales) ps
-    WHERE NOT EXISTS (SELECT 1 FROM product_costs pc WHERE pc.product_code = ps.product_code)
-  `;
-}
-
 /* ---------- Employees ---------- */
 
 export async function listEmployees() {
@@ -543,6 +530,14 @@ async function _persistExtractionInner(sql: ReturnType<typeof getSql>, documentI
           VALUES (${item.id}, ${data.id}, ${item.businessDate}, ${item.productCode}, ${item.productName}, ${item.units}, ${item.amount})
         `;
       }
+      // Auto-register any new product code into product_costs so the user can
+      // fill in costs later without having to manually add each product.
+      await sql`
+        INSERT INTO product_costs (id, product_code, product_name, category, unit_cost)
+        SELECT gen_random_uuid()::text, ps.product_code, ps.product_name, 'Altres', 0
+        FROM (SELECT DISTINCT product_code, product_name FROM product_sales WHERE sales_report_id = ${data.id}) ps
+        WHERE NOT EXISTS (SELECT 1 FROM product_costs pc WHERE pc.product_code = ps.product_code)
+      `;
     }
     return;
   }

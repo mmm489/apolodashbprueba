@@ -1,11 +1,10 @@
 import { AppFrame } from "@/components/app-frame";
 import { ProductesPanel } from "@/components/productes-panel";
-import { listProductCosts, syncProductCostsFromSales } from "@/lib/repositories";
+import { listProductCosts } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProductesPage() {
-  await syncProductCostsFromSales();
   const products = await listProductCosts();
 
   return (

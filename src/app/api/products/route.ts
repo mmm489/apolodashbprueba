@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { listProductCosts, syncProductCostsFromSales, upsertProductCost } from "@/lib/repositories";
+import { listProductCosts, upsertProductCost } from "@/lib/repositories";
 
 export async function GET() {
-  // Sync new products from sales data first
-  await syncProductCostsFromSales();
   const products = await listProductCosts();
   return NextResponse.json(products);
 }
