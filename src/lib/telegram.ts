@@ -19,9 +19,18 @@ export async function handleTelegramUpdate(update: Record<string, unknown>) {
   }
 
   const chatId = message.chat.id;
-  if (env.TELEGRAM_CHAT_ID && String(chatId) !== env.TELEGRAM_CHAT_ID) {
-    await sendTelegramMessage(chatId, "No tens accés autoritzat a aquest bot.");
-    return { ok: false, reason: "unauthorized" };
+  if (env.TELEGRAM_CHAT_ID) {
+    // Allow a comma-separated list so personal + groups can coexist.
+    const allowed = env.TELEGRAM_CHAT_ID.split(",").map((s) => s.trim()).filter(Boolean);
+    if (!allowed.includes(String(chatId))) {
+      // Friendly self-service: show the actual chat_id so the owner can
+      // append it to TELEGRAM_CHAT_ID without having to query getUpdates.
+      await sendTelegramMessage(
+        chatId,
+        `No tens accés autoritzat a aquest bot.\n\nEl chat_id d'aquesta conversa és \`${chatId}\`. Si vols autoritzar-lo, afegeix-lo a la variable d'entorn TELEGRAM_CHAT_ID (separada per comes).`,
+      );
+      return { ok: false, reason: "unauthorized", chatId };
+    }
   }
 
   if (!env.ANTHROPIC_API_KEY) {
