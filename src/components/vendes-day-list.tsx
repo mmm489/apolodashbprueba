@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState, useTransition } from "react";
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Clock, FileUp, LoaderCircle, Users } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Clock, FileUp, LoaderCircle, RefreshCw, Users } from "lucide-react";
 
 import type { DayStatus } from "@/lib/analytics";
 import type { Employee, EmployeeShift, HourlyProductSale, HourlySalesEntry, ProductCost, ProductSaleRecord } from "@/lib/types";
@@ -215,8 +215,8 @@ function DayRow({
         </td>
         <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-end gap-1">
-            {!day.hasArticles && <UploadButton label="Articles" date={day.date} expectedType="articles" />}
-            {!day.hasHourly && <UploadButton label="Hores" date={day.date} expectedType="hores" />}
+            <UploadButton label="Articles" date={day.date} expectedType="articles" alreadyUploaded={day.hasArticles} />
+            <UploadButton label="Hores" date={day.date} expectedType="hores" alreadyUploaded={day.hasHourly} />
             <button
               type="button"
               onClick={onOpenShifts}
@@ -622,12 +622,32 @@ function StatusBadge({ ok }: { ok: boolean }) {
 
 /* ---- Upload button ---- */
 
-function UploadButton({ label, date, expectedType }: { label: string; date: string; expectedType: "articles" | "hores" }) {
+function UploadButton({
+  label,
+  date,
+  expectedType,
+  alreadyUploaded = false,
+}: {
+  label: string;
+  date: string;
+  expectedType: "articles" | "hores";
+  alreadyUploaded?: boolean;
+}) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<"idle" | "ok" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
+
+  function handleClick() {
+    if (alreadyUploaded) {
+      const ok = window.confirm(
+        `Vols actualitzar les dades de ${label} del ${date}? Es substituiran les dades actuals amb el nou fitxer.`,
+      );
+      if (!ok) return;
+    }
+    fileInputRef.current?.click();
+  }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -657,8 +677,10 @@ function UploadButton({ label, date, expectedType }: { label: string; date: stri
         }
 
         if (processed.duplicated) {
-          setStatus("error");
-          setErrorMsg("Aquest fitxer ja existeix a la base de dades.");
+          // Same file content: data is already the same
+          setStatus("ok");
+          setErrorMsg("");
+          router.refresh();
           return;
         }
 
@@ -686,6 +708,11 @@ function UploadButton({ label, date, expectedType }: { label: string; date: stri
     e.target.value = "";
   }
 
+  const baseClass = alreadyUploaded
+    ? "bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+    : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100";
+  const errorClass = "bg-rose-50 text-rose-700 hover:bg-rose-100";
+
   return (
     <div className="inline-flex flex-col items-end gap-1">
       <div className="inline-flex items-center gap-1">
@@ -694,15 +721,19 @@ function UploadButton({ label, date, expectedType }: { label: string; date: stri
         <button
           type="button"
           disabled={isPending}
-          onClick={() => fileInputRef.current?.click()}
+          onClick={handleClick}
           className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50 ${
-            status === "error"
-              ? "bg-rose-50 text-rose-700 hover:bg-rose-100"
-              : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+            status === "error" ? errorClass : baseClass
           }`}
-          title={`Pujar ${label} (${date})`}
+          title={alreadyUploaded ? `Actualitzar ${label} (${date})` : `Pujar ${label} (${date})`}
         >
-          {isPending ? <LoaderCircle className="size-3 animate-spin" /> : <FileUp className="size-3" />}
+          {isPending ? (
+            <LoaderCircle className="size-3 animate-spin" />
+          ) : alreadyUploaded ? (
+            <RefreshCw className="size-3" />
+          ) : (
+            <FileUp className="size-3" />
+          )}
           {label}
         </button>
       </div>

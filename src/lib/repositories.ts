@@ -551,17 +551,17 @@ async function _persistExtractionInner(sql: ReturnType<typeof getSql>, documentI
 
   if (result.documentType === "sales_report") {
     const data = result.normalizedData as SalesReport;
+    // Replace any existing sales_report for this date (cascades to product_sales via FK).
+    await sql`DELETE FROM sales_reports WHERE business_date = ${data.businessDate}`;
     await sql`
       INSERT INTO sales_reports (id, document_id, business_date, total_sales, order_count, average_ticket, payment_mix)
       VALUES (${data.id}, ${documentId}, ${data.businessDate}, ${data.totalSales}, ${data.orderCount}, ${data.averageTicket}, ${JSON.stringify(data.paymentMix)})
-      ON CONFLICT (id) DO NOTHING
     `;
     if (result.auxiliaryData?.productSales?.length) {
       for (const item of result.auxiliaryData.productSales) {
         await sql`
           INSERT INTO product_sales (id, sales_report_id, business_date, product_code, product_name, units, amount)
           VALUES (${item.id}, ${data.id}, ${item.businessDate}, ${item.productCode}, ${item.productName}, ${item.units}, ${item.amount})
-          ON CONFLICT (id) DO NOTHING
         `;
       }
     }
@@ -570,11 +570,16 @@ async function _persistExtractionInner(sql: ReturnType<typeof getSql>, documentI
 
   if (result.documentType === "hourly_report") {
     const entries = result.normalizedData as HourlySalesEntry[];
+    const businessDate = entries[0]?.businessDate;
+    if (businessDate) {
+      // Replace any existing hourly data for this date so re-uploads refresh the day.
+      await sql`DELETE FROM hourly_sales WHERE business_date = ${businessDate}`;
+      await sql`DELETE FROM hourly_product_sales WHERE business_date = ${businessDate}`;
+    }
     for (const entry of entries) {
       await sql`
         INSERT INTO hourly_sales (id, document_id, business_date, hour_label, sales, order_count)
         VALUES (${entry.id}, ${documentId}, ${entry.businessDate}, ${entry.hour}, ${entry.sales}, ${entry.orderCount})
-        ON CONFLICT (id) DO NOTHING
       `;
     }
     // Persist hourly product details if available
@@ -583,7 +588,6 @@ async function _persistExtractionInner(sql: ReturnType<typeof getSql>, documentI
         await sql`
           INSERT INTO hourly_product_sales (id, document_id, business_date, hour_label, product_code, product_name, units, amount)
           VALUES (${item.id}, ${documentId}, ${item.businessDate}, ${item.hourLabel}, ${item.productCode}, ${item.productName}, ${item.units}, ${item.amount})
-          ON CONFLICT (id) DO NOTHING
         `;
       }
     }
