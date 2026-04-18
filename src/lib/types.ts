@@ -149,6 +149,9 @@ export interface KpiSnapshot {
   activeSuppliers: number;
   totalHoursWorked: number;
   productivityPerHour: number;
+  /** Share (0–1) of the period's sold € that has a positive product cost
+   * registered. Below ~0.8 means the food cost KPI is unreliable. */
+  productCostCoverage: number;
   totalProductCost: number;
   totalEmployeeCost: number;
 }
@@ -213,7 +216,20 @@ export interface DailyDigest {
   sales: number;
   orders: number;
   averageTicket: number;
-  vsLastWeek: { sales: number; deltaPct: number } | null;
+  vsLastWeek: { sales: number; orders: number; averageTicket: number; deltaPct: number } | null;
+  /** Decomposes today's delta vs last-week into volume (more/fewer
+   * transactions) and price (higher/lower avg ticket). Helps answer "did we
+   * drop because of fewer customers or because they spent less?". */
+  driversVsLastWeek: {
+    totalDeltaEur: number;
+    volumeEffect: number;
+    priceEffect: number;
+    dominantDriver: "volume" | "price" | "balanced";
+  } | null;
+  /** Last 7 days of sales (oldest→newest) so the widget can draw a sparkline. */
+  last7Days: Array<{ date: string; sales: number }>;
+  /** True when the most recent sales report is >48h old — data is stale. */
+  isStale: boolean;
   /** Today's actual weather (if available). */
   todayWeather: HistoricalWeather | null;
   /** Calendar / holiday context for today (e.g. Easter week, Sant Jordi). */
@@ -242,6 +258,10 @@ export interface DailyDigest {
     baselineSales: number;
     /** Number of historical same-DOW samples averaged. */
     basedOn: number;
+    /** Coefficient of variation of the samples. High = unstable forecast. */
+    sampleCoV: number;
+    /** Confidence tier derived from basedOn + CoV. */
+    confidence: "low" | "medium" | "high";
     /** Temperature factor applied (1.0 = no adjustment, >1 hotter, <1 cooler). */
     tempFactor: number;
     /** Tomorrow's forecasted max temperature, if available. */

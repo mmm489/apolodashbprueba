@@ -436,6 +436,7 @@ function summarizeWorkspace(ws: FinancialWorkspace) {
       bestHourLabel: k.bestHourLabel,
       bestHourSales: round2(k.bestHourSales),
       activeSuppliers: k.activeSuppliers,
+      productCostCoverage: round2(k.productCostCoverage),
     },
     targets: { foodCostMaxPct: 35, laborCostMaxPct: 30, primeCostMaxPct: 65 },
     comparisons: {
@@ -456,6 +457,14 @@ function summarizeWorkspace(ws: FinancialWorkspace) {
       },
       todayWeather: ws.dailyDigest.todayWeather,
       todayCalendar: ws.dailyDigest.todayCalendar,
+      isStale: ws.dailyDigest.isStale,
+      last7Days: ws.dailyDigest.last7Days.map((d) => ({ date: d.date, sales: round2(d.sales) })),
+      driversVsLastWeek: ws.dailyDigest.driversVsLastWeek && {
+        totalDeltaEur: round2(ws.dailyDigest.driversVsLastWeek.totalDeltaEur),
+        volumeEffect: round2(ws.dailyDigest.driversVsLastWeek.volumeEffect),
+        priceEffect: round2(ws.dailyDigest.driversVsLastWeek.priceEffect),
+        dominantDriver: ws.dailyDigest.driversVsLastWeek.dominantDriver,
+      },
       vsLastYearDow: ws.dailyDigest.vsLastYearDow && {
         sales: round2(ws.dailyDigest.vsLastYearDow.sales),
         date: ws.dailyDigest.vsLastYearDow.date,

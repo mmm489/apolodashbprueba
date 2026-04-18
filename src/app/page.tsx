@@ -62,8 +62,17 @@ export default async function HomePage({
     >
       <DateFilterBar preset={workspace.filter.preset} from={workspace.filter.from} to={workspace.filter.to} />
 
-      {/* "Què vigilar avui" — daily digest based on the most recent day with data */}
-      {workspace.dailyDigest && <TodayDigest digest={workspace.dailyDigest} foodCostPct={foodCostPct} laborPct={kpis.totalSales > 0 ? (kpis.totalEmployeeCost / kpis.totalSales) * 100 : 0} bestHourLabel={kpis.bestHourLabel} />}
+      {/* "Què vigilar avui" — only day-specific metrics. Period KPIs moved
+          to the separate "Del període" card below. */}
+      {workspace.dailyDigest && <TodayDigest digest={workspace.dailyDigest} />}
+
+      {/* Period-wide metrics separated so they don't hide inside the daily widget */}
+      <PeriodMetrics
+        foodCostPct={foodCostPct}
+        laborPct={kpis.totalSales > 0 ? (kpis.totalEmployeeCost / kpis.totalSales) * 100 : 0}
+        bestHourLabel={kpis.bestHourLabel}
+        productCostCoverage={kpis.productCostCoverage}
+      />
 
       {/* KPI cards */}
       <section className="stagger-children grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
@@ -308,56 +317,21 @@ function pctDelta(current: number, baseline: number): number {
 
 /* ---------- "Què vigilar avui" widget ---------- */
 
-function TodayDigest({
-  digest,
-  foodCostPct,
-  laborPct,
-  bestHourLabel,
-}: {
-  digest: import("@/lib/types").DailyDigest;
-  foodCostPct: number;
-  laborPct: number;
-  bestHourLabel: string;
-}) {
+function TodayDigest({ digest }: { digest: import("@/lib/types").DailyDigest }) {
   const date = new Date(digest.date).toLocaleDateString("ca-ES", { weekday: "long", day: "2-digit", month: "long" });
-  const indicators = [
-    {
-      label: "Vendes",
-      value: euro(digest.sales),
-      delta: digest.vsLastWeek?.deltaPct,
-      deltaLabel: "vs setmana passada",
-    },
-    {
-      label: "Tiquet mitjà",
-      value: euro(digest.averageTicket),
-      delta: digest.vsLastWeek
-        ? pctDelta(digest.averageTicket, digest.vsLastWeek.sales / Math.max(digest.orders, 1))
-        : undefined,
-      deltaLabel: "vs DOW any passat",
-    },
-    {
-      label: "Food cost",
-      value: `${foodCostPct.toFixed(1)}%`,
-      target: 35,
-      currentForTarget: foodCostPct,
-      lowerIsBetter: true,
-    },
-    {
-      label: "Labor cost",
-      value: `${laborPct.toFixed(1)}%`,
-      target: 30,
-      currentForTarget: laborPct,
-      lowerIsBetter: true,
-    },
-    {
-      label: "Hora pic",
-      value: bestHourLabel || "--",
-      hint: "del periode",
-    },
-  ];
+  // Tiquet mitjà delta — apples to apples: today's avg ticket vs last week's
+  // avg ticket (computed on their own sales/orders). Fixes the old bug where
+  // we divided last-week sales by today's orders.
+  const ticketDelta = digest.vsLastWeek
+    ? pctDelta(digest.averageTicket, digest.vsLastWeek.averageTicket)
+    : undefined;
+  const ordersDelta = digest.vsLastWeek && digest.vsLastWeek.orders > 0
+    ? pctDelta(digest.orders, digest.vsLastWeek.orders)
+    : undefined;
 
   return (
     <section className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50/80 via-white to-white p-5 shadow-sm">
+      {/* Header */}
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Eye className="size-5 text-indigo-600" />
@@ -366,41 +340,44 @@ function TodayDigest({
             <p className="text-[12px] text-slate-500">Resum del dia més recent — {date}</p>
           </div>
         </div>
-        {digest.forecastTomorrow && (
-          <div className="hidden items-center gap-2 rounded-xl bg-violet-50 px-3 py-2 sm:flex">
-            <Sparkles className="size-4 text-violet-600" />
-            <div className="text-right">
-              <p className="text-[11px] font-medium text-violet-700">Previsió demà</p>
-              <p className="text-[15px] font-bold text-violet-900">{euro(digest.forecastTomorrow.sales)}</p>
-              <p className="text-[10px] text-violet-600">
-                mitjana últims {digest.forecastTomorrow.basedOn} mateix dia
-                {digest.forecastTomorrow.tempFactor !== 1 && (
-                  <>
-                    {" "}·{" "}
-                    <span className={digest.forecastTomorrow.tempFactor > 1 ? "font-semibold text-amber-600" : "font-semibold text-sky-600"}>
-                      {digest.forecastTomorrow.tempFactor > 1 ? "+" : ""}
-                      {((digest.forecastTomorrow.tempFactor - 1) * 100).toFixed(0)}% per temperatura
-                    </span>
-                  </>
-                )}
-              </p>
-              {digest.forecastTomorrow.tomorrowTempMax !== null && (
-                <p className="text-[10px] text-violet-500">
-                  Demà {digest.forecastTomorrow.tomorrowTempMax.toFixed(0)}°C
-                  {digest.forecastTomorrow.avgHistoricalTempMax !== null && (
-                    <> vs mitjana {digest.forecastTomorrow.avgHistoricalTempMax.toFixed(0)}°C</>
-                  )}
-                </p>
-              )}
-            </div>
+        {digest.forecastTomorrow && <ForecastTomorrowBlock forecast={digest.forecastTomorrow} />}
+      </div>
+
+      {/* Stale data warning */}
+      {digest.isStale && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg bg-amber-50 p-3 text-[12px] text-amber-800">
+          <span>⚠️</span>
+          <div>
+            <span className="font-semibold">Dades desactualitzades.</span> El darrer dia amb vendes és {date}, fa més de 48 hores. Puja l&apos;Articles Venda del dia actual per veure el resum real.
           </div>
-        )}
+        </div>
+      )}
+
+      {/* Main metrics: 3 cards (Vendes, Comandes, Tiquet mitjà) — all today-specific */}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <SalesCardWithSparkline
+          digest={digest}
+        />
+        <DigestCard
+          label="Comandes"
+          value={digest.orders > 0 ? String(digest.orders) : "--"}
+          delta={ordersDelta}
+          deltaLabel="vs setmana passada"
+        />
+        <DigestCard
+          label="Tiquet mitjà"
+          value={digest.averageTicket > 0 ? euro(digest.averageTicket) : "--"}
+          delta={ticketDelta}
+          deltaLabel="vs setmana passada"
+        />
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        {indicators.map((ind) => (
-          <DigestCard key={ind.label} {...ind} />
-        ))}
-      </div>
+
+      {/* Drivers of delta: was the change traffic or ticket? */}
+      {digest.driversVsLastWeek && Math.abs(digest.driversVsLastWeek.totalDeltaEur) > 20 && (
+        <DriversBlock drivers={digest.driversVsLastWeek} />
+      )}
+
+      {/* YoY context — lower visual weight than the main metrics */}
       {(digest.vsLastYearDow || digest.vsLastYearDate) && (
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           {digest.vsLastYearDow && (
@@ -435,6 +412,195 @@ function TodayDigest({
   );
 }
 
+/** Sales card with an inline 7-day sparkline so the owner sees the trend at
+ * a glance without leaving the widget. */
+function SalesCardWithSparkline({ digest }: { digest: import("@/lib/types").DailyDigest }) {
+  const delta = digest.vsLastWeek?.deltaPct;
+  const status = delta === undefined ? "flat" : Math.abs(delta) < 0.5 ? "flat" : delta >= 0 ? "good" : "bad";
+  const ring = status === "good" ? "ring-emerald-200 bg-emerald-50/50" : status === "bad" ? "ring-rose-200 bg-rose-50/50" : "ring-slate-200 bg-white";
+  const color = status === "good" ? "text-emerald-700" : status === "bad" ? "text-rose-700" : "text-slate-900";
+  return (
+    <div className={`rounded-xl ring-1 ${ring} p-3`}>
+      <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Vendes</p>
+      <p className={`mt-1 text-[22px] font-bold tracking-tight ${color}`}>{euro(digest.sales)}</p>
+      {delta !== undefined && (
+        <p className={`mt-0.5 text-[11px] font-medium ${status === "good" ? "text-emerald-600" : status === "bad" ? "text-rose-600" : "text-slate-400"}`}>
+          {delta > 0 ? "+" : ""}{delta.toFixed(1)}% vs setmana passada
+        </p>
+      )}
+      <Sparkline data={digest.last7Days} />
+    </div>
+  );
+}
+
+/** Minimalist 7-day sparkline. Highlights the last point. */
+function Sparkline({ data }: { data: Array<{ date: string; sales: number }> }) {
+  if (!data.length) return null;
+  const max = Math.max(...data.map((d) => d.sales), 1);
+  const min = Math.min(...data.map((d) => d.sales));
+  const range = Math.max(max - min, 1);
+  const w = 100;
+  const h = 24;
+  const points = data.map((d, i) => {
+    const x = (i / (data.length - 1)) * w;
+    const y = h - ((d.sales - min) / range) * h;
+    return `${x},${y}`;
+  });
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="mt-2 h-6 w-full">
+      <polyline
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        className="text-indigo-400"
+        points={points.join(" ")}
+      />
+      {/* Emphasize the last point */}
+      {(() => {
+        const last = data[data.length - 1];
+        const x = w;
+        const y = h - ((last.sales - min) / range) * h;
+        return <circle cx={x} cy={y} r="2" className="fill-indigo-600" />;
+      })()}
+    </svg>
+  );
+}
+
+/** Tomorrow forecast with confidence tier and an action hint. */
+function ForecastTomorrowBlock({
+  forecast,
+}: {
+  forecast: NonNullable<import("@/lib/types").DailyDigest["forecastTomorrow"]>;
+}) {
+  const confidenceColor =
+    forecast.confidence === "high" ? "bg-emerald-100 text-emerald-700"
+    : forecast.confidence === "medium" ? "bg-amber-100 text-amber-700"
+    : "bg-rose-100 text-rose-700";
+  const confidenceLabel =
+    forecast.confidence === "high" ? "alta" : forecast.confidence === "medium" ? "mitjana" : "baixa";
+  // Rough action hint: hours of staff scaled to expected sales, assuming a
+  // ~35€ / hour productivity target (tweak per your actual operation)
+  const suggestedHours = Math.max(4, Math.round(forecast.sales / 35));
+  return (
+    <div className="hidden items-center gap-2 rounded-xl bg-violet-50 px-3 py-2 sm:flex">
+      <Sparkles className="size-4 text-violet-600" />
+      <div className="text-right">
+        <div className="flex items-center justify-end gap-1.5">
+          <p className="text-[11px] font-medium text-violet-700">Previsió demà</p>
+          <span className={`inline-block rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase ${confidenceColor}`}>
+            {confidenceLabel}
+          </span>
+        </div>
+        <p className="text-[15px] font-bold text-violet-900">{euro(forecast.sales)}</p>
+        <p className="text-[10px] text-violet-600">
+          mitjana últims {forecast.basedOn} mateix dia
+          {forecast.tempFactor !== 1 && (
+            <>
+              {" "}·{" "}
+              <span className={forecast.tempFactor > 1 ? "font-semibold text-amber-600" : "font-semibold text-sky-600"}>
+                {forecast.tempFactor > 1 ? "+" : ""}
+                {((forecast.tempFactor - 1) * 100).toFixed(0)}% per temperatura
+              </span>
+            </>
+          )}
+        </p>
+        {forecast.tomorrowTempMax !== null && (
+          <p className="text-[10px] text-violet-500">
+            Demà {forecast.tomorrowTempMax.toFixed(0)}°C
+            {forecast.avgHistoricalTempMax !== null && (
+              <> vs mitjana {forecast.avgHistoricalTempMax.toFixed(0)}°C</>
+            )}
+          </p>
+        )}
+        <p className="mt-1 text-[10px] font-medium text-violet-700">
+          → planifica ~{suggestedHours}h de personal
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** Breaks down today's delta vs last week into "traffic" and "ticket" parts. */
+function DriversBlock({
+  drivers,
+}: {
+  drivers: NonNullable<import("@/lib/types").DailyDigest["driversVsLastWeek"]>;
+}) {
+  const totalUp = drivers.totalDeltaEur >= 0;
+  const reasonText =
+    drivers.dominantDriver === "volume"
+      ? drivers.volumeEffect > 0
+        ? "per més clients (trànsit)"
+        : "per menys clients (trànsit)"
+      : drivers.dominantDriver === "price"
+        ? drivers.priceEffect > 0
+          ? "per un tiquet mitjà més alt"
+          : "per un tiquet mitjà més baix"
+        : "mix de trànsit i tiquet";
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-[var(--line)] bg-slate-50/50 p-3 text-[12px]">
+      <span className="font-semibold text-slate-700">
+        {totalUp ? "↑" : "↓"} {totalUp ? "+" : ""}
+        {euro(drivers.totalDeltaEur)} vs setmana passada
+      </span>
+      <span className="text-slate-400">·</span>
+      <span className="text-slate-600">{reasonText}</span>
+      <span className="ml-auto flex gap-3 text-[11px] text-slate-500">
+        <span>
+          Trànsit: <span className={drivers.volumeEffect >= 0 ? "font-semibold text-emerald-700" : "font-semibold text-rose-700"}>{drivers.volumeEffect >= 0 ? "+" : ""}{euro(drivers.volumeEffect)}</span>
+        </span>
+        <span>
+          Tiquet: <span className={drivers.priceEffect >= 0 ? "font-semibold text-emerald-700" : "font-semibold text-rose-700"}>{drivers.priceEffect >= 0 ? "+" : ""}{euro(drivers.priceEffect)}</span>
+        </span>
+      </span>
+    </div>
+  );
+}
+
+/** "Del període" — period-wide KPIs that used to live inside the digest but
+ * belong to the selected filter range, not to "today". */
+function PeriodMetrics({
+  foodCostPct,
+  laborPct,
+  bestHourLabel,
+  productCostCoverage,
+}: {
+  foodCostPct: number;
+  laborPct: number;
+  bestHourLabel: string;
+  productCostCoverage: number;
+}) {
+  const coverageOk = productCostCoverage >= 0.8;
+  return (
+    <section className="grid gap-3 sm:grid-cols-3">
+      <DigestCard
+        label="Food cost"
+        value={`${foodCostPct.toFixed(1)}%`}
+        target={35}
+        currentForTarget={foodCostPct}
+        lowerIsBetter={true}
+        warning={
+          coverageOk
+            ? undefined
+            : `Dada incompleta: només ${(productCostCoverage * 100).toFixed(0)}% de productes amb cost registrat`
+        }
+      />
+      <DigestCard
+        label="Labor cost"
+        value={`${laborPct.toFixed(1)}%`}
+        target={30}
+        currentForTarget={laborPct}
+        lowerIsBetter={true}
+      />
+      <DigestCard
+        label="Hora pic"
+        value={bestHourLabel || "--"}
+        hint="del període"
+      />
+    </section>
+  );
+}
+
 function YoyRow({
   label,
   helper,
@@ -459,7 +625,8 @@ function YoyRow({
   const isUp = deltaPct >= 0;
   // Flag when today and the compared date are in different calendar contexts
   // (e.g. one is Setmana Santa, the other isn't). This is the signal that
-  // makes the YoY delta misleading.
+  // makes the YoY delta misleading — when mismatched, we hide the big %
+  // pill so the owner doesn't read a huge red number as a real drop.
   const calendarMismatch =
     (calendar?.label ?? null) !== (todayCalendar?.label ?? null) &&
     (calendar || todayCalendar);
@@ -470,9 +637,15 @@ function YoyRow({
           <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{label}</p>
           <p className="text-[11px] text-slate-400">{helper}</p>
         </div>
-        <span className={`inline-flex items-center rounded-lg px-2 py-0.5 text-[12px] font-bold ${isUp ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
-          {isUp ? "+" : ""}{deltaPct.toFixed(1)}%
-        </span>
+        {calendarMismatch ? (
+          <span className="inline-flex items-center rounded-lg bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+            no comparable
+          </span>
+        ) : (
+          <span className={`inline-flex items-center rounded-lg px-2 py-0.5 text-[12px] font-bold ${isUp ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
+            {isUp ? "+" : ""}{deltaPct.toFixed(1)}%
+          </span>
+        )}
       </div>
       <p className="mt-1 text-[12px] text-slate-600">
         <span className="text-slate-400">{formatShortDate(date)}:</span>{" "}
@@ -634,6 +807,7 @@ function DigestCard({
   currentForTarget,
   lowerIsBetter,
   hint,
+  warning,
 }: {
   label: string;
   value: string;
@@ -643,33 +817,53 @@ function DigestCard({
   currentForTarget?: number;
   lowerIsBetter?: boolean;
   hint?: string;
+  /** If set, the card renders in amber with this text instead of marking
+   * "good" or "bad" based on target. Used when the underlying data is
+   * unreliable (e.g. food cost with low product-cost coverage). */
+  warning?: string;
 }) {
-  let status: "good" | "bad" | "flat" = "flat";
-  if (target !== undefined && currentForTarget !== undefined) {
+  let status: "good" | "bad" | "flat" | "warn" = "flat";
+  if (warning) {
+    status = "warn";
+  } else if (target !== undefined && currentForTarget !== undefined) {
     const meets = lowerIsBetter ? currentForTarget <= target : currentForTarget >= target;
     status = meets ? "good" : "bad";
   } else if (delta !== undefined) {
     status = Math.abs(delta) < 0.5 ? "flat" : delta >= 0 ? "good" : "bad";
   }
 
-  const ringColor = status === "good" ? "ring-emerald-200 bg-emerald-50/50" : status === "bad" ? "ring-rose-200 bg-rose-50/50" : "ring-slate-200 bg-white";
-  const valueColor = status === "good" ? "text-emerald-700" : status === "bad" ? "text-rose-700" : "text-slate-900";
+  const ringColor =
+    status === "good" ? "ring-emerald-200 bg-emerald-50/50"
+    : status === "bad" ? "ring-rose-200 bg-rose-50/50"
+    : status === "warn" ? "ring-amber-200 bg-amber-50/50"
+    : "ring-slate-200 bg-white";
+  const valueColor =
+    status === "good" ? "text-emerald-700"
+    : status === "bad" ? "text-rose-700"
+    : status === "warn" ? "text-amber-700"
+    : "text-slate-900";
 
   return (
     <div className={`rounded-xl ring-1 ${ringColor} p-3`}>
       <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">{label}</p>
       <p className={`mt-1 text-[20px] font-bold tracking-tight ${valueColor}`}>{value}</p>
-      {delta !== undefined && deltaLabel && (
-        <p className={`mt-0.5 text-[11px] font-medium ${status === "good" ? "text-emerald-600" : status === "bad" ? "text-rose-600" : "text-slate-400"}`}>
-          {delta > 0 ? "+" : ""}{delta.toFixed(1)}% {deltaLabel}
-        </p>
+      {warning ? (
+        <p className="mt-0.5 text-[11px] font-medium text-amber-700">⚠️ {warning}</p>
+      ) : (
+        <>
+          {delta !== undefined && deltaLabel && (
+            <p className={`mt-0.5 text-[11px] font-medium ${status === "good" ? "text-emerald-600" : status === "bad" ? "text-rose-600" : "text-slate-400"}`}>
+              {delta > 0 ? "+" : ""}{delta.toFixed(1)}% {deltaLabel}
+            </p>
+          )}
+          {target !== undefined && (
+            <p className="mt-0.5 text-[11px] text-slate-500">
+              Objectiu: {lowerIsBetter ? "<" : ">"} {target}%
+            </p>
+          )}
+          {hint && <p className="mt-0.5 text-[11px] text-slate-400">{hint}</p>}
+        </>
       )}
-      {target !== undefined && (
-        <p className="mt-0.5 text-[11px] text-slate-500">
-          Objectiu: {lowerIsBetter ? "<" : ">"} {target}%
-        </p>
-      )}
-      {hint && <p className="mt-0.5 text-[11px] text-slate-400">{hint}</p>}
     </div>
   );
 }

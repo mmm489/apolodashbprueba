@@ -142,14 +142,23 @@ export async function getFinancialWorkspace(input?: {
   );
   const productivityPerHour = totalHoursWorked > 0 ? totalSales / totalHoursWorked : 0;
 
-  // Product cost: sum(unit_cost * units_sold) for products in the period
+  // Product cost: sum(unit_cost * units_sold) for products in the period.
+  // Also compute coverage: share of period sales coming from products that
+  // have a positive unit_cost. Low coverage (< ~0.8) means the food-cost KPI
+  // is misleadingly low because many products are priced as 0 €.
   const costMap = new Map<string, number>();
   for (const pc of productCosts) costMap.set(pc.productCode, pc.unitCost);
   const scopedProductsForCost = productSales.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
-  const totalProductCost = scopedProductsForCost.reduce((sum, item) => {
+  let totalProductCost = 0;
+  let salesAmountWithCost = 0;
+  let salesAmountTotal = 0;
+  for (const item of scopedProductsForCost) {
     const unitCost = costMap.get(item.productCode) ?? 0;
-    return sum + unitCost * item.units;
-  }, 0);
+    totalProductCost += unitCost * item.units;
+    salesAmountTotal += item.amount;
+    if (unitCost > 0) salesAmountWithCost += item.amount;
+  }
+  const productCostCoverage = salesAmountTotal > 0 ? salesAmountWithCost / salesAmountTotal : 0;
 
   // Employee cost: sum(hours * hourly_cost) for shifts in the period (uses real shifts)
   const employeeById = new Map(employees.map((e) => [e.id, e] as const));
@@ -201,6 +210,7 @@ export async function getFinancialWorkspace(input?: {
         productivityPerHour,
         totalProductCost,
         totalEmployeeCost,
+        productCostCoverage,
       },
       alerts,
       documents: scopedDocuments,
@@ -671,6 +681,17 @@ export function computeDailyDigest(
   const baselineSales = sameDowSamples.length > 0
     ? sameDowSamples.reduce((s, v) => s + v.sales, 0) / sameDowSamples.length
     : 0;
+  // Coefficient of variation = stddev / mean. Low CoV + many samples → high
+  // confidence. Use it to surface "this forecast is flaky" when it matters.
+  let sampleCoV = 0;
+  if (baselineSales > 0 && sameDowSamples.length > 1) {
+    const variance = sameDowSamples.reduce((s, v) => s + (v.sales - baselineSales) ** 2, 0) / sameDowSamples.length;
+    sampleCoV = Math.sqrt(variance) / baselineSales;
+  }
+  const forecastConfidence: "low" | "medium" | "high" =
+    sameDowSamples.length >= 4 && sampleCoV < 0.25 ? "high"
+    : sameDowSamples.length >= 3 && sampleCoV < 0.4 ? "medium"
+    : "low";
   const tomorrowDate = formatISO(addDays(todayDate, 1), { representation: "date" });
 
   // Temperature factor (only when weather data is available).
@@ -699,8 +720,18 @@ export function computeDailyDigest(
     orders: today.orderCount,
     averageTicket: today.averageTicket,
     vsLastWeek: lastWeekReport
-      ? { sales: lastWeekReport.totalSales, deltaPct: pct(today.totalSales, lastWeekReport.totalSales) }
+      ? {
+          sales: lastWeekReport.totalSales,
+          orders: lastWeekReport.orderCount,
+          averageTicket: lastWeekReport.averageTicket,
+          deltaPct: pct(today.totalSales, lastWeekReport.totalSales),
+        }
       : null,
+    driversVsLastWeek: lastWeekReport && lastWeekReport.orderCount > 0
+      ? computeDriversVsLastWeek(today, lastWeekReport)
+      : null,
+    last7Days: buildLast7Days(sortedDesc, todayDate),
+    isStale: computeIsStale(todayDate),
     todayWeather: historicalWeather?.get(today.businessDate) ?? null,
     todayCalendar: toCalendarNote(today.businessDate),
     vsLastYearDow: lastYearDowReport
@@ -727,6 +758,8 @@ export function computeDailyDigest(
           sales: baselineSales * tempFactor,
           baselineSales,
           basedOn: sameDowSamples.length,
+          sampleCoV,
+          confidence: forecastConfidence,
           tempFactor,
           tomorrowTempMax,
           avgHistoricalTempMax,
@@ -769,6 +802,45 @@ function sumReports(reports: SalesReport[], from: string, to: string): PeriodTot
 function pct(current: number, baseline: number): number {
   if (baseline <= 0) return 0;
   return ((current - baseline) / baseline) * 100;
+}
+
+/** Midpoint decomposition of the sales delta today vs last-week same-DOW:
+ *   volume effect = (Q2 - Q1) * (T1 + T2) / 2
+ *   price effect  = (T2 - T1) * (Q1 + Q2) / 2
+ * The two parts sum to the total delta. Which one dominates tells the owner
+ * whether the variation came from traffic or from average ticket. */
+function computeDriversVsLastWeek(today: SalesReport, prev: SalesReport) {
+  const q1 = prev.orderCount;
+  const q2 = today.orderCount;
+  const t1 = prev.averageTicket;
+  const t2 = today.averageTicket;
+  const volumeEffect = (q2 - q1) * ((t1 + t2) / 2);
+  const priceEffect = (t2 - t1) * ((q1 + q2) / 2);
+  const totalDeltaEur = today.totalSales - prev.totalSales;
+  const absVol = Math.abs(volumeEffect);
+  const absPrice = Math.abs(priceEffect);
+  const dominantDriver: "volume" | "price" | "balanced" =
+    absVol > absPrice * 1.5 ? "volume"
+    : absPrice > absVol * 1.5 ? "price"
+    : "balanced";
+  return { totalDeltaEur, volumeEffect, priceEffect, dominantDriver };
+}
+
+function buildLast7Days(sortedDesc: SalesReport[], todayDate: Date): Array<{ date: string; sales: number }> {
+  const byDate = new Map(sortedDesc.map((r) => [r.businessDate, r.totalSales]));
+  const out: Array<{ date: string; sales: number }> = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = addDays(todayDate, -i);
+    const iso = formatISO(d, { representation: "date" });
+    out.push({ date: iso, sales: byDate.get(iso) ?? 0 });
+  }
+  return out;
+}
+
+function computeIsStale(todayDate: Date): boolean {
+  const now = new Date();
+  const diffMs = now.getTime() - todayDate.getTime();
+  return diffMs > 48 * 60 * 60 * 1000;
 }
 
 /** Wraps getCalendarContext for digest rows; returns null when the date is
