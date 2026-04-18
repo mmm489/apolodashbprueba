@@ -6,13 +6,21 @@
  * per year (2020..2026). Each cell is the day's total sales formatted like
  * "1,888.20 €".
  *
+ * IMPORTANT — VAT handling:
+ *   The CAIXES values are GROSS (VAT-inclusive). By default this script
+ *   divides each amount by 1.10 (10% hostaleria VAT) before inserting, so
+ *   the rows match the net-of-VAT data that the Articles Venda TPV exports
+ *   from 16 March 2026 onwards. Pass --gross to disable the conversion and
+ *   store the raw amounts verbatim (not recommended — will skew YoY
+ *   comparisons).
+ *
  * Only total_sales is known from this source; order_count and average_ticket
  * stay at 0. Days that already have a sales_reports row (imported from an
  * Articles Venda spreadsheet with full detail) are LEFT ALONE — we never
  * overwrite richer data with a bulk historical row.
  *
  * Usage:
- *   tsx --env-file=.env.local scripts/import-historical-sales.ts <path> [--dry-run]
+ *   tsx --env-file=.env.local scripts/import-historical-sales.ts <path> [--dry-run] [--gross]
  */
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -20,6 +28,8 @@ import { readFileSync } from "node:fs";
 import * as XLSX from "xlsx";
 
 import { getSql } from "@/lib/db";
+
+const IVA_DIVISOR = 1.10;
 
 // Real Apolo data: 2023 onwards (earlier years not imported per owner).
 const YEAR_COLUMNS: Record<number, number> = {
@@ -64,10 +74,16 @@ function parseDate(label: string, year: number): string | null {
 async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes("--dry-run");
+  const gross = args.includes("--gross");
   const filePath = args.find((a) => !a.startsWith("--"));
   if (!filePath) {
-    console.error("Usage: tsx scripts/import-historical-sales.ts <path> [--dry-run]");
+    console.error("Usage: tsx scripts/import-historical-sales.ts <path> [--dry-run] [--gross]");
     process.exit(1);
+  }
+  if (gross) {
+    console.warn("⚠️  --gross: els imports es guardaran BRUTS (amb IVA). No es recomana — trenca les comparatives YoY.");
+  } else {
+    console.log(`ℹ️  Els valors del CAIXES es dividiran per ${IVA_DIVISOR} per treure IVA 10%. Usa --gross per desactivar.`);
   }
 
   const buffer = readFileSync(filePath);
@@ -135,7 +151,14 @@ async function main() {
       perYear[year].candidates += 1;
       if (amount === 0) perYear[year].zero += 1;
 
-      const candidate: Candidate = { date: iso, year, amount };
+      // Apply IVA reduction unless --gross was passed. Rounding matches the
+      // remove-iva-historical.ts migration so both paths are numerically
+      // consistent.
+      const storedAmount = gross
+        ? amount
+        : Math.round((amount / IVA_DIVISOR) * 100) / 100;
+
+      const candidate: Candidate = { date: iso, year, amount: storedAmount };
 
       if (existingDates.has(iso)) {
         perYear[year].skipped += 1;
