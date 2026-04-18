@@ -17,7 +17,7 @@ import {
   listTelegramUsers,
 } from "@/lib/repositories";
 import { classifyFamily } from "@/lib/product-families";
-import type { ChatAnswer, DailyDigest as DailyDigestType, DateFilter, DatePreset, Employee, EmployeeShift, FamilyMovement, FinancialWorkspace, HourlyProductSale, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, ProductCost, ProductSaleRecord, SalesReport } from "@/lib/types";
+import type { ChatAnswer, DailyDigest as DailyDigestType, DateFilter, DatePreset, Employee, EmployeeShift, FamilyMovement, FinancialWorkspace, HistoricalWeather, HourlyProductSale, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, ProductCost, ProductSaleRecord, SalesReport } from "@/lib/types";
 
 export function resolveDateFilter(input?: {
   preset?: string;
@@ -109,7 +109,10 @@ export async function getFinancialWorkspace(input?: {
   // same-DOW days plus tomorrow's forecast. Pull a 5-week window ending the
   // day after the most recent sales report.
   const digestWeather = await fetchWeatherForDigest(extendedSales);
-  const dailyDigest = computeDailyDigest(extendedSales, digestWeather);
+  // Historical weather for the two YoY comparison dates so the digest can
+  // annotate last year's sales with "it was raining / hot / cold".
+  const historicalWeather = await fetchHistoricalWeatherForDigest(extendedSales);
+  const dailyDigest = computeDailyDigest(extendedSales, digestWeather, historicalWeather);
   const familyMovements = computeFamilyMovements(scopedProductSales, previousProductSales);
 
   const hourlyPerformance = scopedHourly
@@ -624,6 +627,7 @@ function isDateInRange(value: string, from: Date, to: Date) {
 export function computeDailyDigest(
   reports: SalesReport[],
   weather?: Map<string, DayWeather>,
+  historicalWeather?: Map<string, HistoricalWeather>,
 ): DailyDigestType | null {
   if (!reports.length) return null;
   const sortedDesc = [...reports].sort((a, b) => b.businessDate.localeCompare(a.businessDate));
@@ -692,11 +696,13 @@ export function computeDailyDigest(
     vsLastWeek: lastWeekReport
       ? { sales: lastWeekReport.totalSales, deltaPct: pct(today.totalSales, lastWeekReport.totalSales) }
       : null,
+    todayWeather: historicalWeather?.get(today.businessDate) ?? null,
     vsLastYearDow: lastYearDowReport
       ? {
           sales: lastYearDowReport.totalSales,
           date: formatISO(lastYearDowDate, { representation: "date" }),
           deltaPct: pct(today.totalSales, lastYearDowReport.totalSales),
+          weather: historicalWeather?.get(formatISO(lastYearDowDate, { representation: "date" })) ?? null,
         }
       : null,
     vsLastYearDate: lastYearCalendarReport
@@ -704,6 +710,7 @@ export function computeDailyDigest(
           sales: lastYearCalendarReport.totalSales,
           date: formatISO(lastYearCalendarDate, { representation: "date" }),
           deltaPct: pct(today.totalSales, lastYearCalendarReport.totalSales),
+          weather: historicalWeather?.get(formatISO(lastYearCalendarDate, { representation: "date" })) ?? null,
         }
       : null,
     forecastTomorrow: sameDowSamples.length > 0
@@ -844,6 +851,65 @@ export function computeFamilyMovements(
   // top and losers at the bottom — the UI can slice both ends as needed.
   movements.sort((a, b) => b.deltaEur - a.deltaEur);
   return movements;
+}
+
+/** Fetches historical weather (temp max/min, precipitation, weather code) for
+ * a set of dates from Open-Meteo's archive API. Used to annotate YoY
+ * comparisons with "it was raining 15mm that day" context so the owner can
+ * understand why last year's sales were lower. Results cached at the Next.js
+ * fetch layer for 24h because historical weather is immutable. */
+export async function fetchHistoricalWeather(dates: string[]): Promise<Map<string, HistoricalWeather>> {
+  const map = new Map<string, HistoricalWeather>();
+  const unique = [...new Set(dates.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)))];
+  if (unique.length === 0) return map;
+
+  // Open-Meteo archive returns the whole range so one request covers many dates
+  const sorted = unique.sort();
+  const from = sorted[0];
+  const to = sorted[sorted.length - 1];
+  try {
+    const url = `https://archive-api.open-meteo.com/v1/archive?latitude=41.07&longitude=1.13&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weather_code&timezone=Europe/Madrid&start_date=${from}&end_date=${to}`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
+    if (!res.ok) return map;
+    const data = await res.json();
+    const times: string[] = data.daily?.time ?? [];
+    const maxTemps: number[] = data.daily?.temperature_2m_max ?? [];
+    const minTemps: number[] = data.daily?.temperature_2m_min ?? [];
+    const precips: number[] = data.daily?.precipitation_sum ?? [];
+    const codes: number[] = data.daily?.weather_code ?? [];
+    for (let i = 0; i < times.length; i++) {
+      map.set(times[i], {
+        tempMax: maxTemps[i] ?? 0,
+        tempMin: minTemps[i] ?? 0,
+        precipitationMm: precips[i] ?? 0,
+        weatherCode: codes[i] ?? 0,
+      });
+    }
+  } catch (err) {
+    console.warn("[weather-archive] error:", err);
+  }
+  return map;
+}
+
+/** Fetches archive weather for the YoY comparison dates (52 weeks ago and 1
+ * calendar year ago) plus the most recent business day, so the dashboard can
+ * explain "last year on this day it was raining". */
+async function fetchHistoricalWeatherForDigest(reports: SalesReport[]): Promise<Map<string, HistoricalWeather>> {
+  if (!reports.length) return new Map();
+  const sortedDesc = [...reports].sort((a, b) => b.businessDate.localeCompare(a.businessDate));
+  const today = parseISO(sortedDesc[0].businessDate);
+  const targets: string[] = [
+    // Today itself
+    formatISO(today, { representation: "date" }),
+    // 52 weeks back (DOW-aligned)
+    formatISO(subWeeks(today, 52), { representation: "date" }),
+    // 1 calendar year back (date-aligned)
+    formatISO(
+      new Date(Date.UTC(today.getFullYear() - 1, today.getMonth(), today.getDate())),
+      { representation: "date" },
+    ),
+  ];
+  return fetchHistoricalWeather(targets);
 }
 
 /** Fetches a 5-week weather window ending the day after the most recent

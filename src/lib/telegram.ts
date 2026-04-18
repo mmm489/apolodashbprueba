@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Tool, ToolUseBlock } from "@anthropic-ai/sdk/resources/messages";
 
-import { getFinancialWorkspace } from "@/lib/analytics";
+import { fetchHistoricalWeather, getFinancialWorkspace } from "@/lib/analytics";
 import { getSql, hasDatabase } from "@/lib/db";
 import { env } from "@/lib/env";
 import { storeTelegramMessage } from "@/lib/repositories";
@@ -74,9 +74,10 @@ Respons SEMPRE en català. Avui és ${TODAY_ISO()}.
 - Comparatives útils: vs ahir, vs mateix dia setmana passada (DOW), vs mateix dia any passat (52 setmanes enrere = mateix DOW).
 
 ## Eines disponibles
-Tens 2 eines:
-1. **\`get_dashboard(preset)\`** — l'eina principal. Et dóna KPIs, comparatives YoY/anterior, digest del dia més recent (amb previsió de demà ajustada per temperatura), famílies que creixen/cauen, top productes per import i marge, pattern horari, top proveïdors. **Usa-la sempre que puguis** abans de SQL — ja té tota la lògica calculada.
-2. **\`query_database(sql, description)\`** — només SELECT. Usa-la quan get_dashboard no et doni el que necessites (ex: detall per producte específic, evolució dia a dia, busques específiques per text).
+Tens 3 eines:
+1. **\`get_dashboard(preset)\`** — l'eina principal. Et dóna KPIs, comparatives YoY (DOW i per data), digest del dia més recent amb temps d'avui i temps dels dies comparats, previsió de demà ajustada per temperatura, famílies que creixen/cauen, top productes per import i marge, pattern horari, top proveïdors. **Usa-la sempre que puguis** abans de SQL.
+2. **\`get_historical_weather(from, to)\`** — temps real d'un rang de dates (temp max/min, precipitació mm, WMO). Útil per explicar diferències YoY ("va ploure 15mm aquell dia") o per correlacionar temps amb vendes.
+3. **\`query_database(sql, description)\`** — només SELECT. Usa-la quan les dues anteriors no donin el que necessites.
 
 ## Presets vàlids per get_dashboard
 \`today\`, \`yesterday\`, \`7d\`, \`30d\`, \`90d\`, \`month\`, \`year\`.
@@ -115,6 +116,19 @@ const tools: Tool[] = [
         },
       },
       required: ["preset"],
+    },
+  },
+  {
+    name: "get_historical_weather",
+    description:
+      "Retorna el temps (temperatura max/min, precipitació en mm, codi WMO) per un rang de dates. Útil per explicar per què un dia concret es va vendre menys/més (ex: va ploure) o per comparar el temps d'avui amb el mateix dia any passat.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        from: { type: "string", description: "Data inici YYYY-MM-DD" },
+        to: { type: "string", description: "Data fi YYYY-MM-DD" },
+      },
+      required: ["from", "to"],
     },
   },
   {
@@ -230,6 +244,25 @@ async function executeTool(
     return summarizeWorkspace(ws);
   }
 
+  if (block.name === "get_historical_weather") {
+    const from = String(input.from ?? "");
+    const to = String(input.to ?? "");
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+      return { error: "Dates invàlides, cal format YYYY-MM-DD" };
+    }
+    // Expand the range into day-by-day ISO strings
+    const days: string[] = [];
+    const cursor = new Date(fromDate);
+    while (cursor <= toDate && days.length < 120) {
+      days.push(cursor.toISOString().slice(0, 10));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    const weatherMap = await fetchHistoricalWeather(days);
+    return Object.fromEntries(weatherMap.entries());
+  }
+
   if (block.name === "query_database") {
     const sql = String(input.sql ?? "");
     return executeReadOnlyQuery(sql);
@@ -329,15 +362,18 @@ function summarizeWorkspace(ws: FinancialWorkspace) {
         sales: round2(ws.dailyDigest.vsLastWeek.sales),
         deltaPct: round2(ws.dailyDigest.vsLastWeek.deltaPct),
       },
+      todayWeather: ws.dailyDigest.todayWeather,
       vsLastYearDow: ws.dailyDigest.vsLastYearDow && {
         sales: round2(ws.dailyDigest.vsLastYearDow.sales),
         date: ws.dailyDigest.vsLastYearDow.date,
         deltaPct: round2(ws.dailyDigest.vsLastYearDow.deltaPct),
+        weather: ws.dailyDigest.vsLastYearDow.weather,
       },
       vsLastYearDate: ws.dailyDigest.vsLastYearDate && {
         sales: round2(ws.dailyDigest.vsLastYearDate.sales),
         date: ws.dailyDigest.vsLastYearDate.date,
         deltaPct: round2(ws.dailyDigest.vsLastYearDate.deltaPct),
+        weather: ws.dailyDigest.vsLastYearDate.weather,
       },
       forecastTomorrow: ws.dailyDigest.forecastTomorrow && {
         date: ws.dailyDigest.forecastTomorrow.date,

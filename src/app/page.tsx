@@ -410,6 +410,8 @@ function TodayDigest({
               date={digest.vsLastYearDow.date}
               sales={digest.vsLastYearDow.sales}
               deltaPct={digest.vsLastYearDow.deltaPct}
+              weather={digest.vsLastYearDow.weather}
+              todayWeather={digest.todayWeather}
             />
           )}
           {digest.vsLastYearDate && (
@@ -419,6 +421,8 @@ function TodayDigest({
               date={digest.vsLastYearDate.date}
               sales={digest.vsLastYearDate.sales}
               deltaPct={digest.vsLastYearDate.deltaPct}
+              weather={digest.vsLastYearDate.weather}
+              todayWeather={digest.todayWeather}
             />
           )}
         </div>
@@ -433,12 +437,16 @@ function YoyRow({
   date,
   sales,
   deltaPct,
+  weather,
+  todayWeather,
 }: {
   label: string;
   helper: string;
   date: string;
   sales: number;
   deltaPct: number;
+  weather: import("@/lib/types").HistoricalWeather | null;
+  todayWeather: import("@/lib/types").HistoricalWeather | null;
 }) {
   const isUp = deltaPct >= 0;
   return (
@@ -455,9 +463,44 @@ function YoyRow({
       <p className="mt-1 text-[12px] text-slate-600">
         <span className="text-slate-400">{formatShortDate(date)}:</span>{" "}
         <span className="font-semibold text-slate-800">{euro(sales)}</span>
+        {weather && (
+          <span className="ml-2 inline-flex items-center gap-1 text-[11px] text-slate-500">
+            <span>{weatherEmoji(weather.weatherCode)}</span>
+            <span>{weather.tempMax.toFixed(0)}°</span>
+            {weather.precipitationMm > 0.5 && (
+              <span className="font-semibold text-sky-700">💧 {weather.precipitationMm.toFixed(0)}mm</span>
+            )}
+          </span>
+        )}
       </p>
+      {weather && todayWeather && (
+        <p className="mt-1 text-[10px] text-slate-400">
+          avui: {weatherEmoji(todayWeather.weatherCode)} {todayWeather.tempMax.toFixed(0)}°
+          {todayWeather.precipitationMm > 0.5 && ` · 💧${todayWeather.precipitationMm.toFixed(0)}mm`}
+          {" · "}
+          {Math.abs(todayWeather.tempMax - weather.tempMax) >= 2 && (
+            <span className="text-slate-500">
+              {todayWeather.tempMax > weather.tempMax ? "més calor" : "més fred"} ({Math.abs(todayWeather.tempMax - weather.tempMax).toFixed(0)}° dif.)
+            </span>
+          )}
+        </p>
+      )}
     </div>
   );
+}
+
+/** WMO weather codes → emoji (copied from vendes-day-list for consistency). */
+function weatherEmoji(code: number): string {
+  if (code === 0) return "☀️";
+  if (code <= 3) return "⛅";
+  if (code >= 45 && code <= 48) return "🌫️";
+  if (code >= 51 && code <= 57) return "🌦️";
+  if (code >= 61 && code <= 67) return "🌧️";
+  if (code >= 71 && code <= 77) return "❄️";
+  if (code >= 80 && code <= 82) return "🌧️";
+  if (code >= 85 && code <= 86) return "❄️";
+  if (code >= 95 && code <= 99) return "⛈️";
+  return "🌤️";
 }
 
 function formatShortDate(iso: string) {
