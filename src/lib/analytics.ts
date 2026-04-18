@@ -965,14 +965,51 @@ function formatCurrency(value: number) {
   }).format(value);
 }
 
-/* ---------- Weather (Open-Meteo, Salou 41.07°N 1.13°E) ---------- */
+/* ---------- Weather (Open-Meteo, Salou 41.07°N 1.13°E) ----------
+ *
+ * Open-Meteo exposes two endpoints:
+ *   - forecast (api.open-meteo.com): past ~16d + next ~16d. Fresh data but
+ *     no deep history — anything older than a month returns empty arrays.
+ *   - archive (archive-api.open-meteo.com): historical since 1940, with a
+ *     ~3-day lag from real-time.
+ *
+ * To cover any date range we split the request: everything up to 3 days ago
+ * goes to archive, anything newer to forecast, and we merge the maps. Both
+ * parts are cached at the Next.js fetch layer. */
 
 async function fetchWeatherData(from: string, to: string): Promise<Map<string, DayWeather>> {
   const map = new Map<string, DayWeather>();
+  const today = new Date();
+  const archiveCutoff = new Date(today);
+  archiveCutoff.setUTCDate(archiveCutoff.getUTCDate() - 3);
+  const cutoffIso = archiveCutoff.toISOString().slice(0, 10);
+
+  const calls: Array<Promise<void>> = [];
+  // Archive portion: from .. min(to, cutoff)
+  if (from <= cutoffIso) {
+    const archiveTo = to < cutoffIso ? to : cutoffIso;
+    calls.push(fetchArchiveInto(map, from, archiveTo));
+  }
+  // Forecast portion: max(from, cutoff+1) .. to
+  if (to > cutoffIso) {
+    const forecastFrom = from > cutoffIso ? from : incrementIsoDate(cutoffIso);
+    calls.push(fetchForecastInto(map, forecastFrom, to));
+  }
+  await Promise.all(calls);
+  return map;
+}
+
+function incrementIsoDate(iso: string): string {
+  const d = new Date(iso);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+async function fetchForecastInto(map: Map<string, DayWeather>, from: string, to: string) {
   try {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=41.07&longitude=1.13&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=Europe/Madrid&start_date=${from}&end_date=${to}`;
     const res = await fetch(url, { next: { revalidate: 3600 } });
-    if (!res.ok) return map;
+    if (!res.ok) return;
     const data = await res.json();
     const times: string[] = data.daily?.time ?? [];
     const maxTemps: number[] = data.daily?.temperature_2m_max ?? [];
@@ -986,7 +1023,28 @@ async function fetchWeatherData(from: string, to: string): Promise<Map<string, D
       });
     }
   } catch (err) {
-    console.warn("[weather] No s'ha pogut obtenir el temps:", err);
+    console.warn("[weather-forecast] error:", err);
   }
-  return map;
+}
+
+async function fetchArchiveInto(map: Map<string, DayWeather>, from: string, to: string) {
+  try {
+    const url = `https://archive-api.open-meteo.com/v1/archive?latitude=41.07&longitude=1.13&daily=temperature_2m_max,temperature_2m_min,weather_code&timezone=Europe/Madrid&start_date=${from}&end_date=${to}`;
+    const res = await fetch(url, { next: { revalidate: 86400 } });
+    if (!res.ok) return;
+    const data = await res.json();
+    const times: string[] = data.daily?.time ?? [];
+    const maxTemps: number[] = data.daily?.temperature_2m_max ?? [];
+    const minTemps: number[] = data.daily?.temperature_2m_min ?? [];
+    const codes: number[] = data.daily?.weather_code ?? [];
+    for (let i = 0; i < times.length; i++) {
+      map.set(times[i], {
+        tempMax: maxTemps[i] ?? 0,
+        tempMin: minTemps[i] ?? 0,
+        weatherCode: codes[i] ?? 0,
+      });
+    }
+  } catch (err) {
+    console.warn("[weather-archive] error:", err);
+  }
 }
