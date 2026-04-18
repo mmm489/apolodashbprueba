@@ -636,7 +636,18 @@ export function computeDailyDigest(
     return reports.find((r) => r.businessDate === iso) ?? null;
   };
   const lastWeekReport = findReport(addDays(todayDate, -7));
-  const lastYearReport = findReport(subWeeks(todayDate, 52));
+  // Two YoY alignments:
+  //   - DOW: 52 weeks back keeps the same weekday (Saturday ↔ Saturday)
+  //   - Date: exactly 1 calendar year back (18 Apr 2026 ↔ 18 Apr 2025)
+  const lastYearDowDate = subWeeks(todayDate, 52);
+  const lastYearDowReport = findReport(lastYearDowDate);
+  // Use Date.UTC to sidestep DST when subtracting a year
+  const lastYearCalendarDate = new Date(Date.UTC(
+    todayDate.getFullYear() - 1,
+    todayDate.getMonth(),
+    todayDate.getDate(),
+  ));
+  const lastYearCalendarReport = findReport(lastYearCalendarDate);
 
   // Forecast: average of last 4 same-DOW values (excluding today itself).
   // Track the corresponding dates so we can read their historical temps.
@@ -681,8 +692,19 @@ export function computeDailyDigest(
     vsLastWeek: lastWeekReport
       ? { sales: lastWeekReport.totalSales, deltaPct: pct(today.totalSales, lastWeekReport.totalSales) }
       : null,
-    vsLastYear: lastYearReport
-      ? { sales: lastYearReport.totalSales, deltaPct: pct(today.totalSales, lastYearReport.totalSales) }
+    vsLastYearDow: lastYearDowReport
+      ? {
+          sales: lastYearDowReport.totalSales,
+          date: formatISO(lastYearDowDate, { representation: "date" }),
+          deltaPct: pct(today.totalSales, lastYearDowReport.totalSales),
+        }
+      : null,
+    vsLastYearDate: lastYearCalendarReport
+      ? {
+          sales: lastYearCalendarReport.totalSales,
+          date: formatISO(lastYearCalendarDate, { representation: "date" }),
+          deltaPct: pct(today.totalSales, lastYearCalendarReport.totalSales),
+        }
       : null,
     forecastTomorrow: sameDowSamples.length > 0
       ? {

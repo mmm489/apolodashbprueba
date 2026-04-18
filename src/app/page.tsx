@@ -401,17 +401,68 @@ function TodayDigest({
           <DigestCard key={ind.label} {...ind} />
         ))}
       </div>
-      {digest.vsLastYear && (
-        <p className="mt-3 text-[12px] text-slate-500">
-          <span className="font-medium">YoY (mateix dia setmana fa 52 setmanes):</span>{" "}
-          {euro(digest.vsLastYear.sales)} →
-          <span className={digest.vsLastYear.deltaPct >= 0 ? "ml-1 font-semibold text-emerald-600" : "ml-1 font-semibold text-rose-600"}>
-            {digest.vsLastYear.deltaPct > 0 ? "+" : ""}{digest.vsLastYear.deltaPct.toFixed(1)}%
-          </span>
-        </p>
+      {(digest.vsLastYearDow || digest.vsLastYearDate) && (
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {digest.vsLastYearDow && (
+            <YoyRow
+              label="YoY · mateix dia de setmana"
+              helper="52 setmanes enrere (ex: dissabte vs dissabte)"
+              date={digest.vsLastYearDow.date}
+              sales={digest.vsLastYearDow.sales}
+              deltaPct={digest.vsLastYearDow.deltaPct}
+            />
+          )}
+          {digest.vsLastYearDate && (
+            <YoyRow
+              label="YoY · mateixa data calendari"
+              helper="fa exactament 1 any"
+              date={digest.vsLastYearDate.date}
+              sales={digest.vsLastYearDate.sales}
+              deltaPct={digest.vsLastYearDate.deltaPct}
+            />
+          )}
+        </div>
       )}
     </section>
   );
+}
+
+function YoyRow({
+  label,
+  helper,
+  date,
+  sales,
+  deltaPct,
+}: {
+  label: string;
+  helper: string;
+  date: string;
+  sales: number;
+  deltaPct: number;
+}) {
+  const isUp = deltaPct >= 0;
+  return (
+    <div className="rounded-xl border border-[var(--line)] bg-slate-50/60 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{label}</p>
+          <p className="text-[11px] text-slate-400">{helper}</p>
+        </div>
+        <span className={`inline-flex items-center rounded-lg px-2 py-0.5 text-[12px] font-bold ${isUp ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"}`}>
+          {isUp ? "+" : ""}{deltaPct.toFixed(1)}%
+        </span>
+      </div>
+      <p className="mt-1 text-[12px] text-slate-600">
+        <span className="text-slate-400">{formatShortDate(date)}:</span>{" "}
+        <span className="font-semibold text-slate-800">{euro(sales)}</span>
+      </p>
+    </div>
+  );
+}
+
+function formatShortDate(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleDateString("ca-ES", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
 }
 
 function FamilyMovements({ movements }: { movements: import("@/lib/types").FamilyMovement[] }) {

@@ -198,7 +198,10 @@ export interface DailyDigest {
   orders: number;
   averageTicket: number;
   vsLastWeek: { sales: number; deltaPct: number } | null;
-  vsLastYear: { sales: number; deltaPct: number } | null;
+  /** YoY aligned by day of the week (52 weeks back). Saturday → Saturday. */
+  vsLastYearDow: { sales: number; date: string; deltaPct: number } | null;
+  /** YoY aligned by calendar date (1 year back). 18 April → 18 April. */
+  vsLastYearDate: { sales: number; date: string; deltaPct: number } | null;
   forecastTomorrow: {
     date: string;
     /** Forecasted sales after applying the temperature factor. */

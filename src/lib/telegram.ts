@@ -329,9 +329,15 @@ function summarizeWorkspace(ws: FinancialWorkspace) {
         sales: round2(ws.dailyDigest.vsLastWeek.sales),
         deltaPct: round2(ws.dailyDigest.vsLastWeek.deltaPct),
       },
-      vsLastYear: ws.dailyDigest.vsLastYear && {
-        sales: round2(ws.dailyDigest.vsLastYear.sales),
-        deltaPct: round2(ws.dailyDigest.vsLastYear.deltaPct),
+      vsLastYearDow: ws.dailyDigest.vsLastYearDow && {
+        sales: round2(ws.dailyDigest.vsLastYearDow.sales),
+        date: ws.dailyDigest.vsLastYearDow.date,
+        deltaPct: round2(ws.dailyDigest.vsLastYearDow.deltaPct),
+      },
+      vsLastYearDate: ws.dailyDigest.vsLastYearDate && {
+        sales: round2(ws.dailyDigest.vsLastYearDate.sales),
+        date: ws.dailyDigest.vsLastYearDate.date,
+        deltaPct: round2(ws.dailyDigest.vsLastYearDate.deltaPct),
       },
       forecastTomorrow: ws.dailyDigest.forecastTomorrow && {
         date: ws.dailyDigest.forecastTomorrow.date,
