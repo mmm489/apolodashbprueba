@@ -199,6 +199,15 @@ export interface HistoricalWeather {
   weatherCode: number;
 }
 
+export interface DailyCalendarNote {
+  /** Holiday or Easter-week label (e.g. "Divendres Sant", "Sant Jordi"). */
+  label: string | null;
+  /** Days from Easter Sunday (0 = Easter, -2 = Good Friday). */
+  daysFromEaster: number;
+  /** True if a public holiday. */
+  isHoliday: boolean;
+}
+
 export interface DailyDigest {
   date: string;
   sales: number;
@@ -207,10 +216,24 @@ export interface DailyDigest {
   vsLastWeek: { sales: number; deltaPct: number } | null;
   /** Today's actual weather (if available). */
   todayWeather: HistoricalWeather | null;
+  /** Calendar / holiday context for today (e.g. Easter week, Sant Jordi). */
+  todayCalendar: DailyCalendarNote | null;
   /** YoY aligned by day of the week (52 weeks back). Saturday → Saturday. */
-  vsLastYearDow: { sales: number; date: string; deltaPct: number; weather: HistoricalWeather | null } | null;
+  vsLastYearDow: {
+    sales: number;
+    date: string;
+    deltaPct: number;
+    weather: HistoricalWeather | null;
+    calendar: DailyCalendarNote | null;
+  } | null;
   /** YoY aligned by calendar date (1 year back). 18 April → 18 April. */
-  vsLastYearDate: { sales: number; date: string; deltaPct: number; weather: HistoricalWeather | null } | null;
+  vsLastYearDate: {
+    sales: number;
+    date: string;
+    deltaPct: number;
+    weather: HistoricalWeather | null;
+    calendar: DailyCalendarNote | null;
+  } | null;
   forecastTomorrow: {
     date: string;
     /** Forecasted sales after applying the temperature factor. */

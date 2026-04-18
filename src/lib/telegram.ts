@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Tool, ToolUseBlock } from "@anthropic-ai/sdk/resources/messages";
 
 import { fetchHistoricalWeather, getFinancialWorkspace } from "@/lib/analytics";
+import { getCalendarContext } from "@/lib/calendar";
 import { getSql, hasDatabase } from "@/lib/db";
 import { env } from "@/lib/env";
 import { storeTelegramMessage } from "@/lib/repositories";
@@ -74,10 +75,21 @@ Respons SEMPRE en català. Avui és ${TODAY_ISO()}.
 - Comparatives útils: vs ahir, vs mateix dia setmana passada (DOW), vs mateix dia any passat (52 setmanes enrere = mateix DOW).
 
 ## Eines disponibles
-Tens 3 eines:
-1. **\`get_dashboard(preset)\`** — l'eina principal. Et dóna KPIs, comparatives YoY (DOW i per data), digest del dia més recent amb temps d'avui i temps dels dies comparats, previsió de demà ajustada per temperatura, famílies que creixen/cauen, top productes per import i marge, pattern horari, top proveïdors. **Usa-la sempre que puguis** abans de SQL.
-2. **\`get_historical_weather(from, to)\`** — temps real d'un rang de dates (temp max/min, precipitació mm, WMO). Útil per explicar diferències YoY ("va ploure 15mm aquell dia") o per correlacionar temps amb vendes.
-3. **\`query_database(sql, description)\`** — només SELECT. Usa-la quan les dues anteriors no donin el que necessites.
+Tens 4 eines:
+1. **\`get_dashboard(preset)\`** — l'eina principal. Et dóna KPIs, comparatives YoY (DOW i per data), digest del dia més recent amb temps i context de calendari (setmana santa, festa) d'avui i dels dies comparats, previsió de demà ajustada per temperatura, famílies, top productes per import i marge, pattern horari, top proveïdors. **Usa-la sempre abans de res**.
+2. **\`get_calendar_context(dates)\`** — per cada data retorna si és festa/Setmana Santa i els dies des de Pasqua. Crítica per validar comparatives YoY.
+3. **\`get_historical_weather(from, to)\`** — temps real d'un rang de dates.
+4. **\`query_database(sql, description)\`** — només SELECT. Per casos que les anteriors no cobreixin.
+
+## REGLES CRÍTIQUES per a comparatives YoY a Salou
+
+Salou és turisme de platja altament estacional. **SEMPRE** fes aquestes comprovacions abans de donar un veredicte sobre una comparativa:
+
+1. **Setmana Santa és mòbil**: pot caure entre finals de març i finals d'abril. Si compares un dia i l'altre any estava en Setmana Santa (o viceversa), el delta està distorsionat per turisme, no pel teu negoci.
+2. **Festes locals**: sant Jordi (23 abr), Sant Joan (24 jun), Diada (11 set), Reis (6 gen), Nadal, Tots Sants.
+3. **Ponts**: si el dia de referència cau dins un pont (ex: 1 maig + cap de setmana), compta com a efecte festiu.
+4. Si les dades \`todayCalendar\` o \`calendar\` de les YoY indiquen context diferent entre els dos dies comparats, **avisa explícitament** i suggereix millor comparar amb un dia equivalent (ex: "avui és normal, però el mateix dia any passat era Divendres Sant — compararia amb el Divendres Sant d'aquest any: X abril").
+5. Quan l'usuari pregunti "per què vaig vendre menys?", valida SEMPRE: temps + calendari. Si el context és diferent, digues-ho abans d'inventar causes.
 
 ## Presets vàlids per get_dashboard
 - \`today\`: avui
@@ -123,6 +135,22 @@ const tools: Tool[] = [
         },
       },
       required: ["preset"],
+    },
+  },
+  {
+    name: "get_calendar_context",
+    description:
+      "Retorna el context de calendari (festa, setmana santa, sant jordi, dies des de pasqua) per un rang de dates. Fonamental per entendre comparatives YoY a Salou: la Setmana Santa és mòbil i pot caure en diferents dates cada any. Si compares dos dies i un és Setmana Santa i l'altre no, el delta no és directament comparable.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        dates: {
+          type: "array",
+          items: { type: "string" },
+          description: "Llista de dates YYYY-MM-DD",
+        },
+      },
+      required: ["dates"],
     },
   },
   {
@@ -251,6 +279,11 @@ async function executeTool(
     return summarizeWorkspace(ws);
   }
 
+  if (block.name === "get_calendar_context") {
+    const dates = (input.dates as string[] | undefined) ?? [];
+    return Object.fromEntries(dates.map((d) => [d, getCalendarContext(d)]));
+  }
+
   if (block.name === "get_historical_weather") {
     const from = String(input.from ?? "");
     const to = String(input.to ?? "");
@@ -370,17 +403,20 @@ function summarizeWorkspace(ws: FinancialWorkspace) {
         deltaPct: round2(ws.dailyDigest.vsLastWeek.deltaPct),
       },
       todayWeather: ws.dailyDigest.todayWeather,
+      todayCalendar: ws.dailyDigest.todayCalendar,
       vsLastYearDow: ws.dailyDigest.vsLastYearDow && {
         sales: round2(ws.dailyDigest.vsLastYearDow.sales),
         date: ws.dailyDigest.vsLastYearDow.date,
         deltaPct: round2(ws.dailyDigest.vsLastYearDow.deltaPct),
         weather: ws.dailyDigest.vsLastYearDow.weather,
+        calendar: ws.dailyDigest.vsLastYearDow.calendar,
       },
       vsLastYearDate: ws.dailyDigest.vsLastYearDate && {
         sales: round2(ws.dailyDigest.vsLastYearDate.sales),
         date: ws.dailyDigest.vsLastYearDate.date,
         deltaPct: round2(ws.dailyDigest.vsLastYearDate.deltaPct),
         weather: ws.dailyDigest.vsLastYearDate.weather,
+        calendar: ws.dailyDigest.vsLastYearDate.calendar,
       },
       forecastTomorrow: ws.dailyDigest.forecastTomorrow && {
         date: ws.dailyDigest.forecastTomorrow.date,

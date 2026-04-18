@@ -16,8 +16,9 @@ import {
   listTelegramMessages,
   listTelegramUsers,
 } from "@/lib/repositories";
+import { describeCalendarContext, getCalendarContext } from "@/lib/calendar";
 import { classifyFamily } from "@/lib/product-families";
-import type { ChatAnswer, DailyDigest as DailyDigestType, DateFilter, DatePreset, Employee, EmployeeShift, FamilyMovement, FinancialWorkspace, HistoricalWeather, HourlyProductSale, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, ProductCost, ProductSaleRecord, SalesReport } from "@/lib/types";
+import type { ChatAnswer, DailyCalendarNote, DailyDigest as DailyDigestType, DateFilter, DatePreset, Employee, EmployeeShift, FamilyMovement, FinancialWorkspace, HistoricalWeather, HourlyProductSale, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, ProductCost, ProductSaleRecord, SalesReport } from "@/lib/types";
 
 export function resolveDateFilter(input?: {
   preset?: string;
@@ -701,12 +702,14 @@ export function computeDailyDigest(
       ? { sales: lastWeekReport.totalSales, deltaPct: pct(today.totalSales, lastWeekReport.totalSales) }
       : null,
     todayWeather: historicalWeather?.get(today.businessDate) ?? null,
+    todayCalendar: toCalendarNote(today.businessDate),
     vsLastYearDow: lastYearDowReport
       ? {
           sales: lastYearDowReport.totalSales,
           date: formatISO(lastYearDowDate, { representation: "date" }),
           deltaPct: pct(today.totalSales, lastYearDowReport.totalSales),
           weather: historicalWeather?.get(formatISO(lastYearDowDate, { representation: "date" })) ?? null,
+          calendar: toCalendarNote(formatISO(lastYearDowDate, { representation: "date" })),
         }
       : null,
     vsLastYearDate: lastYearCalendarReport
@@ -715,6 +718,7 @@ export function computeDailyDigest(
           date: formatISO(lastYearCalendarDate, { representation: "date" }),
           deltaPct: pct(today.totalSales, lastYearCalendarReport.totalSales),
           weather: historicalWeather?.get(formatISO(lastYearCalendarDate, { representation: "date" })) ?? null,
+          calendar: toCalendarNote(formatISO(lastYearCalendarDate, { representation: "date" })),
         }
       : null,
     forecastTomorrow: sameDowSamples.length > 0
@@ -765,6 +769,19 @@ function sumReports(reports: SalesReport[], from: string, to: string): PeriodTot
 function pct(current: number, baseline: number): number {
   if (baseline <= 0) return 0;
   return ((current - baseline) / baseline) * 100;
+}
+
+/** Wraps getCalendarContext for digest rows; returns null when the date is
+ * a regular day with nothing notable (so the UI can hide the note). */
+function toCalendarNote(iso: string): DailyCalendarNote | null {
+  const ctx = getCalendarContext(iso);
+  const label = describeCalendarContext(ctx);
+  if (!label && !ctx.isHoliday) return null;
+  return {
+    label,
+    daysFromEaster: ctx.daysFromEaster,
+    isHoliday: ctx.isHoliday,
+  };
 }
 
 /** Computes current / previous / YoY totals for the selected period.

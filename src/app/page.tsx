@@ -411,7 +411,9 @@ function TodayDigest({
               sales={digest.vsLastYearDow.sales}
               deltaPct={digest.vsLastYearDow.deltaPct}
               weather={digest.vsLastYearDow.weather}
+              calendar={digest.vsLastYearDow.calendar}
               todayWeather={digest.todayWeather}
+              todayCalendar={digest.todayCalendar}
             />
           )}
           {digest.vsLastYearDate && (
@@ -422,7 +424,9 @@ function TodayDigest({
               sales={digest.vsLastYearDate.sales}
               deltaPct={digest.vsLastYearDate.deltaPct}
               weather={digest.vsLastYearDate.weather}
+              calendar={digest.vsLastYearDate.calendar}
               todayWeather={digest.todayWeather}
+              todayCalendar={digest.todayCalendar}
             />
           )}
         </div>
@@ -438,7 +442,9 @@ function YoyRow({
   sales,
   deltaPct,
   weather,
+  calendar,
   todayWeather,
+  todayCalendar,
 }: {
   label: string;
   helper: string;
@@ -446,9 +452,17 @@ function YoyRow({
   sales: number;
   deltaPct: number;
   weather: import("@/lib/types").HistoricalWeather | null;
+  calendar: import("@/lib/types").DailyCalendarNote | null;
   todayWeather: import("@/lib/types").HistoricalWeather | null;
+  todayCalendar: import("@/lib/types").DailyCalendarNote | null;
 }) {
   const isUp = deltaPct >= 0;
+  // Flag when today and the compared date are in different calendar contexts
+  // (e.g. one is Setmana Santa, the other isn't). This is the signal that
+  // makes the YoY delta misleading.
+  const calendarMismatch =
+    (calendar?.label ?? null) !== (todayCalendar?.label ?? null) &&
+    (calendar || todayCalendar);
   return (
     <div className="rounded-xl border border-[var(--line)] bg-slate-50/60 p-3">
       <div className="flex items-center justify-between gap-2">
@@ -472,16 +486,30 @@ function YoyRow({
             )}
           </span>
         )}
+        {calendar?.label && (
+          <span className="ml-2 inline-block rounded-md bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">
+            {calendar.label}
+          </span>
+        )}
       </p>
+      {calendarMismatch && (
+        <p className="mt-1 rounded-md bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800">
+          ⚠️ context diferent: {calendar?.label ? `llavors era ${calendar.label}` : "llavors dia normal"}
+          {todayCalendar?.label ? `, avui ${todayCalendar.label}` : ", avui dia normal"}. El delta no és directament comparable.
+        </p>
+      )}
       {weather && todayWeather && (
         <p className="mt-1 text-[10px] text-slate-400">
           avui: {weatherEmoji(todayWeather.weatherCode)} {todayWeather.tempMax.toFixed(0)}°
           {todayWeather.precipitationMm > 0.5 && ` · 💧${todayWeather.precipitationMm.toFixed(0)}mm`}
-          {" · "}
+          {todayCalendar?.label && ` · ${todayCalendar.label}`}
           {Math.abs(todayWeather.tempMax - weather.tempMax) >= 2 && (
-            <span className="text-slate-500">
-              {todayWeather.tempMax > weather.tempMax ? "més calor" : "més fred"} ({Math.abs(todayWeather.tempMax - weather.tempMax).toFixed(0)}° dif.)
-            </span>
+            <>
+              {" · "}
+              <span className="text-slate-500">
+                {todayWeather.tempMax > weather.tempMax ? "més calor" : "més fred"} ({Math.abs(todayWeather.tempMax - weather.tempMax).toFixed(0)}° dif.)
+              </span>
+            </>
           )}
         </p>
       )}
