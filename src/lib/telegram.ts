@@ -80,7 +80,14 @@ Tens 3 eines:
 3. **\`query_database(sql, description)\`** — només SELECT. Usa-la quan les dues anteriors no donin el que necessites.
 
 ## Presets vàlids per get_dashboard
-\`today\`, \`yesterday\`, \`7d\`, \`30d\`, \`90d\`, \`month\`, \`year\`.
+- \`today\`: avui
+- \`yesterday\`: ahir
+- \`7d\`, \`30d\`, \`90d\`: últims N dies fins avui
+- \`month\`: **de l'1 del mes actual fins avui (MTD)**, no el mes sencer
+- \`year\`: **de l'1 de gener fins avui (YTD)**, no l'any sencer
+- Les comparatives dins cada preset ja tenen el període anterior de la mateixa durada (ex: preset=year compara YTD vs mateixos dies any passat, no vs any sencer).
+
+**IMPORTANT**: quan l'usuari demana "compara aquest any vs any passat" usa \`year\` — les dades que et dóna són YTD equivalent a any passat, ja alineades.
 
 ## Esquema de la BD (per query_database)
 - \`sales_reports(business_date DATE, total_sales, order_count, average_ticket)\`

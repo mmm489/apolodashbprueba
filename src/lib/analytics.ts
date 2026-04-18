@@ -1,4 +1,4 @@
-import { addDays, differenceInCalendarDays, endOfDay, endOfMonth, endOfYear, formatISO, parseISO, startOfMonth, startOfYear, subDays, subWeeks } from "date-fns";
+import { addDays, differenceInCalendarDays, endOfDay, formatISO, parseISO, startOfMonth, startOfYear, subDays, subWeeks } from "date-fns";
 
 import {
   listAlerts,
@@ -39,14 +39,18 @@ export function resolveDateFilter(input?: {
   }
 
   const yesterday = subDays(now, 1);
+  // "month" and "year" are YTD-style: they end at today, not at the calendar
+  // end of month/year. This way comparisons vs the same period last year
+  // compare equal-length ranges (e.g. Jan 1 – today 2026 vs Jan 1 – today
+  // one year ago) instead of "partial YTD vs full previous year".
   const ranges = {
     today: { from: now, to: now },
     yesterday: { from: yesterday, to: yesterday },
     "7d": { from: subDays(now, 7), to: now },
     "30d": { from: subDays(now, 30), to: now },
     "90d": { from: subDays(now, 90), to: now },
-    month: { from: startOfMonth(now), to: endOfMonth(now) },
-    year: { from: startOfYear(now), to: endOfYear(now) },
+    month: { from: startOfMonth(now), to: now },
+    year: { from: startOfYear(now), to: now },
     custom: { from: subDays(now, 30), to: now },
   } satisfies Record<DatePreset, { from: Date; to: Date }>;
 
