@@ -2,6 +2,7 @@ import { addDays, differenceInCalendarDays, endOfDay, formatISO, parseISO, start
 
 import {
   listAlerts,
+  listAllProductCostHistory,
   listDocuments,
   listEmployeeShifts,
   listEmployees,
@@ -18,7 +19,7 @@ import {
 } from "@/lib/repositories";
 import { describeCalendarContext, getCalendarContext } from "@/lib/calendar";
 import { classifyFamily } from "@/lib/product-families";
-import type { ChatAnswer, DailyCalendarNote, DailyDigest as DailyDigestType, DateFilter, DatePreset, Employee, EmployeeShift, FamilyMovement, FinancialWorkspace, HistoricalWeather, HourlyProductSale, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, ProductCost, ProductSaleRecord, SalesReport } from "@/lib/types";
+import type { ChatAnswer, DailyCalendarNote, DailyDigest as DailyDigestType, DateFilter, DatePreset, Employee, EmployeeShift, FamilyMovement, FinancialWorkspace, HistoricalWeather, HourlyProductSale, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, ProductCost, ProductCostHistoryEntry, ProductSaleRecord, SalesReport } from "@/lib/types";
 
 export function resolveDateFilter(input?: {
   preset?: string;
@@ -73,7 +74,7 @@ export async function getFinancialWorkspace(input?: {
   // Extend the sales query to cover the previous period and the same period
   // 52 weeks earlier (DOW-aligned year-over-year) for comparison metrics.
   const comparisonRange = buildComparisonRange(filter);
-  const [documents, salesReports, extendedSales, hourlySales, invoices, payrolls, productSales, previousProductSales, alerts, telegramUsers, telegramMessages, employees, productCosts, employeeShifts] =
+  const [documents, salesReports, extendedSales, hourlySales, invoices, payrolls, productSales, previousProductSales, alerts, telegramUsers, telegramMessages, employees, productCosts, productCostHistory, employeeShifts] =
     await Promise.all([
       listDocuments(filter.from, filter.to),
       listSalesReports(filter.from, filter.to),
@@ -88,6 +89,7 @@ export async function getFinancialWorkspace(input?: {
       listTelegramMessages(),
       listEmployees(),
       listProductCosts(),
+      listAllProductCostHistory(),
       listEmployeeShifts(filter.from, filter.to),
     ]);
 
@@ -142,18 +144,31 @@ export async function getFinancialWorkspace(input?: {
   );
   const productivityPerHour = totalHoursWorked > 0 ? totalSales / totalHoursWorked : 0;
 
-  // Product cost: sum(unit_cost * units_sold) for products in the period.
-  // Also compute coverage: share of period sales coming from products that
-  // have a positive unit_cost. Low coverage (< ~0.8) means the food-cost KPI
-  // is misleadingly low because many products are priced as 0 €.
-  const costMap = new Map<string, number>();
-  for (const pc of productCosts) costMap.set(pc.productCode, pc.unitCost);
+  // Product cost per sale uses the cost that was valid ON THE DAY the sale
+  // happened (product_cost_history), NOT the current unit_cost. That way a
+  // supplier price change today doesn't retroactively distort past margin
+  // reports. Falls back to the current product_costs row if the history is
+  // empty for that product, and then to 0.
+  const costHistoryByProduct = new Map<string, ProductCostHistoryEntry[]>();
+  for (const entry of productCostHistory) {
+    const list = costHistoryByProduct.get(entry.productCode) ?? [];
+    list.push(entry);
+    costHistoryByProduct.set(entry.productCode, list);
+  }
+  // Ensure each product's list is sorted by validFrom DESC so getCostOn walks
+  // newest-first (most recent match wins).
+  for (const list of costHistoryByProduct.values()) {
+    list.sort((a, b) => b.validFrom.localeCompare(a.validFrom));
+  }
+  const currentCostMap = new Map<string, number>();
+  for (const pc of productCosts) currentCostMap.set(pc.productCode, pc.unitCost);
+
   const scopedProductsForCost = productSales.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
   let totalProductCost = 0;
   let salesAmountWithCost = 0;
   let salesAmountTotal = 0;
   for (const item of scopedProductsForCost) {
-    const unitCost = costMap.get(item.productCode) ?? 0;
+    const unitCost = resolveUnitCostForSale(costHistoryByProduct, currentCostMap, item.productCode, item.businessDate);
     totalProductCost += unitCost * item.units;
     salesAmountTotal += item.amount;
     if (unitCost > 0) salesAmountWithCost += item.amount;
@@ -835,6 +850,27 @@ function buildLast7Days(sortedDesc: SalesReport[], todayDate: Date): Array<{ dat
     out.push({ date: iso, sales: byDate.get(iso) ?? 0 });
   }
   return out;
+}
+
+/** Given a product's cost-history list (sorted valid_from DESC) and a sale
+ * date, returns the unit cost that was in effect on that day. Falls back to
+ * the currently-valid cost (null valid_until wins) and then to the flat
+ * product_costs entry so existing data without history doesn't break. */
+function resolveUnitCostForSale(
+  history: Map<string, ProductCostHistoryEntry[]>,
+  currentCostMap: Map<string, number>,
+  productCode: string,
+  saleDate: string,
+): number {
+  const list = history.get(productCode);
+  if (list && list.length > 0) {
+    for (const entry of list) {
+      if (saleDate >= entry.validFrom && (entry.validUntil === null || saleDate < entry.validUntil)) {
+        return entry.unitCost;
+      }
+    }
+  }
+  return currentCostMap.get(productCode) ?? 0;
 }
 
 function computeIsStale(todayDate: Date): boolean {

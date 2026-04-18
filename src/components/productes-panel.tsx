@@ -1,11 +1,11 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
-import { ChevronDown, ChevronRight, Save } from "lucide-react";
+import { useEffect, useState, useTransition } from "react";
+import { ChevronDown, ChevronRight, History, Save } from "lucide-react";
 
 import { getFamilyColor, getFamilyName } from "@/lib/product-families";
-import type { ProductCost } from "@/lib/types";
+import type { ProductCost, ProductCostHistoryEntry } from "@/lib/types";
 
 function detectCategory(productName: string): string {
   return getFamilyName(productName);
@@ -119,12 +119,19 @@ function CategorySection({ category }: { category: CategoryGroup }) {
   );
 }
 
-/* ---- Product row with inline edit ---- */
+/* ---- Product row with inline edit + cost history ---- */
+
+function todayIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 function ProductRow({ product, categoryName }: { product: ProductCost; categoryName: string }) {
   const router = useRouter();
   const [cost, setCost] = useState(product.unitCost);
+  const [effectiveFrom, setEffectiveFrom] = useState(todayIso());
   const [isPending, startTransition] = useTransition();
+  const [showHistory, setShowHistory] = useState(false);
   const hasChanged = cost !== product.unitCost;
 
   function save() {
@@ -137,6 +144,7 @@ function ProductRow({ product, categoryName }: { product: ProductCost; categoryN
           productName: product.productName,
           category: categoryName,
           unitCost: cost,
+          effectiveFrom,
         }),
       });
       router.refresh();
@@ -144,37 +152,110 @@ function ProductRow({ product, categoryName }: { product: ProductCost; categoryN
   }
 
   return (
-    <tr className="border-t border-[var(--line)]/50 transition hover:bg-slate-50/50">
-      <td className="px-5 py-2 text-[13px] text-slate-400">{product.productCode}</td>
-      <td className="px-5 py-2 text-[13px] font-medium text-slate-800">{product.productName}</td>
-      <td className="px-5 py-2 text-right">
-        <input
-          type="number"
-          min={0}
-          step={0.01}
-          value={cost}
-          onChange={(e) => setCost(Number(e.target.value))}
-          onKeyDown={(e) => e.key === "Enter" && hasChanged && save()}
-          className={`w-24 rounded-lg border px-2.5 py-1 text-right text-[13px] outline-none transition ${
-            hasChanged
-              ? "border-indigo-300 bg-indigo-50/50 ring-2 ring-indigo-500/10"
-              : cost > 0
-                ? "border-emerald-200 bg-emerald-50/30"
-                : "border-[var(--line)] bg-slate-50/50"
-          }`}
-        />
-      </td>
-      <td className="px-5 py-2">
-        {hasChanged && (
-          <button
-            type="button"
-            onClick={save}
-            disabled={isPending}
-            className="rounded-lg p-1.5 text-indigo-600 hover:bg-indigo-50 transition disabled:opacity-50"
-            title="Guardar"
-          >
-            <Save className="size-4" />
-          </button>
+    <>
+      <tr className="border-t border-[var(--line)]/50 transition hover:bg-slate-50/50">
+        <td className="px-5 py-2 text-[13px] text-slate-400">{product.productCode}</td>
+        <td className="px-5 py-2 text-[13px] font-medium text-slate-800">{product.productName}</td>
+        <td className="px-5 py-2 text-right">
+          <div className="inline-flex items-center gap-1">
+            <input
+              type="number"
+              min={0}
+              step={0.01}
+              value={cost}
+              onChange={(e) => setCost(Number(e.target.value))}
+              onKeyDown={(e) => e.key === "Enter" && hasChanged && save()}
+              className={`w-24 rounded-lg border px-2.5 py-1 text-right text-[13px] outline-none transition ${
+                hasChanged
+                  ? "border-indigo-300 bg-indigo-50/50 ring-2 ring-indigo-500/10"
+                  : cost > 0
+                    ? "border-emerald-200 bg-emerald-50/30"
+                    : "border-[var(--line)] bg-slate-50/50"
+              }`}
+            />
+            {hasChanged && (
+              <input
+                type="date"
+                value={effectiveFrom}
+                onChange={(e) => setEffectiveFrom(e.target.value)}
+                title="Vàlid des de"
+                className="w-32 rounded-lg border border-indigo-200 bg-white px-2 py-1 text-[11px] text-slate-700 outline-none focus:border-indigo-300"
+              />
+            )}
+          </div>
+        </td>
+        <td className="px-5 py-2">
+          <div className="flex items-center justify-end gap-1">
+            <button
+              type="button"
+              onClick={() => setShowHistory((v) => !v)}
+              className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 transition"
+              title="Veure històric de costos"
+            >
+              <History className="size-4" />
+            </button>
+            {hasChanged && (
+              <button
+                type="button"
+                onClick={save}
+                disabled={isPending}
+                className="rounded-lg p-1.5 text-indigo-600 hover:bg-indigo-50 transition disabled:opacity-50"
+                title="Guardar"
+              >
+                <Save className="size-4" />
+              </button>
+            )}
+          </div>
+        </td>
+      </tr>
+      {showHistory && <CostHistoryRow productCode={product.productCode} />}
+    </>
+  );
+}
+
+/** Fetches and renders the cost-history timeline for a product. Lazy-loaded
+ * only when the user expands the row. */
+function CostHistoryRow({ productCode }: { productCode: string }) {
+  const [history, setHistory] = useState<ProductCostHistoryEntry[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/products?historyFor=${encodeURIComponent(productCode)}`)
+      .then((r) => r.json())
+      .then((data: ProductCostHistoryEntry[]) => {
+        if (!cancelled) setHistory(data);
+      })
+      .catch(() => {
+        if (!cancelled) setHistory([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [productCode]);
+
+  return (
+    <tr className="border-t border-[var(--line)]/50 bg-slate-50/30">
+      <td colSpan={4} className="px-5 py-3">
+        {history === null ? (
+          <p className="text-[12px] text-slate-400">Carregant històric…</p>
+        ) : history.length === 0 ? (
+          <p className="text-[12px] text-slate-400">Aquest producte encara no té històric de costos registrat.</p>
+        ) : (
+          <div className="space-y-1">
+            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Històric de costos</p>
+            {history.map((entry) => (
+              <div key={entry.id} className="flex items-center gap-3 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-[12px]">
+                <span className="font-mono text-slate-400">
+                  {entry.validFrom} → {entry.validUntil ?? "avui"}
+                </span>
+                <span className="ml-auto font-semibold text-slate-800">
+                  {entry.unitCost.toFixed(4)} €
+                </span>
+                {entry.validUntil === null && (
+                  <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">actual</span>
+                )}
+              </div>
+            ))}
+          </div>
         )}
       </td>
     </tr>

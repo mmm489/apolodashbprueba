@@ -1,15 +1,21 @@
 import { NextResponse } from "next/server";
 
-import { listProductCosts, upsertProductCost } from "@/lib/repositories";
+import { listProductCosts, listProductCostHistory, upsertProductCost } from "@/lib/repositories";
 
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const historyFor = searchParams.get("historyFor");
+  if (historyFor) {
+    const history = await listProductCostHistory(historyFor);
+    return NextResponse.json(history);
+  }
   const products = await listProductCosts();
   return NextResponse.json(products);
 }
 
 export async function PUT(request: Request) {
   const body = await request.json();
-  const { productCode, productName, category, unitCost } = body;
+  const { productCode, productName, category, unitCost, effectiveFrom } = body;
 
   if (!productCode || !productName) {
     return NextResponse.json({ error: "Falten camps obligatoris" }, { status: 400 });
@@ -20,6 +26,7 @@ export async function PUT(request: Request) {
     productName: String(productName),
     category: String(category ?? "Altres"),
     unitCost: Number(unitCost ?? 0),
+    effectiveFrom: effectiveFrom ? String(effectiveFrom) : undefined,
   });
 
   return NextResponse.json({ ok: true });

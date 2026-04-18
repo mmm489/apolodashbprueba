@@ -138,6 +138,16 @@ export interface ProductCost {
   unitCost: number;
 }
 
+export interface ProductCostHistoryEntry {
+  id: string;
+  productCode: string;
+  productName: string;
+  unitCost: number;
+  validFrom: string; // YYYY-MM-DD
+  validUntil: string | null; // null = currently valid
+  createdAt: string;
+}
+
 export interface KpiSnapshot {
   totalSales: number;
   totalExpenses: number;

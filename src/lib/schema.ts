@@ -139,6 +139,21 @@ CREATE TABLE IF NOT EXISTS product_costs (
   UNIQUE(product_code)
 );
 
+-- Historical costs per product. Each change of unit_cost closes the current
+-- row (valid_until = effective_date) and opens a new one. Lookups for food
+-- cost use the cost whose validity window contains the sale's business_date.
+CREATE TABLE IF NOT EXISTS product_cost_history (
+  id TEXT PRIMARY KEY,
+  product_code TEXT NOT NULL,
+  product_name TEXT NOT NULL,
+  unit_cost NUMERIC(8,4) NOT NULL,
+  valid_from DATE NOT NULL,
+  valid_until DATE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_cost_history_lookup ON product_cost_history(product_code, valid_from DESC);
+CREATE INDEX IF NOT EXISTS idx_cost_history_current ON product_cost_history(product_code) WHERE valid_until IS NULL;
+
 CREATE TABLE IF NOT EXISTS employee_shifts (
   id TEXT PRIMARY KEY,
   employee_id TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,

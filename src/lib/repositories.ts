@@ -21,6 +21,7 @@ import type {
   ExtractionResult,
   HourlyProductSale,
   ProductCost,
+  ProductCostHistoryEntry,
   HourlySalesEntry,
   InvoiceLineRecord,
   InvoiceRecord,
@@ -243,22 +244,132 @@ export async function listProductCosts() {
   })) satisfies ProductCost[];
 }
 
+/** Updates or creates a product cost and logs the change in the history
+ * table so future food-cost calculations can use the cost that was valid at
+ * the sale's business_date. effectiveFrom defaults to today; pass an earlier
+ * date if you're backfilling a known historical price. */
 export async function upsertProductCost(input: {
   productCode: string;
   productName: string;
   category: string;
   unitCost: number;
+  effectiveFrom?: string; // YYYY-MM-DD, defaults to today
 }) {
   if (!hasDatabase()) return;
 
   const sql = getSql();
-  const id = randomUUID();
+  const effective = input.effectiveFrom ?? todayIsoLocal();
+
+  // Look up the currently-valid history row (if any). If the cost is
+  // unchanged we can skip the history write entirely.
+  const existing = await sql`
+    SELECT id, unit_cost FROM product_cost_history
+    WHERE product_code = ${input.productCode} AND valid_until IS NULL
+    LIMIT 1
+  `;
+  const currentCost = existing[0] ? Number(existing[0].unit_cost) : null;
+  const costChanged = currentCost === null || Math.abs(currentCost - input.unitCost) > 0.00005;
+
+  if (costChanged) {
+    if (existing[0]) {
+      // Close the previous version right before the new effective date.
+      // valid_until is exclusive in our lookup (valid_until > sale_date), so
+      // setting it to the effective date closes the old cost on that day.
+      await sql`
+        UPDATE product_cost_history
+        SET valid_until = ${effective}
+        WHERE id = ${String(existing[0].id)}
+      `;
+    }
+    await sql`
+      INSERT INTO product_cost_history (id, product_code, product_name, unit_cost, valid_from, valid_until)
+      VALUES (${randomUUID()}, ${input.productCode}, ${input.productName}, ${input.unitCost}, ${effective}, NULL)
+    `;
+  }
+
+  // Keep the flat product_costs table in sync as the "current cost" view.
+  const flatId = randomUUID();
   await sql`
     INSERT INTO product_costs (id, product_code, product_name, category, unit_cost, updated_at)
-    VALUES (${id}, ${input.productCode}, ${input.productName}, ${input.category}, ${input.unitCost}, NOW())
+    VALUES (${flatId}, ${input.productCode}, ${input.productName}, ${input.category}, ${input.unitCost}, NOW())
     ON CONFLICT (product_code)
     DO UPDATE SET product_name = EXCLUDED.product_name, category = EXCLUDED.category, unit_cost = EXCLUDED.unit_cost, updated_at = NOW()
   `;
+}
+
+/** Returns the full cost history for a product, newest first. Used in the
+ * product detail UI so the owner can audit when a price changed. */
+export async function listProductCostHistory(productCode: string) {
+  if (!hasDatabase()) return [];
+  const sql = getSql();
+  const rows = await sql`
+    SELECT id, product_code, product_name, unit_cost, valid_from, valid_until, created_at
+    FROM product_cost_history
+    WHERE product_code = ${productCode}
+    ORDER BY valid_from DESC
+  `;
+  return rows.map((row) => ({
+    id: String(row.id),
+    productCode: String(row.product_code),
+    productName: String(row.product_name),
+    unitCost: toNumber(row.unit_cost),
+    validFrom: normalizeDate(row.valid_from),
+    validUntil: row.valid_until ? normalizeDate(row.valid_until) : null,
+    createdAt: new Date(String(row.created_at)).toISOString(),
+  })) satisfies ProductCostHistoryEntry[];
+}
+
+/** Returns every historical cost entry across all products. Used by the
+ * analytics layer to resolve the cost valid at each sale's business_date
+ * without issuing one query per sale. */
+export async function listAllProductCostHistory() {
+  if (!hasDatabase()) return [];
+  const sql = getSql();
+  const rows = await sql`
+    SELECT id, product_code, product_name, unit_cost, valid_from, valid_until, created_at
+    FROM product_cost_history
+    ORDER BY product_code ASC, valid_from DESC
+  `;
+  return rows.map((row) => ({
+    id: String(row.id),
+    productCode: String(row.product_code),
+    productName: String(row.product_name),
+    unitCost: toNumber(row.unit_cost),
+    validFrom: normalizeDate(row.valid_from),
+    validUntil: row.valid_until ? normalizeDate(row.valid_until) : null,
+    createdAt: new Date(String(row.created_at)).toISOString(),
+  })) satisfies ProductCostHistoryEntry[];
+}
+
+/** Backfills product_cost_history from the flat product_costs table for any
+ * product that doesn't yet have a history row. Used once during the initial
+ * migration to historify costs that were entered before this feature. The
+ * resulting row has valid_from = 2023-01-01 (i.e. "always applied") so
+ * existing food-cost calculations don't change value. */
+export async function backfillProductCostHistoryOnce() {
+  if (!hasDatabase()) return { inserted: 0 };
+  const sql = getSql();
+  const result = await sql`
+    INSERT INTO product_cost_history (id, product_code, product_name, unit_cost, valid_from, valid_until)
+    SELECT
+      gen_random_uuid()::text,
+      pc.product_code,
+      pc.product_name,
+      pc.unit_cost,
+      '2023-01-01'::date,
+      NULL
+    FROM product_costs pc
+    WHERE NOT EXISTS (
+      SELECT 1 FROM product_cost_history pch WHERE pch.product_code = pc.product_code
+    )
+    RETURNING id
+  `;
+  return { inserted: (result as unknown[]).length };
+}
+
+function todayIsoLocal() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 /* ---------- Employees ---------- */
@@ -561,6 +672,15 @@ async function _persistExtractionInner(sql: ReturnType<typeof getSql>, documentI
         SELECT gen_random_uuid()::text, ps.product_code, ps.product_name, 'Altres', 0
         FROM (SELECT DISTINCT product_code, product_name FROM product_sales WHERE sales_report_id = ${data.id}) ps
         WHERE NOT EXISTS (SELECT 1 FROM product_costs pc WHERE pc.product_code = ps.product_code)
+      `;
+      // And mirror each new product as a history entry valid from 2023-01-01
+      // so any old sale of the same code also uses this placeholder cost
+      // until the owner sets a real one.
+      await sql`
+        INSERT INTO product_cost_history (id, product_code, product_name, unit_cost, valid_from, valid_until)
+        SELECT gen_random_uuid()::text, ps.product_code, ps.product_name, 0, '2023-01-01'::date, NULL
+        FROM (SELECT DISTINCT product_code, product_name FROM product_sales WHERE sales_report_id = ${data.id}) ps
+        WHERE NOT EXISTS (SELECT 1 FROM product_cost_history pch WHERE pch.product_code = ps.product_code)
       `;
     }
     return;
