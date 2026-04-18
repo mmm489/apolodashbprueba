@@ -2,9 +2,13 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Apolo Heladeria Dashboard",
+  title: {
+    default: "Apolo · Gelateria Dashboard",
+    template: "%s · Apolo",
+  },
   description:
-    "Controla ventas, gastos, nominas y banco con dashboard web y consultas por Telegram.",
+    "Dashboard financer i operatiu de la gelateria Apolo (Salou): vendes, costos, marges, comparatives i previsions.",
+  applicationName: "Apolo Dashboard",
 };
 
 export default function RootLayout({
