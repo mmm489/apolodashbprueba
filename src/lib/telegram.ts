@@ -5,7 +5,7 @@ import { fetchHistoricalWeather, getFinancialWorkspace } from "@/lib/analytics";
 import { getCalendarContext } from "@/lib/calendar";
 import { getSql, hasDatabase } from "@/lib/db";
 import { env } from "@/lib/env";
-import { storeTelegramMessage } from "@/lib/repositories";
+import { listRecentMessagesForChat, storeTelegramMessage } from "@/lib/repositories";
 import type { FinancialWorkspace } from "@/lib/types";
 
 /* ---------- Telegram handler ---------- */
@@ -41,10 +41,11 @@ export async function handleTelegramUpdate(update: Record<string, unknown>) {
 
   try {
     await sendChatAction(chatId, "typing");
-    const answer = await processWithClaude(message.text);
+    const answer = await processWithClaude(message.text, String(chatId));
 
     await storeTelegramMessage({
       telegramUserId: String(message.from?.id ?? chatId),
+      chatId: String(chatId),
       username: "admin",
       question: message.text,
       answer,
@@ -222,7 +223,7 @@ function classifyQuestionComplexity(question: string): "simple" | "complex" {
   return score >= 2 ? "complex" : "simple";
 }
 
-async function processWithClaude(userMessage: string): Promise<string> {
+async function processWithClaude(userMessage: string, chatId: string): Promise<string> {
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
   // Cache workspaces per preset for the lifetime of this single message so
@@ -235,9 +236,16 @@ async function processWithClaude(userMessage: string): Promise<string> {
     return workspaceCache.get(preset)!;
   };
 
-  const messages: Anthropic.MessageParam[] = [
-    { role: "user", content: userMessage },
-  ];
+  // Load the last few exchanges so Claude remembers what it was talking
+  // about. Without this, a one-word reply like "Si" to a follow-up question
+  // loses all context and the bot has to ask what the user meant.
+  const history = await listRecentMessagesForChat(chatId, 6);
+  const messages: Anthropic.MessageParam[] = [];
+  for (const h of history) {
+    messages.push({ role: "user", content: h.question });
+    messages.push({ role: "assistant", content: h.answer });
+  }
+  messages.push({ role: "user", content: userMessage });
 
   // Route by complexity: simple questions start with Haiku (cheap, fast),
   // complex ones start with Sonnet (better reasoning). Each tier keeps the

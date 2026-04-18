@@ -98,6 +98,9 @@ CREATE TABLE IF NOT EXISTS telegram_messages (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE telegram_messages ADD COLUMN IF NOT EXISTS chat_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_telegram_messages_chat_id ON telegram_messages(chat_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS sync_state (
   sync_key TEXT PRIMARY KEY,
   sync_value TEXT NOT NULL,

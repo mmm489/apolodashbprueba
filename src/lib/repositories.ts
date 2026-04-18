@@ -400,6 +400,7 @@ export async function setSyncState(syncKey: string, syncValue: string) {
 
 export async function storeTelegramMessage(input: {
   telegramUserId: string;
+  chatId: string;
   username: string;
   question: string;
   answer: string;
@@ -410,9 +411,32 @@ export async function storeTelegramMessage(input: {
 
   const sql = getSql();
   await sql`
-    INSERT INTO telegram_messages (id, telegram_user_id, username, question, answer)
-    VALUES (${randomUUID()}, ${input.telegramUserId}, ${input.username}, ${input.question}, ${input.answer})
+    INSERT INTO telegram_messages (id, telegram_user_id, chat_id, username, question, answer)
+    VALUES (${randomUUID()}, ${input.telegramUserId}, ${input.chatId}, ${input.username}, ${input.question}, ${input.answer})
   `;
+}
+
+/** Returns the most recent N question/answer exchanges for a chat, oldest
+ * first. Used to feed the Telegram bot's conversation history to Claude so it
+ * remembers context from the previous turn. */
+export async function listRecentMessagesForChat(chatId: string, limit = 6) {
+  if (!hasDatabase()) return [];
+
+  const sql = getSql();
+  const rows = await sql`
+    SELECT question, answer, created_at
+    FROM telegram_messages
+    WHERE chat_id = ${chatId}
+    ORDER BY created_at DESC
+    LIMIT ${limit}
+  `;
+  return rows
+    .map((row) => ({
+      question: String(row.question),
+      answer: String(row.answer),
+      createdAt: new Date(String(row.created_at)).toISOString(),
+    }))
+    .reverse(); // oldest → newest for chat replay
 }
 
 export async function findDocumentByHash(contentHash: string) {
