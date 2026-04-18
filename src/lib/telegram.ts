@@ -188,6 +188,40 @@ const tools: Tool[] = [
   },
 ];
 
+/** Decides whether a question needs the heavy model. Signals we look for:
+ * long messages, verbs that imply reasoning or recommendation, "why/how"
+ * prompts, multi-question or conjoined prompts, and asks for advice.
+ *
+ * We intentionally err on the side of Haiku — Sonnet kicks in only when
+ * the prompt clearly asks for synthesis or explanation. If the heuristic
+ * is ambiguous, Sonnet escalates naturally via the fallback list. */
+function classifyQuestionComplexity(question: string): "simple" | "complex" {
+  const q = question.toLowerCase();
+  const complexVerbs = [
+    "analit", "analiz", "analis", "recomana", "recomen", "consell", "consej",
+    "estrategi", "estrategi", "hauria", "deberia", "pensa", "pense", "opin",
+    "resumeix", "resumi", "resumir", "explica", "expliqui", "justif",
+    "per que", "per què", "per qué", "com ha anat", "com va", "com es que",
+    "com és que", "com és", "com es", "per quin motiu",
+    "cfo", "hipote", "prediu", "prediccio", "predicció", "preves", "passaria",
+    "aconsellari", "proposa", "acciona", "millorar", "optimitz",
+    "compara", "comparar", "comparativa", "contrasta", "evoluc",
+  ];
+  const hasComplexVerb = complexVerbs.some((v) => q.includes(v));
+  const isLong = question.length > 90;
+  const hasMultipleQuestions = (question.match(/\?/g) || []).length > 1;
+  const hasConjunction = / i | o | pero | però /.test(q);
+
+  // Weighted scoring
+  let score = 0;
+  if (hasComplexVerb) score += 2;
+  if (isLong) score += 1;
+  if (hasMultipleQuestions) score += 2;
+  if (hasConjunction) score += 1;
+
+  return score >= 2 ? "complex" : "simple";
+}
+
 async function processWithClaude(userMessage: string): Promise<string> {
   const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
@@ -205,12 +239,21 @@ async function processWithClaude(userMessage: string): Promise<string> {
     { role: "user", content: userMessage },
   ];
 
-  const candidateModels = [
-    env.ANTHROPIC_MODEL,
-    ...env.ANTHROPIC_FALLBACK_MODELS.split(",").map((m) => m.trim()),
-    "claude-sonnet-4-5",
-    "claude-haiku-4-5-20251001",
-  ].filter((v, i, a) => Boolean(v) && a.indexOf(v) === i);
+  // Route by complexity: simple questions start with Haiku (cheap, fast),
+  // complex ones start with Sonnet (better reasoning). Each tier keeps the
+  // other as fallback so a model outage still answers.
+  const complexity = classifyQuestionComplexity(userMessage);
+  const HAIKU = "claude-haiku-4-5-20251001";
+  const SONNET = "claude-sonnet-4-5";
+  const OVERRIDE = env.ANTHROPIC_MODEL;
+  const candidateModels = (
+    complexity === "complex"
+      ? [OVERRIDE, SONNET, HAIKU]
+      : [OVERRIDE, HAIKU, SONNET]
+  )
+    .concat(env.ANTHROPIC_FALLBACK_MODELS.split(",").map((m) => m.trim()))
+    .filter((v, i, a): v is string => Boolean(v) && a.indexOf(v) === i);
+  console.log(`[telegram] Question complexity=${complexity}, trying models: ${candidateModels.join(", ")}`);
 
   // Up to 8 rounds of tool use so multi-step questions resolve in one turn.
   for (let round = 0; round < 8; round++) {
@@ -225,6 +268,7 @@ async function processWithClaude(userMessage: string): Promise<string> {
           tools,
           messages,
         });
+        console.log(`[telegram] round=${round} model=${model} stop=${response.stop_reason}`);
         break;
       } catch (err) {
         lastError = err;
