@@ -16,8 +16,11 @@ export interface CalendarContext {
   isHoliday: boolean;
   /** Days relative to Easter Sunday (0 = Easter Sunday, -2 = Good Friday). */
   daysFromEaster: number;
-  /** Convenience label when the date falls in Easter high season. */
-  easterWeekLabel?: "Dijous Sant" | "Divendres Sant" | "Dissabte Sant" | "Diumenge de Pasqua" | "Dilluns de Pasqua" | "Setmana Santa" | "Setmana de Pasqua";
+  /** Convenience label when the date falls in Easter high season.
+   * Note: we do NOT label the days after Dilluns de Pasqua. From Tuesday
+   * after Easter onwards, schools resume and tourism normalises to a
+   * regular week — those days are no longer commercially distinct. */
+  easterWeekLabel?: "Dijous Sant" | "Divendres Sant" | "Dissabte Sant" | "Diumenge de Pasqua" | "Dilluns de Pasqua" | "Setmana Santa";
 }
 
 /** Returns the date of Easter Sunday (Gregorian) for a given year, using the
@@ -104,13 +107,15 @@ export function getCalendarContext(iso: string): CalendarContext {
   const daysFromEaster = Math.round((target - easter.getTime()) / (24 * 60 * 60 * 1000));
 
   let easterWeekLabel: CalendarContext["easterWeekLabel"];
+  // Setmana Santa proper (Palm Sunday → Holy Saturday) plus Easter Sunday and
+  // Easter Monday. After Dilluns de Pasqua schools and shops are back to a
+  // normal rhythm, so the post-Easter week is intentionally NOT labelled.
   if (daysFromEaster === -3) easterWeekLabel = "Dijous Sant";
   else if (daysFromEaster === -2) easterWeekLabel = "Divendres Sant";
   else if (daysFromEaster === -1) easterWeekLabel = "Dissabte Sant";
   else if (daysFromEaster === 0) easterWeekLabel = "Diumenge de Pasqua";
   else if (daysFromEaster === 1) easterWeekLabel = "Dilluns de Pasqua";
   else if (daysFromEaster >= -7 && daysFromEaster < -3) easterWeekLabel = "Setmana Santa";
-  else if (daysFromEaster > 1 && daysFromEaster <= 7) easterWeekLabel = "Setmana de Pasqua";
 
   return {
     date: iso,
