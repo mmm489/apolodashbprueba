@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 import {
   Bell,
   ChevronLeft,
   ChevronRight,
   LayoutDashboard,
+  LogOut,
   Menu,
   Package,
   Receipt,
@@ -38,8 +39,21 @@ export function AppFrame({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isLoggingOut, startLogout] = useTransition();
+
+  function handleLogout() {
+    startLogout(async () => {
+      try {
+        await fetch("/api/auth/logout", { method: "POST" });
+      } finally {
+        router.replace("/login");
+        router.refresh();
+      }
+    });
+  }
 
   return (
     <div className="flex min-h-screen">
@@ -125,7 +139,27 @@ export function AppFrame({
                 <p className="truncate text-[13px] font-medium text-slate-200">Montane</p>
                 <p className="text-[11px] text-slate-500">Admin</p>
               </div>
+              <button
+                type="button"
+                onClick={handleLogout}
+                disabled={isLoggingOut}
+                title="Tancar sessió"
+                className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/[0.05] hover:text-slate-200 disabled:opacity-50"
+              >
+                <LogOut className="size-4" />
+              </button>
             </div>
+          )}
+          {collapsed && (
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              title="Tancar sessió"
+              className="mb-3 flex w-full items-center justify-center rounded-xl py-2 text-slate-500 transition hover:bg-white/[0.05] hover:text-slate-300 disabled:opacity-50"
+            >
+              <LogOut className="size-4" />
+            </button>
           )}
           <button
             type="button"

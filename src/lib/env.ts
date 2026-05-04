@@ -18,6 +18,11 @@ const env = {
   MICROSOFT_CLIENT_SECRET: process.env.MICROSOFT_CLIENT_SECRET,
   MICROSOFT_DRIVE_ID: process.env.MICROSOFT_DRIVE_ID,
   MICROSOFT_ONEDRIVE_FOLDER_PATH: process.env.MICROSOFT_ONEDRIVE_FOLDER_PATH ?? "/Heladeria/entrada",
+  // Auth: single shared password (comma-separated for multiple operators).
+  AUTH_PASSWORD: process.env.AUTH_PASSWORD,
+  // Random hex string used to sign auth cookies. Generate with:
+  //   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+  AUTH_SECRET: process.env.AUTH_SECRET,
 };
 
 export function requireEnv(name: keyof typeof env) {
