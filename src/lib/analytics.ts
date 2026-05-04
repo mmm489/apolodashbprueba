@@ -683,42 +683,100 @@ export function computeDailyDigest(
   ));
   const lastYearCalendarReport = findReport(lastYearCalendarDate);
 
-  // Forecast: average of last 4 same-DOW values (excluding today itself).
-  // Track the corresponding dates so we can read their historical temps.
-  const sameDowSamples: Array<{ date: string; sales: number }> = [];
-  for (let weeksBack = 1; weeksBack <= 12 && sameDowSamples.length < 4; weeksBack++) {
+  // Forecast model — gelateria-friendly:
+  //
+  //   recent_baseline = avg of last 4 same-DOW days (today−7, −14, −21, −28).
+  //                     Captures the "right now" trend.
+  //   yoy_baseline    = avg of 4 same-DOW days around tomorrow−52w. Captures
+  //                     the seasonality (Easter, late spring, August peak, …).
+  //   yoy_growth      = current-period total / same-period-last-year total,
+  //                     so the YoY signal reflects today's scale of business.
+  //   final_baseline  = (recent_baseline + yoy_baseline × yoy_growth) / 2
+  //                     If YoY samples aren't available, falls back to recent.
+  //   forecast        = final_baseline × temperature_factor
+  //
+  // Recent samples (up to 4) — exclude today itself.
+  const tomorrowDate = formatISO(addDays(todayDate, 1), { representation: "date" });
+  const tomorrowDateObj = addDays(todayDate, 1);
+  const recentSamples: Array<{ date: string; sales: number }> = [];
+  for (let weeksBack = 1; weeksBack <= 12 && recentSamples.length < 4; weeksBack++) {
     const sampleDate = addDays(todayDate, -7 * weeksBack);
     const r = findReport(sampleDate);
     if (r) {
-      sameDowSamples.push({ date: formatISO(sampleDate, { representation: "date" }), sales: r.totalSales });
+      recentSamples.push({ date: formatISO(sampleDate, { representation: "date" }), sales: r.totalSales });
     }
   }
-  const baselineSales = sameDowSamples.length > 0
-    ? sameDowSamples.reduce((s, v) => s + v.sales, 0) / sameDowSamples.length
+  const recentBaseline = recentSamples.length > 0
+    ? recentSamples.reduce((s, v) => s + v.sales, 0) / recentSamples.length
     : 0;
-  // Coefficient of variation = stddev / mean. Low CoV + many samples → high
-  // confidence. Use it to surface "this forecast is flaky" when it matters.
-  let sampleCoV = 0;
-  if (baselineSales > 0 && sameDowSamples.length > 1) {
-    const variance = sameDowSamples.reduce((s, v) => s + (v.sales - baselineSales) ** 2, 0) / sameDowSamples.length;
-    sampleCoV = Math.sqrt(variance) / baselineSales;
+
+  // YoY samples: 4 same-DOW dates around tomorrow shifted back 52 weeks.
+  // We pick (yoyAnchor − 7), yoyAnchor, (yoyAnchor + 7), (yoyAnchor + 14) so
+  // we average a 4-week window centred just after the equivalent day. This
+  // smooths out any single-day anomaly last year (rain, festival, etc.).
+  const yoyAnchor = subWeeks(tomorrowDateObj, 52);
+  const yoySamples: Array<{ date: string; sales: number }> = [];
+  for (const offset of [-7, 0, 7, 14]) {
+    const sampleDate = addDays(yoyAnchor, offset);
+    const r = findReport(sampleDate);
+    if (r) {
+      yoySamples.push({ date: formatISO(sampleDate, { representation: "date" }), sales: r.totalSales });
+    }
   }
+  const yoyBaselineRaw = yoySamples.length > 0
+    ? yoySamples.reduce((s, v) => s + v.sales, 0) / yoySamples.length
+    : 0;
+
+  // YoY business growth: how is the current 30-day rolling window doing vs
+  // the equivalent 30-day window 52 weeks back? If sales were 1000/day then
+  // and 1100/day now, the YoY baseline should be lifted by 1.10 to keep
+  // pace with the current scale. Bound to [0.5, 2.0] so a single bad month
+  // can't make the forecast wildly negative or doubled.
+  const last30FromToday = sumWindow(reports, addDays(todayDate, -29), todayDate);
+  const last30YoY = sumWindow(reports, addDays(todayDate, -29 - 52 * 7), addDays(todayDate, -52 * 7));
+  let yoyGrowthFactor = 1;
+  if (last30FromToday > 0 && last30YoY > 0) {
+    yoyGrowthFactor = Math.max(0.5, Math.min(2.0, last30FromToday / last30YoY));
+  }
+
+  const yoyAdjusted = yoyBaselineRaw > 0 ? yoyBaselineRaw * yoyGrowthFactor : 0;
+
+  // Blend: if we have YoY data, average recent and YoY-adjusted (50/50).
+  // Otherwise just use the recent baseline so we still produce a forecast
+  // for new businesses without history.
+  const blendedBaseline = yoyAdjusted > 0 && recentBaseline > 0
+    ? (recentBaseline + yoyAdjusted) / 2
+    : recentBaseline;
+
+  // Compute CoV across ALL samples used (recent + yoy) — that's the spread
+  // we're really betting on.
+  const allSampleValues = [
+    ...recentSamples.map((s) => s.sales),
+    ...yoySamples.map((s) => s.sales * yoyGrowthFactor),
+  ];
+  let sampleCoV = 0;
+  if (allSampleValues.length > 1 && blendedBaseline > 0) {
+    const variance = allSampleValues.reduce((s, v) => s + (v - blendedBaseline) ** 2, 0) / allSampleValues.length;
+    sampleCoV = Math.sqrt(variance) / blendedBaseline;
+  }
+  const totalSamples = recentSamples.length + yoySamples.length;
   const forecastConfidence: "low" | "medium" | "high" =
-    sameDowSamples.length >= 4 && sampleCoV < 0.25 ? "high"
-    : sameDowSamples.length >= 3 && sampleCoV < 0.4 ? "medium"
+    totalSamples >= 6 && sampleCoV < 0.25 ? "high"
+    : totalSamples >= 4 && sampleCoV < 0.4 ? "medium"
     : "low";
-  const tomorrowDate = formatISO(addDays(todayDate, 1), { representation: "date" });
 
   // Temperature factor (only when weather data is available).
-  // Heuristic for ice cream: each +1°C above the historical baseline lifts
-  // expected sales ~5%, with a hard clamp of ±30% so we don't extrapolate
-  // wildly outside the observed range.
+  // Heuristic for ice cream: each +1°C above the baseline avg temperature
+  // lifts expected sales ~5%, with a hard clamp of ±30% so we don't
+  // extrapolate wildly outside the observed range.
+  // The baseline temp is the avg across BOTH recent and YoY sample dates,
+  // matching the blended sales baseline.
   let tempFactor = 1;
   let tomorrowTempMax: number | null = null;
   let avgHistoricalTempMax: number | null = null;
-  if (weather && sameDowSamples.length > 0) {
+  if (weather) {
     const tomorrowW = weather.get(tomorrowDate);
-    const sampleTemps = sameDowSamples
+    const sampleTemps = [...recentSamples, ...yoySamples]
       .map((s) => weather.get(s.date)?.tempMax)
       .filter((t): t is number => typeof t === "number");
     if (tomorrowW && sampleTemps.length > 0) {
@@ -767,12 +825,16 @@ export function computeDailyDigest(
           calendar: toCalendarNote(formatISO(lastYearCalendarDate, { representation: "date" })),
         }
       : null,
-    forecastTomorrow: sameDowSamples.length > 0
+    forecastTomorrow: blendedBaseline > 0
       ? {
           date: tomorrowDate,
-          sales: baselineSales * tempFactor,
-          baselineSales,
-          basedOn: sameDowSamples.length,
+          sales: blendedBaseline * tempFactor,
+          baselineSales: blendedBaseline,
+          recentBaseline,
+          recentBasedOn: recentSamples.length,
+          yoyBaseline: yoySamples.length > 0 ? yoyBaselineRaw : null,
+          yoyBasedOn: yoySamples.length,
+          yoyGrowthFactor,
           sampleCoV,
           confidence: forecastConfidence,
           tempFactor,
@@ -877,6 +939,17 @@ function computeIsStale(todayDate: Date): boolean {
   const now = new Date();
   const diffMs = now.getTime() - todayDate.getTime();
   return diffMs > 48 * 60 * 60 * 1000;
+}
+
+/** Sums total_sales across reports whose business_date falls within
+ * [from, to], inclusive. Used by computeDailyDigest to compare a recent
+ * window against the same window 52 weeks ago for the YoY growth factor. */
+function sumWindow(reports: SalesReport[], from: Date, to: Date): number {
+  const fromIso = formatISO(from, { representation: "date" });
+  const toIso = formatISO(to, { representation: "date" });
+  return reports
+    .filter((r) => r.businessDate >= fromIso && r.businessDate <= toIso)
+    .reduce((s, r) => s + r.totalSales, 0);
 }
 
 /** Wraps getCalendarContext for digest rows; returns null when the date is

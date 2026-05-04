@@ -483,6 +483,14 @@ function summarizeWorkspace(ws: FinancialWorkspace) {
         date: ws.dailyDigest.forecastTomorrow.date,
         sales: round2(ws.dailyDigest.forecastTomorrow.sales),
         baselineSales: round2(ws.dailyDigest.forecastTomorrow.baselineSales),
+        recentBaseline: round2(ws.dailyDigest.forecastTomorrow.recentBaseline),
+        recentBasedOn: ws.dailyDigest.forecastTomorrow.recentBasedOn,
+        yoyBaseline: ws.dailyDigest.forecastTomorrow.yoyBaseline !== null
+          ? round2(ws.dailyDigest.forecastTomorrow.yoyBaseline)
+          : null,
+        yoyBasedOn: ws.dailyDigest.forecastTomorrow.yoyBasedOn,
+        yoyGrowthFactor: round2(ws.dailyDigest.forecastTomorrow.yoyGrowthFactor),
+        confidence: ws.dailyDigest.forecastTomorrow.confidence,
         tempFactor: round2(ws.dailyDigest.forecastTomorrow.tempFactor),
         tomorrowTempMax: ws.dailyDigest.forecastTomorrow.tomorrowTempMax,
         avgHistoricalTempMax: ws.dailyDigest.forecastTomorrow.avgHistoricalTempMax,

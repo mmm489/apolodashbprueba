@@ -262,21 +262,34 @@ export interface DailyDigest {
   } | null;
   forecastTomorrow: {
     date: string;
-    /** Forecasted sales after applying the temperature factor. */
+    /** Forecasted sales after blending baselines and applying the
+     * temperature factor + YoY growth factor. */
     sales: number;
-    /** Baseline (avg of N last same-DOW values, no weather). */
+    /** Final blended baseline before temperature factor (50% recent + 50%
+     * YoY-adjusted, when YoY data is available). */
     baselineSales: number;
-    /** Number of historical same-DOW samples averaged. */
-    basedOn: number;
-    /** Coefficient of variation of the samples. High = unstable forecast. */
+    /** Avg of last 4 same-DOW values (recent trend signal). */
+    recentBaseline: number;
+    /** Number of recent same-DOW samples used. */
+    recentBasedOn: number;
+    /** Avg of 4 same-DOW values around tomorrow-shifted-52w-back (seasonality
+     * signal). null if not enough historical data. */
+    yoyBaseline: number | null;
+    /** Number of YoY samples used. */
+    yoyBasedOn: number;
+    /** YoY business growth multiplier (1.10 = +10% vs last year). Applied to
+     * the YoY baseline so seasonality reflects the current scale of the
+     * business, not last year's volume. */
+    yoyGrowthFactor: number;
+    /** Coefficient of variation of all samples used. High = unstable forecast. */
     sampleCoV: number;
-    /** Confidence tier derived from basedOn + CoV. */
+    /** Confidence tier derived from sample count + CoV. */
     confidence: "low" | "medium" | "high";
     /** Temperature factor applied (1.0 = no adjustment, >1 hotter, <1 cooler). */
     tempFactor: number;
     /** Tomorrow's forecasted max temperature, if available. */
     tomorrowTempMax: number | null;
-    /** Average max temp of the same-DOW history used as baseline. */
+    /** Average max temp of the historical samples used as baseline. */
     avgHistoricalTempMax: number | null;
   } | null;
 }

@@ -493,7 +493,9 @@ function ForecastTomorrowBlock({
         </div>
         <p className="text-[15px] font-bold text-violet-900">{euro(forecast.sales)}</p>
         <p className="text-[10px] text-violet-600">
-          mitjana últims {forecast.basedOn} mateix dia
+          {forecast.yoyBasedOn > 0
+            ? `${forecast.recentBasedOn} setm. recents + ${forecast.yoyBasedOn} setm. any passat`
+            : `mitjana últims ${forecast.recentBasedOn} mateix dia`}
           {forecast.tempFactor !== 1 && (
             <>
               {" "}·{" "}
@@ -504,6 +506,15 @@ function ForecastTomorrowBlock({
             </>
           )}
         </p>
+        {forecast.yoyBaseline !== null && Math.abs(forecast.yoyGrowthFactor - 1) > 0.02 && (
+          <p className="text-[10px] text-violet-500">
+            Creixement vs any passat:{" "}
+            <span className={forecast.yoyGrowthFactor > 1 ? "font-semibold text-emerald-700" : "font-semibold text-rose-700"}>
+              {forecast.yoyGrowthFactor > 1 ? "+" : ""}
+              {((forecast.yoyGrowthFactor - 1) * 100).toFixed(0)}%
+            </span>
+          </p>
+        )}
         {forecast.tomorrowTempMax !== null && (
           <p className="text-[10px] text-violet-500">
             Demà {forecast.tomorrowTempMax.toFixed(0)}°C
