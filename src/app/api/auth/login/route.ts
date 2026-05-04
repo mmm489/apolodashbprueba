@@ -27,10 +27,14 @@ export async function POST(request: Request) {
   }
 
   const token = await signToken();
+  const isHttps = new URL(request.url).protocol === "https:";
   const response = NextResponse.json({ ok: true });
   response.cookies.set(getAuthCookieName(), token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    // Mark Secure based on the actual request scheme so the browser keeps
+    // the cookie. Vercel always serves HTTPS in production; localhost dev
+    // is HTTP so we have to leave Secure off there or Chrome rejects it.
+    secure: isHttps,
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 30, // 30 days

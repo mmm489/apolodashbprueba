@@ -1,10 +1,9 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
 
 export function LoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") ?? "/";
   const [password, setPassword] = useState("");
@@ -20,14 +19,17 @@ export function LoginForm() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ password }),
+          credentials: "same-origin",
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
           setError(data?.error ?? "Contrasenya incorrecta.");
           return;
         }
-        router.replace(next);
-        router.refresh();
+        // Full page reload so the cookie set by the response is guaranteed
+        // to ride along on the next request — router.replace sometimes
+        // races with the cookie commit and bounces back to /login.
+        window.location.href = next;
       } catch {
         setError("Error de connexió.");
       }
