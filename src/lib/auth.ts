@@ -64,20 +64,29 @@ export function verifyPassword(input: string): boolean {
 
 export async function signToken(ttlDays: number = DEFAULT_TTL_DAYS): Promise<string> {
   if (!env.AUTH_SECRET) throw new Error("AUTH_SECRET is not configured.");
-  const expIso = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000).toISOString();
-  const sig = await hmacHex(env.AUTH_SECRET, expIso);
-  return `${expIso}.${sig}`;
+  // Use a Unix timestamp (seconds) as the payload — only digits, no chars
+  // that could get URL-encoded by the cookie layer. Earlier versions used
+  // an ISO date which contains colons; the browser stored the cookie as
+  // "2026-06-03T11%3A40%3A00.288Z..." and middleware computed the HMAC
+  // over the percent-encoded version, breaking validation.
+  const expSec = Math.floor(Date.now() / 1000) + ttlDays * 24 * 60 * 60;
+  const expStr = String(expSec);
+  const sig = await hmacHex(env.AUTH_SECRET, expStr);
+  return `${expStr}.${sig}`;
 }
 
 export async function verifyToken(token: string | undefined): Promise<boolean> {
   if (!token || !env.AUTH_SECRET) return false;
   const dot = token.indexOf(".");
   if (dot < 0) return false;
-  const expIso = token.slice(0, dot);
+  const expStr = token.slice(0, dot);
   const sig = token.slice(dot + 1);
-  const expected = await hmacHex(env.AUTH_SECRET, expIso);
+  // Reject anything that isn't a positive integer string — protects against
+  // stale ISO-date tokens issued before this fix lingering in browsers.
+  if (!/^\d+$/.test(expStr)) return false;
+  const expected = await hmacHex(env.AUTH_SECRET, expStr);
   if (!constantTimeEqual(sig, expected)) return false;
-  const expDate = new Date(expIso).getTime();
-  if (Number.isNaN(expDate)) return false;
-  return expDate > Date.now();
+  const expSec = parseInt(expStr, 10);
+  if (!Number.isFinite(expSec)) return false;
+  return expSec * 1000 > Date.now();
 }
