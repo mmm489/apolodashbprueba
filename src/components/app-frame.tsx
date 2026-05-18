@@ -69,14 +69,14 @@ export function AppFrame({
       <aside
         className={cn(
           "z-50 flex flex-col bg-[var(--sidebar)] transition-all duration-300 ease-in-out",
-          // Mobile: off-canvas overlay (slides in from the left)
-          "fixed inset-y-0 left-0",
-          mobileOpen ? "translate-x-0" : "-translate-x-full",
-          // Desktop: stays pinned to the top of the viewport while the page
-          // scrolls. Sticky keeps it as a flex child so the main content
-          // grid doesn't need a manual margin.
-          "lg:sticky lg:top-0 lg:inset-y-auto lg:h-screen lg:translate-x-0",
           collapsed ? "w-[72px]" : "w-[260px]",
+          // Mobile: off-canvas overlay (slides in from the left, full height)
+          "fixed top-0 bottom-0 left-0",
+          mobileOpen ? "translate-x-0" : "-translate-x-full",
+          // Desktop: sticky at top of viewport while the page scrolls.
+          // `lg:bottom-auto` releases the bottom:0 set by mobile so sticky
+          // can use its own height (100vh) instead of being stretched.
+          "lg:sticky lg:bottom-auto lg:h-screen lg:translate-x-0",
         )}
       >
         {/* Brand */}
