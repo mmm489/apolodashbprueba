@@ -112,7 +112,7 @@ function ResumenTab({
             <Th>Data</Th>
             <Th align="right">Vendes</Th>
             <Th align="right">Comandes</Th>
-            <Th align="right">Tiquet mitja</Th>
+            <Th align="right">Tiquet mitja s/IVA</Th>
           </tr>
         </thead>
         <tbody>
@@ -172,9 +172,9 @@ function DetalleTab({
     <div className="space-y-5">
       {/* Day summary header */}
       <div className="grid gap-3 sm:grid-cols-3">
-        <MiniStat label="Vendes totals" value={euro(report.totalSales)} />
+        <MiniStat label="Vendes s/IVA" value={euro(report.totalSales)} />
         <MiniStat label="Comandes" value={fmtNum(report.orderCount)} />
-        <MiniStat label="Tiquet mitja" value={euro(report.averageTicket)} />
+        <MiniStat label="Tiquet mitja s/IVA" value={euro(report.averageTicket)} />
       </div>
 
       {/* Products grouped by family */}

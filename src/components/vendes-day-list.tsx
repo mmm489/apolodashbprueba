@@ -75,7 +75,7 @@ export function VendesDayList({
             <th className="px-5 py-3 w-8" />
             <th className="px-5 py-3">Data</th>
             <th className="px-5 py-3 text-center">Temps</th>
-            <th className="px-5 py-3 text-right">Vendes</th>
+            <th className="px-5 py-3 text-right">Vendes s/IVA</th>
             <th className="px-5 py-3 text-right">Comandes</th>
             <th className="px-5 py-3 text-center">Articles</th>
             <th className="px-5 py-3 text-center">Hores</th>
@@ -461,7 +461,7 @@ function HourlyDetail({
                 <span className="text-[13px] font-bold text-slate-800 w-12">{h.hour}</span>
                 <span className="text-[12px] text-slate-500">{fmtNum(h.orderCount)} uds</span>
                 <span className="ml-auto flex items-center gap-3 shrink-0">
-                  <span className="text-[12px] text-slate-500">Venda: <span className="font-semibold text-emerald-700">{euro(h.sales)}</span></span>
+                  <span className="text-[12px] text-slate-500">Venda s/IVA: <span className="font-semibold text-emerald-700">{euro(h.sales)}</span></span>
                   <span className="text-[12px] text-slate-500">Prod: <span className="font-semibold text-rose-600">{euro(hourProductCost)}</span></span>
                   {hourEmpCost > 0 && <span className="text-[12px] text-slate-500">Empl: <span className="font-semibold text-violet-600">{euro(hourEmpCost)}</span></span>}
                   <span className={`rounded-lg px-2 py-0.5 text-[11px] font-semibold ${margin >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
@@ -509,7 +509,7 @@ function HourlyDetail({
         <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2 font-semibold">
           <span className="text-[13px] text-slate-700">Total dia</span>
           <div className="flex items-center gap-3">
-            <span className="text-[12px] text-emerald-700">Venda: {euro(totalSales)}</span>
+            <span className="text-[12px] text-emerald-700">Venda s/IVA: {euro(totalSales)}</span>
             <span className="text-[12px] text-rose-600">Prod: {euro(totalProductCost)}</span>
             {totalEmployeeCost > 0 && <span className="text-[12px] text-violet-600">Empl: {euro(totalEmployeeCost)}</span>}
             <span className={`rounded-lg px-2 py-0.5 text-[12px] font-bold ${totalSales - totalProductCost - totalEmployeeCost >= 0 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>

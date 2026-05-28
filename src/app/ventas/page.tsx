@@ -31,9 +31,9 @@ export default async function VentasPage({
 
       {/* KPIs */}
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Total vendes" value={euro(totals.totalSales)} color="emerald" />
+        <Metric label="Total vendes s/IVA" value={euro(totals.totalSales)} color="emerald" />
         <Metric label="Total comandes" value={fmtNum(totals.totalOrders)} color="indigo" />
-        <Metric label="Tiquet mitja" value={euro(totals.averageTicket)} color="amber" />
+        <Metric label="Tiquet mitja s/IVA" value={euro(totals.averageTicket)} color="amber" />
         <Metric label="Dies amb dades" value={String(totals.daysWithData)} color="slate" />
       </section>
 

@@ -79,7 +79,7 @@ export async function listSalesReports(from?: string, to?: string) {
     const rows = from && to
       ? await sql`
           SELECT (created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date, payment_method,
-                 COALESCE(SUM(total), 0)::float AS total_sales,
+                 COALESCE(SUM(COALESCE(total_base, total)), 0)::float AS total_sales,
                  COUNT(*)::int AS order_count
           FROM pos.orders
           WHERE (created_at AT TIME ZONE 'Europe/Madrid')::date >= ${from}::date
@@ -90,7 +90,7 @@ export async function listSalesReports(from?: string, to?: string) {
         `
       : await sql`
           SELECT (created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date, payment_method,
-                 COALESCE(SUM(total), 0)::float AS total_sales,
+                 COALESCE(SUM(COALESCE(total_base, total)), 0)::float AS total_sales,
                  COUNT(*)::int AS order_count
           FROM pos.orders
           WHERE status <> 'cancelled'
@@ -148,7 +148,7 @@ export async function listHourlySales(from?: string, to?: string) {
       ? await sql`
           SELECT (created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date,
                  EXTRACT(HOUR FROM created_at AT TIME ZONE 'Europe/Madrid')::int AS hour_num,
-                 COALESCE(SUM(total), 0)::float AS sales,
+                 COALESCE(SUM(COALESCE(total_base, total)), 0)::float AS sales,
                  COUNT(*)::int AS order_count
           FROM pos.orders
           WHERE (created_at AT TIME ZONE 'Europe/Madrid')::date >= ${from}::date
@@ -160,7 +160,7 @@ export async function listHourlySales(from?: string, to?: string) {
       : await sql`
           SELECT (created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date,
                  EXTRACT(HOUR FROM created_at AT TIME ZONE 'Europe/Madrid')::int AS hour_num,
-                 COALESCE(SUM(total), 0)::float AS sales,
+                 COALESCE(SUM(COALESCE(total_base, total)), 0)::float AS sales,
                  COUNT(*)::int AS order_count
           FROM pos.orders
           WHERE status <> 'cancelled'
@@ -206,7 +206,7 @@ export async function listHourlyProductSales(from?: string, to?: string) {
                  oi.product_id,
                  p.name AS product_name,
                  SUM(oi.qty)::float AS units,
-                 SUM(oi.qty * oi.unit_price)::float AS amount
+                 SUM(ROUND((oi.qty * oi.unit_price / NULLIF(1 + COALESCE(oi.vat_rate, 0) / 100, 0))::numeric, 2))::float AS amount
           FROM pos.order_items oi
           JOIN pos.orders o ON o.id = oi.order_id
           JOIN pos.products p ON p.id = oi.product_id
@@ -222,7 +222,7 @@ export async function listHourlyProductSales(from?: string, to?: string) {
                  oi.product_id,
                  p.name AS product_name,
                  SUM(oi.qty)::float AS units,
-                 SUM(oi.qty * oi.unit_price)::float AS amount
+                 SUM(ROUND((oi.qty * oi.unit_price / NULLIF(1 + COALESCE(oi.vat_rate, 0) / 100, 0))::numeric, 2))::float AS amount
           FROM pos.order_items oi
           JOIN pos.orders o ON o.id = oi.order_id
           JOIN pos.products p ON p.id = oi.product_id
@@ -318,7 +318,7 @@ export async function listProductSales(from?: string, to?: string) {
                  oi.product_id,
                  p.name AS product_name,
                  SUM(oi.qty)::float AS units,
-                 SUM(oi.qty * oi.unit_price)::float AS amount
+                 SUM(ROUND((oi.qty * oi.unit_price / NULLIF(1 + COALESCE(oi.vat_rate, 0) / 100, 0))::numeric, 2))::float AS amount
           FROM pos.order_items oi
           JOIN pos.orders o ON o.id = oi.order_id
           JOIN pos.products p ON p.id = oi.product_id
@@ -333,7 +333,7 @@ export async function listProductSales(from?: string, to?: string) {
                  oi.product_id,
                  p.name AS product_name,
                  SUM(oi.qty)::float AS units,
-                 SUM(oi.qty * oi.unit_price)::float AS amount
+                 SUM(ROUND((oi.qty * oi.unit_price / NULLIF(1 + COALESCE(oi.vat_rate, 0) / 100, 0))::numeric, 2))::float AS amount
           FROM pos.order_items oi
           JOIN pos.orders o ON o.id = oi.order_id
           JOIN pos.products p ON p.id = oi.product_id

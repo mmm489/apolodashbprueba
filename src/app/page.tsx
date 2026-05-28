@@ -80,7 +80,7 @@ export default async function HomePage({
       <section className="stagger-children grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <MiniStatCard
           icon={<TrendingUp className="size-4" />}
-          label="Total vendes"
+          label="Vendes s/IVA"
           value={euro(kpis.totalSales)}
           deltaPrev={cmp.deltaPreviousPct}
           deltaYoY={cmp.deltaYoYPct}
@@ -110,7 +110,7 @@ export default async function HomePage({
         />
         <MiniStatCard
           icon={<Banknote className="size-4" />}
-          label="Tiquet mitja"
+          label="Tiquet mitja s/IVA"
           value={euro(kpis.averageTicket)}
           deltaPrev={ticketDeltaPrev}
           deltaYoY={ticketDeltaYoY}
@@ -127,7 +127,7 @@ export default async function HomePage({
             <p className="mt-0.5 text-[13px] text-slate-500">Periode seleccionat</p>
           </div>
           <div className="space-y-1.5">
-            <PLRow label="Vendes totals" value={kpis.totalSales} bold />
+            <PLRow label="Vendes s/IVA" value={kpis.totalSales} bold />
             <PLRow label="Cost productes" value={-kpis.totalProductCost} indent negative />
             <PLDivider />
             <PLRow label="Marge brut" value={grossMargin} bold highlight={grossMargin >= 0 ? "green" : "red"} pct={grossMarginPct} />
