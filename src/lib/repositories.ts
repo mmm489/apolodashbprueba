@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { getSql, hasDatabase } from "@/lib/db";
+import { getSql, hasDatabase, isPosDataSource } from "@/lib/db";
 import {
   mockAlerts,
   mockDocuments,
@@ -15,6 +15,7 @@ import {
 } from "@/lib/mock-data";
 import type {
   AlertRecord,
+  CashClosingRecord,
   DocumentRecord,
   Employee,
   EmployeeShift,
@@ -33,9 +34,28 @@ import type {
 } from "@/lib/types";
 import { toNumber } from "@/lib/utils";
 
+const READ_ONLY_POS_MESSAGE = "Apolodashprueba esta conectado al POS en modo solo lectura.";
+
+function assertLegacyWritable() {
+  if (isPosDataSource()) {
+    throw new Error(READ_ONLY_POS_MESSAGE);
+  }
+}
+
+function normalizePaymentMethod(value: unknown): string {
+  const method = String(value ?? "otros").toLowerCase();
+  if (method === "cash") return "efectivo";
+  if (method === "card") return "tarjeta";
+  if (method === "manual") return "manual";
+  return method || "otros";
+}
+
 export async function listDocuments(from?: string, to?: string) {
   if (!hasDatabase()) {
     return mockDocuments;
+  }
+  if (isPosDataSource()) {
+    return [];
   }
 
   const sql = getSql();
@@ -51,6 +71,55 @@ export async function listSalesReports(from?: string, to?: string) {
   }
 
   const sql = getSql();
+  if (isPosDataSource()) {
+    const rows = from && to
+      ? await sql`
+          SELECT created_at::date AS business_date, payment_method,
+                 COALESCE(SUM(total), 0)::float AS total_sales,
+                 COUNT(*)::int AS order_count
+          FROM pos.orders
+          WHERE created_at::date >= ${from}::date
+            AND created_at::date <= ${to}::date
+            AND status NOT IN ('pending', 'cancelled')
+          GROUP BY created_at::date, payment_method
+          ORDER BY business_date DESC
+        `
+      : await sql`
+          SELECT created_at::date AS business_date, payment_method,
+                 COALESCE(SUM(total), 0)::float AS total_sales,
+                 COUNT(*)::int AS order_count
+          FROM pos.orders
+          WHERE status NOT IN ('pending', 'cancelled')
+          GROUP BY created_at::date, payment_method
+          ORDER BY business_date DESC
+          LIMIT 1200
+        `;
+
+    const byDate = new Map<string, SalesReport>();
+    for (const row of rows) {
+      const businessDate = normalizeDate(row.business_date);
+      const report = byDate.get(businessDate) ?? {
+        id: `pos-sales-${businessDate}`,
+        businessDate,
+        totalSales: 0,
+        orderCount: 0,
+        averageTicket: 0,
+        paymentMix: {},
+      };
+      const method = normalizePaymentMethod(row.payment_method);
+      const amount = toNumber(row.total_sales);
+      report.totalSales += amount;
+      report.orderCount += toNumber(row.order_count);
+      report.paymentMix[method] = (report.paymentMix[method] ?? 0) + amount;
+      byDate.set(businessDate, report);
+    }
+
+    return [...byDate.values()].map((report) => ({
+      ...report,
+      averageTicket: report.orderCount > 0 ? report.totalSales / report.orderCount : 0,
+    })) satisfies SalesReport[];
+  }
+
   const rows = from && to
     ? await sql`SELECT id, business_date, total_sales, order_count, average_ticket, payment_mix FROM sales_reports WHERE business_date >= ${from} AND business_date <= ${to} ORDER BY business_date DESC`
     : await sql`SELECT id, business_date, total_sales, order_count, average_ticket, payment_mix FROM sales_reports ORDER BY business_date DESC LIMIT 400`;
@@ -70,6 +139,45 @@ export async function listHourlySales(from?: string, to?: string) {
   }
 
   const sql = getSql();
+  if (isPosDataSource()) {
+    const rows = from && to
+      ? await sql`
+          SELECT created_at::date AS business_date,
+                 EXTRACT(HOUR FROM created_at)::int AS hour_num,
+                 COALESCE(SUM(total), 0)::float AS sales,
+                 COUNT(*)::int AS order_count
+          FROM pos.orders
+          WHERE created_at::date >= ${from}::date
+            AND created_at::date <= ${to}::date
+            AND status NOT IN ('pending', 'cancelled')
+          GROUP BY created_at::date, hour_num
+          ORDER BY business_date DESC, hour_num ASC
+        `
+      : await sql`
+          SELECT created_at::date AS business_date,
+                 EXTRACT(HOUR FROM created_at)::int AS hour_num,
+                 COALESCE(SUM(total), 0)::float AS sales,
+                 COUNT(*)::int AS order_count
+          FROM pos.orders
+          WHERE status NOT IN ('pending', 'cancelled')
+          GROUP BY created_at::date, hour_num
+          ORDER BY business_date DESC, hour_num ASC
+          LIMIT 10000
+        `;
+
+    return rows.map((row) => {
+      const businessDate = normalizeDate(row.business_date);
+      const hour = `${String(row.hour_num).padStart(2, "0")}:00`;
+      return {
+        id: `pos-hour-${businessDate}-${row.hour_num}`,
+        businessDate,
+        hour,
+        sales: toNumber(row.sales),
+        orderCount: toNumber(row.order_count),
+      };
+    }) satisfies HourlySalesEntry[];
+  }
+
   const rows = from && to
     ? await sql`SELECT id, business_date, hour_label, sales, order_count FROM hourly_sales WHERE business_date >= ${from} AND business_date <= ${to} ORDER BY business_date DESC, hour_label ASC`
     : await sql`SELECT id, business_date, hour_label, sales, order_count FROM hourly_sales ORDER BY business_date DESC, hour_label ASC LIMIT 10000`;
@@ -86,6 +194,56 @@ export async function listHourlyProductSales(from?: string, to?: string) {
   if (!hasDatabase()) return [];
 
   const sql = getSql();
+  if (isPosDataSource()) {
+    const rows = from && to
+      ? await sql`
+          SELECT o.created_at::date AS business_date,
+                 EXTRACT(HOUR FROM o.created_at)::int AS hour_num,
+                 oi.product_id,
+                 p.name AS product_name,
+                 SUM(oi.qty)::float AS units,
+                 SUM(oi.qty * oi.unit_price)::float AS amount
+          FROM pos.order_items oi
+          JOIN pos.orders o ON o.id = oi.order_id
+          JOIN pos.products p ON p.id = oi.product_id
+          WHERE o.created_at::date >= ${from}::date
+            AND o.created_at::date <= ${to}::date
+            AND o.status NOT IN ('pending', 'cancelled')
+          GROUP BY o.created_at::date, hour_num, oi.product_id, p.name
+          ORDER BY business_date DESC, hour_num ASC, amount DESC
+        `
+      : await sql`
+          SELECT o.created_at::date AS business_date,
+                 EXTRACT(HOUR FROM o.created_at)::int AS hour_num,
+                 oi.product_id,
+                 p.name AS product_name,
+                 SUM(oi.qty)::float AS units,
+                 SUM(oi.qty * oi.unit_price)::float AS amount
+          FROM pos.order_items oi
+          JOIN pos.orders o ON o.id = oi.order_id
+          JOIN pos.products p ON p.id = oi.product_id
+          WHERE o.status NOT IN ('pending', 'cancelled')
+          GROUP BY o.created_at::date, hour_num, oi.product_id, p.name
+          ORDER BY business_date DESC, hour_num ASC, amount DESC
+          LIMIT 50000
+        `;
+
+    return rows.map((row) => {
+      const businessDate = normalizeDate(row.business_date);
+      const hourLabel = `${String(row.hour_num).padStart(2, "0")}:00`;
+      const productCode = String(row.product_id);
+      return {
+        id: `pos-hour-product-${businessDate}-${row.hour_num}-${productCode}`,
+        businessDate,
+        hourLabel,
+        productCode,
+        productName: String(row.product_name),
+        units: toNumber(row.units),
+        amount: toNumber(row.amount),
+      };
+    }) satisfies HourlyProductSale[];
+  }
+
   const rows = from && to
     ? await sql`SELECT id, business_date, hour_label, product_code, product_name, units, amount FROM hourly_product_sales WHERE business_date >= ${from} AND business_date <= ${to} ORDER BY business_date DESC, hour_label ASC`
     : await sql`SELECT id, business_date, hour_label, product_code, product_name, units, amount FROM hourly_product_sales ORDER BY business_date DESC, hour_label ASC LIMIT 50000`;
@@ -103,6 +261,9 @@ export async function listHourlyProductSales(from?: string, to?: string) {
 export async function listInvoices(from?: string, to?: string) {
   if (!hasDatabase()) {
     return mockInvoices;
+  }
+  if (isPosDataSource()) {
+    return [];
   }
 
   const sql = getSql();
@@ -122,6 +283,7 @@ export async function listInvoices(from?: string, to?: string) {
 
 export async function listInvoiceLines(from?: string, to?: string) {
   if (!hasDatabase()) return [];
+  if (isPosDataSource()) return [];
 
   const sql = getSql();
   const rows = from && to
@@ -145,6 +307,53 @@ export async function listProductSales(from?: string, to?: string) {
   }
 
   const sql = getSql();
+  if (isPosDataSource()) {
+    const rows = from && to
+      ? await sql`
+          SELECT o.created_at::date AS business_date,
+                 oi.product_id,
+                 p.name AS product_name,
+                 SUM(oi.qty)::float AS units,
+                 SUM(oi.qty * oi.unit_price)::float AS amount
+          FROM pos.order_items oi
+          JOIN pos.orders o ON o.id = oi.order_id
+          JOIN pos.products p ON p.id = oi.product_id
+          WHERE o.created_at::date >= ${from}::date
+            AND o.created_at::date <= ${to}::date
+            AND o.status NOT IN ('pending', 'cancelled')
+          GROUP BY o.created_at::date, oi.product_id, p.name
+          ORDER BY business_date DESC, amount DESC
+        `
+      : await sql`
+          SELECT o.created_at::date AS business_date,
+                 oi.product_id,
+                 p.name AS product_name,
+                 SUM(oi.qty)::float AS units,
+                 SUM(oi.qty * oi.unit_price)::float AS amount
+          FROM pos.order_items oi
+          JOIN pos.orders o ON o.id = oi.order_id
+          JOIN pos.products p ON p.id = oi.product_id
+          WHERE o.status NOT IN ('pending', 'cancelled')
+          GROUP BY o.created_at::date, oi.product_id, p.name
+          ORDER BY business_date DESC, amount DESC
+          LIMIT 20000
+        `;
+
+    return rows.map((row) => {
+      const businessDate = normalizeDate(row.business_date);
+      const productCode = String(row.product_id);
+      return {
+        id: `pos-product-${businessDate}-${productCode}`,
+        salesReportId: `pos-sales-${businessDate}`,
+        businessDate,
+        productCode,
+        productName: String(row.product_name),
+        units: toNumber(row.units),
+        amount: toNumber(row.amount),
+      };
+    }) satisfies ProductSaleRecord[];
+  }
+
   const rows = from && to
     ? await sql`SELECT id, sales_report_id, business_date, product_code, product_name, units, amount FROM product_sales WHERE business_date >= ${from} AND business_date <= ${to} ORDER BY business_date DESC`
     : await sql`SELECT id, sales_report_id, business_date, product_code, product_name, units, amount FROM product_sales ORDER BY business_date DESC LIMIT 20000`;
@@ -159,9 +368,65 @@ export async function listProductSales(from?: string, to?: string) {
   })) satisfies ProductSaleRecord[];
 }
 
+export async function listCashClosings(from?: string, to?: string) {
+  if (!hasDatabase() || !isPosDataSource()) {
+    return [];
+  }
+
+  const sql = getSql();
+  const rows = from && to
+    ? await sql`
+        SELECT c.id, c.z_number, c.z_label, c.opened_at, c.closed_at,
+               c.total_cash, c.total_card, c.total_sales,
+               c.ticket_count, c.cash_count, c.card_count,
+               c.cancelled_count, c.total_refunded,
+               c.first_invoice, c.last_invoice,
+               e.name AS employee_name
+        FROM pos.cash_closings c
+        LEFT JOIN pos.employees e ON e.id = c.employee_id
+        WHERE c.closed_at::date >= ${from}::date
+          AND c.closed_at::date <= ${to}::date
+        ORDER BY c.closed_at DESC
+      `
+    : await sql`
+        SELECT c.id, c.z_number, c.z_label, c.opened_at, c.closed_at,
+               c.total_cash, c.total_card, c.total_sales,
+               c.ticket_count, c.cash_count, c.card_count,
+               c.cancelled_count, c.total_refunded,
+               c.first_invoice, c.last_invoice,
+               e.name AS employee_name
+        FROM pos.cash_closings c
+        LEFT JOIN pos.employees e ON e.id = c.employee_id
+        ORDER BY c.closed_at DESC
+        LIMIT 200
+      `;
+
+  return rows.map((row) => ({
+    id: String(row.id),
+    zNumber: row.z_number == null ? null : Number(row.z_number),
+    zLabel: row.z_label ? String(row.z_label) : `Tancament ${row.id}`,
+    openedAt: new Date(String(row.opened_at)).toISOString(),
+    closedAt: new Date(String(row.closed_at)).toISOString(),
+    totalCash: toNumber(row.total_cash),
+    totalCard: toNumber(row.total_card),
+    totalSales: toNumber(row.total_sales),
+    ticketCount: toNumber(row.ticket_count),
+    cashCount: toNumber(row.cash_count),
+    cardCount: toNumber(row.card_count),
+    cancelledCount: toNumber(row.cancelled_count),
+    totalRefunded: toNumber(row.total_refunded),
+    firstInvoice: row.first_invoice ? String(row.first_invoice) : null,
+    lastInvoice: row.last_invoice ? String(row.last_invoice) : null,
+    employeeName: row.employee_name ? String(row.employee_name) : null,
+  })) satisfies CashClosingRecord[];
+}
+
 export async function listPayrolls(from?: string, to?: string) {
   if (!hasDatabase()) {
     return mockPayrolls;
+  }
+  if (isPosDataSource()) {
+    return [];
   }
 
   const sql = getSql();
@@ -183,6 +448,9 @@ export async function listAlerts() {
   if (!hasDatabase()) {
     return mockAlerts;
   }
+  if (isPosDataSource()) {
+    return [];
+  }
 
   const sql = getSql();
   const rows = await sql`SELECT id, title, description, severity, created_at FROM alerts ORDER BY created_at DESC LIMIT 10`;
@@ -199,6 +467,9 @@ export async function listTelegramUsers() {
   if (!hasDatabase()) {
     return mockTelegramUsers;
   }
+  if (isPosDataSource()) {
+    return [];
+  }
 
   const sql = getSql();
   const rows = await sql`SELECT id, telegram_user_id, username, display_name, is_active FROM telegram_users WHERE is_active = TRUE ORDER BY created_at ASC`;
@@ -214,6 +485,9 @@ export async function listTelegramUsers() {
 export async function listTelegramMessages() {
   if (!hasDatabase()) {
     return mockTelegramMessages;
+  }
+  if (isPosDataSource()) {
+    return [];
   }
 
   const sql = getSql();
@@ -234,6 +508,23 @@ export async function listProductCosts() {
   if (!hasDatabase()) return [];
 
   const sql = getSql();
+  if (isPosDataSource()) {
+    const rows = await sql`
+      SELECT p.id, p.name AS product_name, COALESCE(c.name, 'Sense categoria') AS category
+      FROM pos.products p
+      LEFT JOIN pos.categories c ON c.id = p.category_id
+      WHERE p.active = TRUE
+      ORDER BY c.sort_order ASC NULLS LAST, p.sort_order ASC, p.name ASC
+    `;
+    return rows.map((row) => ({
+      id: String(row.id),
+      productCode: String(row.id),
+      productName: String(row.product_name),
+      category: String(row.category),
+      unitCost: 0,
+    })) satisfies ProductCost[];
+  }
+
   const rows = await sql`SELECT id, product_code, product_name, category, unit_cost FROM product_costs ORDER BY category ASC, product_name ASC`;
   return rows.map((row) => ({
     id: String(row.id),
@@ -256,6 +547,7 @@ export async function upsertProductCost(input: {
   effectiveFrom?: string; // YYYY-MM-DD, defaults to today
 }) {
   if (!hasDatabase()) return;
+  assertLegacyWritable();
 
   const sql = getSql();
   const effective = input.effectiveFrom ?? todayIsoLocal();
@@ -301,6 +593,7 @@ export async function upsertProductCost(input: {
  * product detail UI so the owner can audit when a price changed. */
 export async function listProductCostHistory(productCode: string) {
   if (!hasDatabase()) return [];
+  if (isPosDataSource()) return [];
   const sql = getSql();
   const rows = await sql`
     SELECT id, product_code, product_name, unit_cost, valid_from, valid_until, created_at
@@ -324,6 +617,7 @@ export async function listProductCostHistory(productCode: string) {
  * without issuing one query per sale. */
 export async function listAllProductCostHistory() {
   if (!hasDatabase()) return [];
+  if (isPosDataSource()) return [];
   const sql = getSql();
   const rows = await sql`
     SELECT id, product_code, product_name, unit_cost, valid_from, valid_until, created_at
@@ -348,6 +642,7 @@ export async function listAllProductCostHistory() {
  * existing food-cost calculations don't change value. */
 export async function backfillProductCostHistoryOnce() {
   if (!hasDatabase()) return { inserted: 0 };
+  assertLegacyWritable();
   const sql = getSql();
   const result = await sql`
     INSERT INTO product_cost_history (id, product_code, product_name, unit_cost, valid_from, valid_until)
@@ -380,6 +675,25 @@ export async function listEmployees() {
   }
 
   const sql = getSql();
+  if (isPosDataSource()) {
+    const rows = await sql`
+      SELECT id, name, active
+      FROM pos.employees
+      WHERE active = TRUE
+      ORDER BY name ASC
+    `;
+    return rows.map((row) => ({
+      id: String(row.id),
+      name: String(row.name),
+      shiftStart: "00:00",
+      shiftEnd: "00:00",
+      workingDaysPerMonth: 0,
+      hourlyCost: 0,
+      isActive: Boolean(row.active),
+      createdAt: "1970-01-01T00:00:00.000Z",
+    })) satisfies Employee[];
+  }
+
   const rows = await sql`SELECT id, name, shift_start, shift_end, working_days_per_month, hourly_cost, is_active, created_at FROM employees WHERE is_active = TRUE ORDER BY name ASC`;
   return rows.map((row) => ({
     id: String(row.id),
@@ -405,6 +719,7 @@ export async function createEmployee(input: {
   if (!hasDatabase()) {
     return { id, ...input, isActive: true, createdAt: new Date().toISOString() } satisfies Employee;
   }
+  assertLegacyWritable();
 
   const sql = getSql();
   await sql`
@@ -420,6 +735,7 @@ export async function updateEmployee(
   input: { name: string; shiftStart: string; shiftEnd: string; workingDaysPerMonth: number; hourlyCost: number },
 ) {
   if (!hasDatabase()) return;
+  assertLegacyWritable();
 
   const sql = getSql();
   await sql`
@@ -431,6 +747,7 @@ export async function updateEmployee(
 
 export async function deleteEmployee(id: string) {
   if (!hasDatabase()) return;
+  assertLegacyWritable();
 
   const sql = getSql();
   await sql`UPDATE employees SET is_active = FALSE WHERE id = ${id}`;
@@ -440,6 +757,7 @@ export async function deleteEmployee(id: string) {
 
 export async function listEmployeeShifts(from?: string, to?: string) {
   if (!hasDatabase()) return [];
+  if (isPosDataSource()) return [];
 
   const sql = getSql();
   const rows = from && to
@@ -462,6 +780,7 @@ export async function upsertEmployeeShift(input: {
   shiftEnd: string;
 }) {
   if (!hasDatabase()) return;
+  assertLegacyWritable();
 
   const sql = getSql();
   const id = randomUUID();
@@ -475,6 +794,7 @@ export async function upsertEmployeeShift(input: {
 
 export async function deleteEmployeeShift(employeeId: string, businessDate: string) {
   if (!hasDatabase()) return;
+  assertLegacyWritable();
 
   const sql = getSql();
   await sql`DELETE FROM employee_shifts WHERE employee_id = ${employeeId} AND business_date = ${businessDate}`;
@@ -489,6 +809,9 @@ export async function getSyncState(syncKey: string) {
   if (!hasDatabase()) {
     return null;
   }
+  if (isPosDataSource()) {
+    return null;
+  }
 
   const sql = getSql();
   const rows = await sql`SELECT sync_value FROM sync_state WHERE sync_key = ${syncKey} LIMIT 1`;
@@ -499,6 +822,7 @@ export async function setSyncState(syncKey: string, syncValue: string) {
   if (!hasDatabase()) {
     return;
   }
+  assertLegacyWritable();
 
   const sql = getSql();
   await sql`
@@ -519,6 +843,7 @@ export async function storeTelegramMessage(input: {
   if (!hasDatabase()) {
     return;
   }
+  assertLegacyWritable();
 
   const sql = getSql();
   await sql`
@@ -532,6 +857,7 @@ export async function storeTelegramMessage(input: {
  * remembers context from the previous turn. */
 export async function listRecentMessagesForChat(chatId: string, limit = 6) {
   if (!hasDatabase()) return [];
+  if (isPosDataSource()) return [];
 
   const sql = getSql();
   const rows = await sql`
@@ -552,6 +878,9 @@ export async function listRecentMessagesForChat(chatId: string, limit = 6) {
 
 export async function findDocumentByHash(contentHash: string) {
   if (!hasDatabase()) {
+    return null;
+  }
+  if (isPosDataSource()) {
     return null;
   }
 
@@ -585,6 +914,7 @@ export async function createDocument(input: {
   if (!hasDatabase()) {
     return document;
   }
+  assertLegacyWritable();
 
   const sql = getSql();
   await sql`
@@ -615,6 +945,7 @@ export async function updateDocumentProcessingState(input: {
   if (!hasDatabase()) {
     return;
   }
+  assertLegacyWritable();
 
   const sql = getSql();
   await sql`
@@ -632,6 +963,7 @@ export async function persistExtraction(documentId: string, result: ExtractionRe
   if (!hasDatabase()) {
     return "no-database";
   }
+  assertLegacyWritable();
 
   const sql = getSql();
   console.log(`[persistExtraction] docId=${documentId}, type=${result.documentType}, confidence=${result.confidence}`);

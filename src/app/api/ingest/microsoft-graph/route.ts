@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { isPosDataSource } from "@/lib/db";
 import { env } from "@/lib/env";
 import { syncOneDrivePdfs } from "@/lib/ingestion/microsoft-graph-sync";
 
@@ -16,6 +17,10 @@ function isAuthorized(request: Request) {
 }
 
 export async function POST(request: Request) {
+  if (isPosDataSource()) {
+    return NextResponse.json({ error: "Dashboard en modo solo lectura POS" }, { status: 405 });
+  }
+
   if (!isAuthorized(request)) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }

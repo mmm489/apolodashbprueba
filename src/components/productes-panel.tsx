@@ -41,7 +41,7 @@ function groupByCategory(products: ProductCost[]): CategoryGroup[] {
 
 /* ---- Component ---- */
 
-export function ProductesPanel({ products }: { products: ProductCost[] }) {
+export function ProductesPanel({ products, readOnly = false }: { products: ProductCost[]; readOnly?: boolean }) {
   const categories = groupByCategory(products);
   const totalProducts = products.length;
   const withCost = products.filter((p) => p.unitCost > 0).length;
@@ -51,14 +51,14 @@ export function ProductesPanel({ products }: { products: ProductCost[] }) {
       {/* KPIs */}
       <section className="grid gap-4 sm:grid-cols-3">
         <MiniCard label="Total productes" value={String(totalProducts)} />
-        <MiniCard label="Amb cost definit" value={`${withCost} / ${totalProducts}`} />
+        <MiniCard label={readOnly ? "Origen" : "Amb cost definit"} value={readOnly ? "POS" : `${withCost} / ${totalProducts}`} />
         <MiniCard label="Categories" value={String(categories.length)} />
       </section>
 
       {/* Category list */}
       <div className="space-y-3">
         {categories.map((cat) => (
-          <CategorySection key={cat.name} category={cat} />
+          <CategorySection key={cat.name} category={cat} readOnly={readOnly} />
         ))}
       </div>
 
@@ -73,7 +73,7 @@ export function ProductesPanel({ products }: { products: ProductCost[] }) {
 
 /* ---- Category section ---- */
 
-function CategorySection({ category }: { category: CategoryGroup }) {
+function CategorySection({ category, readOnly }: { category: CategoryGroup; readOnly: boolean }) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -90,7 +90,7 @@ function CategorySection({ category }: { category: CategoryGroup }) {
           {category.products.length} productes
         </span>
         <span className="ml-auto text-[12px] text-slate-400">
-          {category.withCost}/{category.products.length} amb cost
+          {readOnly ? "lectura POS" : `${category.withCost}/${category.products.length} amb cost`}
         </span>
       </button>
 
@@ -101,7 +101,7 @@ function CategorySection({ category }: { category: CategoryGroup }) {
               <tr className="bg-slate-50/80 text-[11px] font-medium uppercase tracking-wider text-slate-500">
                 <th className="px-5 py-2.5 text-left">Codi</th>
                 <th className="px-5 py-2.5 text-left">Producte</th>
-                <th className="px-5 py-2.5 text-right w-32">Cost unitari (EUR)</th>
+                <th className="px-5 py-2.5 text-right w-32">{readOnly ? "Origen" : "Cost unitari (EUR)"}</th>
                 <th className="px-5 py-2.5 w-12" />
               </tr>
             </thead>
@@ -109,7 +109,7 @@ function CategorySection({ category }: { category: CategoryGroup }) {
               {category.products
                 .sort((a, b) => a.productName.localeCompare(b.productName))
                 .map((p) => (
-                  <ProductRow key={p.id} product={p} categoryName={category.name} />
+                  <ProductRow key={p.id} product={p} categoryName={category.name} readOnly={readOnly} />
                 ))}
             </tbody>
           </table>
@@ -126,7 +126,7 @@ function todayIso() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-function ProductRow({ product, categoryName }: { product: ProductCost; categoryName: string }) {
+function ProductRow({ product, categoryName, readOnly }: { product: ProductCost; categoryName: string; readOnly: boolean }) {
   const router = useRouter();
   const [cost, setCost] = useState(product.unitCost);
   const [effectiveFrom, setEffectiveFrom] = useState(todayIso());
@@ -157,7 +157,12 @@ function ProductRow({ product, categoryName }: { product: ProductCost; categoryN
         <td className="px-5 py-2 text-[13px] text-slate-400">{product.productCode}</td>
         <td className="px-5 py-2 text-[13px] font-medium text-slate-800">{product.productName}</td>
         <td className="px-5 py-2 text-right">
-          <div className="inline-flex items-center gap-1">
+          {readOnly ? (
+            <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
+              POS
+            </span>
+          ) : (
+            <div className="inline-flex items-center gap-1">
             <input
               type="number"
               min={0}
@@ -182,10 +187,12 @@ function ProductRow({ product, categoryName }: { product: ProductCost; categoryN
                 className="w-32 rounded-lg border border-indigo-200 bg-white px-2 py-1 text-[11px] text-slate-700 outline-none focus:border-indigo-300"
               />
             )}
-          </div>
+            </div>
+          )}
         </td>
         <td className="px-5 py-2">
-          <div className="flex items-center justify-end gap-1">
+          {!readOnly && (
+            <div className="flex items-center justify-end gap-1">
             <button
               type="button"
               onClick={() => setShowHistory((v) => !v)}
@@ -205,7 +212,8 @@ function ProductRow({ product, categoryName }: { product: ProductCost; categoryN
                 <Save className="size-4" />
               </button>
             )}
-          </div>
+            </div>
+          )}
         </td>
       </tr>
       {showHistory && <CostHistoryRow productCode={product.productCode} />}

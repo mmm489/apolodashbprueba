@@ -28,6 +28,25 @@ export interface SalesReport {
   paymentMix: Record<string, number>;
 }
 
+export interface CashClosingRecord {
+  id: string;
+  zNumber: number | null;
+  zLabel: string;
+  openedAt: string;
+  closedAt: string;
+  totalCash: number;
+  totalCard: number;
+  totalSales: number;
+  ticketCount: number;
+  cashCount: number;
+  cardCount: number;
+  cancelledCount: number;
+  totalRefunded: number;
+  firstInvoice: string | null;
+  lastInvoice: string | null;
+  employeeName: string | null;
+}
+
 export interface ProductSaleRecord {
   id: string;
   salesReportId: string;

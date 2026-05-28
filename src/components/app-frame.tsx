@@ -7,6 +7,7 @@ import {
   Bell,
   ChevronLeft,
   ChevronRight,
+  ClipboardCheck,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -24,6 +25,7 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { href: "/", label: "Dashboard", section: "General", icon: LayoutDashboard },
   { href: "/ventas", label: "Vendes", section: "General", icon: ShoppingBag },
+  { href: "/cierres", label: "Tancaments", section: "General", icon: ClipboardCheck },
   { href: "/gastos", label: "Despeses", section: "General", icon: Receipt },
   { href: "/empleados", label: "Empleats", section: "General", icon: Users },
   { href: "/productes", label: "Productes", section: "General", icon: Package },

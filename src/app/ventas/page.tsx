@@ -3,6 +3,9 @@ import { DateFilterBar } from "@/components/date-filter-bar";
 import { VendesDayList } from "@/components/vendes-day-list";
 import { VendesSummary } from "@/components/vendes-summary";
 import { getSalesWorkspace } from "@/lib/analytics";
+import { isPosDataSource } from "@/lib/db";
+
+export const dynamic = "force-dynamic";
 
 export default async function VentasPage({
   searchParams,
@@ -15,6 +18,7 @@ export default async function VentasPage({
     from: firstValue(params?.from),
     to: firstValue(params?.to),
   });
+  const readOnly = isPosDataSource();
 
   const { dayStatuses, productSales, hourlySales, hourlyProductSales, productCosts, employeeShifts, employees, topProducts, totals, filter } = workspace;
 
@@ -47,6 +51,7 @@ export default async function VentasPage({
         productCosts={productCosts}
         employeeShifts={employeeShifts}
         employees={employees}
+        readOnly={readOnly}
       />
     </AppFrame>
   );

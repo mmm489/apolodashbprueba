@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 
+import { isPosDataSource } from "@/lib/db";
 import { ingestPdfBuffer } from "@/lib/ingestion/service";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  if (isPosDataSource()) {
+    return NextResponse.json({ error: "Dashboard en modo solo lectura POS" }, { status: 405 });
+  }
+
   try {
     const formData = await request.formData();
     const entries = formData.getAll("files");

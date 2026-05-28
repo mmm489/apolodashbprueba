@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { isPosDataSource } from "@/lib/db";
 import { deleteEmployeeShift, listEmployeeShifts, upsertEmployeeShift } from "@/lib/repositories";
 
 export async function GET(request: Request) {
@@ -11,6 +12,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  if (isPosDataSource()) {
+    return NextResponse.json({ error: "Dashboard en modo solo lectura POS" }, { status: 405 });
+  }
+
   const body = await request.json();
   const { employeeId, businessDate, shiftStart, shiftEnd } = body;
 
@@ -29,6 +34,10 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  if (isPosDataSource()) {
+    return NextResponse.json({ error: "Dashboard en modo solo lectura POS" }, { status: 405 });
+  }
+
   const body = await request.json();
   const { employeeId, businessDate } = body;
 

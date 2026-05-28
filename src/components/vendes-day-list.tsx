@@ -42,6 +42,7 @@ export function VendesDayList({
   productCosts,
   employeeShifts,
   employees,
+  readOnly = false,
 }: {
   dayStatuses: DayStatus[];
   productSales: ProductSaleRecord[];
@@ -50,6 +51,7 @@ export function VendesDayList({
   productCosts: ProductCost[];
   employeeShifts: EmployeeShift[];
   employees: Employee[];
+  readOnly?: boolean;
 }) {
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
   const [shiftsModalDate, setShiftsModalDate] = useState<string | null>(null);
@@ -57,7 +59,7 @@ export function VendesDayList({
   return (
     <>
     {/* Shifts modal */}
-    {shiftsModalDate && (
+    {shiftsModalDate && !readOnly && (
       <ShiftsModal
         date={shiftsModalDate}
         shifts={employeeShifts.filter((s) => s.businessDate === shiftsModalDate)}
@@ -101,6 +103,7 @@ export function VendesDayList({
                 productCosts={productCosts}
                 dayShifts={dayShifts}
                 employees={employees}
+                readOnly={readOnly}
               />
             );
           })}
@@ -131,6 +134,7 @@ function DayRow({
   productCosts,
   dayShifts,
   employees,
+  readOnly,
 }: {
   day: DayStatus;
   isExpanded: boolean;
@@ -142,6 +146,7 @@ function DayRow({
   productCosts: ProductCost[];
   dayShifts: EmployeeShift[];
   employees: Employee[];
+  readOnly: boolean;
 }) {
   const costMap = new Map<string, number>();
   for (const pc of productCosts) costMap.set(pc.productCode, pc.unitCost);
@@ -181,22 +186,28 @@ function DayRow({
           <StatusBadge ok={day.hasHourly} />
         </td>
         <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-          <div className="flex items-center justify-end gap-1">
-            <UploadButton label="Articles" date={day.date} expectedType="articles" alreadyUploaded={day.hasArticles} />
-            <UploadButton label="Hores" date={day.date} expectedType="hores" alreadyUploaded={day.hasHourly} />
-            <button
-              type="button"
-              onClick={onOpenShifts}
-              className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition ${
-                dayShifts.length > 0
-                  ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                  : "bg-violet-50 text-violet-700 hover:bg-violet-100"
-              }`}
-            >
-              <Users className="size-3" />
-              {dayShifts.length > 0 ? `${dayShifts.length} empleats` : "Empleats"}
-            </button>
-          </div>
+          {readOnly ? (
+            <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
+              POS
+            </span>
+          ) : (
+            <div className="flex items-center justify-end gap-1">
+              <UploadButton label="Articles" date={day.date} expectedType="articles" alreadyUploaded={day.hasArticles} />
+              <UploadButton label="Hores" date={day.date} expectedType="hores" alreadyUploaded={day.hasHourly} />
+              <button
+                type="button"
+                onClick={onOpenShifts}
+                className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition ${
+                  dayShifts.length > 0
+                    ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                    : "bg-violet-50 text-violet-700 hover:bg-violet-100"
+                }`}
+              >
+                <Users className="size-3" />
+                {dayShifts.length > 0 ? `${dayShifts.length} empleats` : "Empleats"}
+              </button>
+            </div>
+          )}
         </td>
       </tr>
 

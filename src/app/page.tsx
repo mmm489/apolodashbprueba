@@ -6,6 +6,8 @@ import { DonutBreakdown } from "@/components/donut-breakdown";
 import { SalesBars } from "@/components/sales-bars";
 import { getFinancialWorkspace } from "@/lib/analytics";
 
+export const dynamic = "force-dynamic";
+
 export default async function HomePage({
   searchParams,
 }: {

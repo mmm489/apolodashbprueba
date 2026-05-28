@@ -6,6 +6,8 @@ import { SectionCard } from "@/components/section-card";
 import { UploadPanel } from "@/components/upload-panel";
 import { getExpensesWorkspace } from "@/lib/analytics";
 
+export const dynamic = "force-dynamic";
+
 export default async function GastosPage({
   searchParams,
 }: {

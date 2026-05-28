@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { isPosDataSource } from "@/lib/db";
 import { listProductCosts, listProductCostHistory, upsertProductCost } from "@/lib/repositories";
 
 export async function GET(request: Request) {
@@ -14,6 +15,10 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
+  if (isPosDataSource()) {
+    return NextResponse.json({ error: "Dashboard en modo solo lectura POS" }, { status: 405 });
+  }
+
   const body = await request.json();
   const { productCode, productName, category, unitCost, effectiveFrom } = body;
 

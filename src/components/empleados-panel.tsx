@@ -14,7 +14,7 @@ function parseHours(start: string, end: string) {
 
 const emptyForm = { name: "", hourlyCost: 0, shiftStart: "09:00", shiftEnd: "17:00", workingDaysPerMonth: 22 };
 
-export function EmpleadosPanel({ employees }: { employees: Employee[] }) {
+export function EmpleadosPanel({ employees, readOnly = false }: { employees: Employee[]; readOnly?: boolean }) {
   const router = useRouter();
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -72,24 +72,30 @@ export function EmpleadosPanel({ employees }: { employees: Employee[] }) {
       {/* KPI cards */}
       <section className="grid gap-4 sm:grid-cols-2">
         <MiniCard label="Empleats actius" value={String(totalEmployees)} />
-        <MiniCard label="Cost mitja/hora" value={totalEmployees > 0 ? `${(employees.reduce((s, e) => s + e.hourlyCost, 0) / totalEmployees).toFixed(2)} €/h` : "—"} />
+        <MiniCard label={readOnly ? "Origen" : "Cost mitja/hora"} value={readOnly ? "POS" : totalEmployees > 0 ? `${(employees.reduce((s, e) => s + e.hourlyCost, 0) / totalEmployees).toFixed(2)} EUR/h` : "--"} />
       </section>
 
       {/* Actions */}
       <div className="flex items-center justify-between">
         <p className="text-[13px] text-slate-500">{totalEmployees} empleat{totalEmployees !== 1 ? "s" : ""} registrat{totalEmployees !== 1 ? "s" : ""}</p>
-        <button
-          type="button"
-          onClick={() => { setForm(emptyForm); setEditingId(null); setShowForm(!showForm); }}
-          className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-indigo-700"
-        >
-          <Plus className="size-4" />
-          Nou empleat
-        </button>
+        {readOnly ? (
+          <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-[12px] font-medium text-emerald-700">
+            Mode lectura POS
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => { setForm(emptyForm); setEditingId(null); setShowForm(!showForm); }}
+            className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-[13px] font-medium text-white transition hover:bg-indigo-700"
+          >
+            <Plus className="size-4" />
+            Nou empleat
+          </button>
+        )}
       </div>
 
       {/* Form */}
-      {showForm && (
+      {showForm && !readOnly && (
         <form
           onSubmit={handleSubmit}
           className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm"
@@ -148,14 +154,14 @@ export function EmpleadosPanel({ employees }: { employees: Employee[] }) {
           <thead>
             <tr className="border-b border-[var(--line)] bg-slate-50/80 text-left text-[12px] font-medium uppercase tracking-wider text-slate-500">
               <th className="px-5 py-3">Nom</th>
-              <th className="px-5 py-3 text-right">Cost/hora</th>
-              <th className="px-5 py-3 text-right">Accions</th>
+              <th className="px-5 py-3 text-right">{readOnly ? "Estat" : "Cost/hora"}</th>
+              {!readOnly && <th className="px-5 py-3 text-right">Accions</th>}
             </tr>
           </thead>
           <tbody>
             {employees.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-5 py-8 text-center text-slate-400">
+                <td colSpan={readOnly ? 2 : 3} className="px-5 py-8 text-center text-slate-400">
                   No hi ha empleats registrats. Fes clic a &quot;Nou empleat&quot; per comencar.
                 </td>
               </tr>
@@ -164,27 +170,37 @@ export function EmpleadosPanel({ employees }: { employees: Employee[] }) {
               return (
                 <tr key={emp.id} className="border-b border-[var(--line)] transition hover:bg-slate-50/50">
                   <td className="px-5 py-3 font-medium text-slate-900">{emp.name}</td>
-                  <td className="px-5 py-3 text-right text-slate-600">{emp.hourlyCost.toFixed(2)} €/h</td>
-                  <td className="px-5 py-3 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        type="button"
-                        onClick={() => startEdit(emp)}
-                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-indigo-50 hover:text-indigo-600"
-                        title="Editar"
-                      >
-                        <Pencil className="size-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(emp.id)}
-                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
-                        title="Eliminar"
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
-                    </div>
+                  <td className="px-5 py-3 text-right text-slate-600">
+                    {readOnly ? (
+                      <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
+                        Actiu
+                      </span>
+                    ) : (
+                      `${emp.hourlyCost.toFixed(2)} EUR/h`
+                    )}
                   </td>
+                  {!readOnly && (
+                    <td className="px-5 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => startEdit(emp)}
+                          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-indigo-50 hover:text-indigo-600"
+                          title="Editar"
+                        >
+                          <Pencil className="size-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(emp.id)}
+                          className="rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                          title="Eliminar"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
               );
             })}
