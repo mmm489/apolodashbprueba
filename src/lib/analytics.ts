@@ -386,6 +386,9 @@ export async function getSalesWorkspace(input?: {
   const hourlyDates = new Set<string>();
   for (const h of scopedHourly) hourlyDates.add(h.businessDate);
 
+  const productDates = new Set<string>();
+  for (const p of scopedProducts) productDates.add(p.businessDate);
+
   // Fetch weather data for the date range (Salou, Tarragona)
   const weatherMap = await fetchWeatherData(filter.from, filter.to);
 
@@ -399,7 +402,7 @@ export async function getSalesWorkspace(input?: {
       totalSales: report?.totalSales ?? null,
       orderCount: report?.orderCount ?? null,
       averageTicket: report?.averageTicket ?? null,
-      hasArticles: salesByDate.has(dateStr),
+      hasArticles: productDates.has(dateStr),
       hasHourly: hourlyDates.has(dateStr),
       weather: weatherMap.get(dateStr) ?? null,
     });

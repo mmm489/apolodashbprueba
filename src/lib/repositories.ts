@@ -84,7 +84,7 @@ export async function listSalesReports(from?: string, to?: string) {
           FROM pos.orders
           WHERE created_at::date >= ${from}::date
             AND created_at::date <= ${to}::date
-            AND status NOT IN ('pending', 'cancelled')
+            AND status <> 'cancelled'
           GROUP BY created_at::date, payment_method
           ORDER BY business_date DESC
         `
@@ -93,7 +93,7 @@ export async function listSalesReports(from?: string, to?: string) {
                  COALESCE(SUM(total), 0)::float AS total_sales,
                  COUNT(*)::int AS order_count
           FROM pos.orders
-          WHERE status NOT IN ('pending', 'cancelled')
+          WHERE status <> 'cancelled'
           GROUP BY created_at::date, payment_method
           ORDER BY business_date DESC
           LIMIT 1200
@@ -153,7 +153,7 @@ export async function listHourlySales(from?: string, to?: string) {
           FROM pos.orders
           WHERE created_at::date >= ${from}::date
             AND created_at::date <= ${to}::date
-            AND status NOT IN ('pending', 'cancelled')
+            AND status <> 'cancelled'
           GROUP BY created_at::date, hour_num
           ORDER BY business_date DESC, hour_num ASC
         `
@@ -163,7 +163,7 @@ export async function listHourlySales(from?: string, to?: string) {
                  COALESCE(SUM(total), 0)::float AS sales,
                  COUNT(*)::int AS order_count
           FROM pos.orders
-          WHERE status NOT IN ('pending', 'cancelled')
+          WHERE status <> 'cancelled'
           GROUP BY created_at::date, hour_num
           ORDER BY business_date DESC, hour_num ASC
           LIMIT 10000
@@ -212,7 +212,7 @@ export async function listHourlyProductSales(from?: string, to?: string) {
           JOIN pos.products p ON p.id = oi.product_id
           WHERE o.created_at::date >= ${from}::date
             AND o.created_at::date <= ${to}::date
-            AND o.status NOT IN ('pending', 'cancelled')
+            AND o.status <> 'cancelled'
           GROUP BY o.created_at::date, hour_num, oi.product_id, p.name
           ORDER BY business_date DESC, hour_num ASC, amount DESC
         `
@@ -226,7 +226,7 @@ export async function listHourlyProductSales(from?: string, to?: string) {
           FROM pos.order_items oi
           JOIN pos.orders o ON o.id = oi.order_id
           JOIN pos.products p ON p.id = oi.product_id
-          WHERE o.status NOT IN ('pending', 'cancelled')
+          WHERE o.status <> 'cancelled'
           GROUP BY o.created_at::date, hour_num, oi.product_id, p.name
           ORDER BY business_date DESC, hour_num ASC, amount DESC
           LIMIT 50000
@@ -324,7 +324,7 @@ export async function listProductSales(from?: string, to?: string) {
           JOIN pos.products p ON p.id = oi.product_id
           WHERE o.created_at::date >= ${from}::date
             AND o.created_at::date <= ${to}::date
-            AND o.status NOT IN ('pending', 'cancelled')
+            AND o.status <> 'cancelled'
           GROUP BY o.created_at::date, oi.product_id, p.name
           ORDER BY business_date DESC, amount DESC
         `
@@ -337,7 +337,7 @@ export async function listProductSales(from?: string, to?: string) {
           FROM pos.order_items oi
           JOIN pos.orders o ON o.id = oi.order_id
           JOIN pos.products p ON p.id = oi.product_id
-          WHERE o.status NOT IN ('pending', 'cancelled')
+          WHERE o.status <> 'cancelled'
           GROUP BY o.created_at::date, oi.product_id, p.name
           ORDER BY business_date DESC, amount DESC
           LIMIT 20000
