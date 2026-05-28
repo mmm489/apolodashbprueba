@@ -1,282 +1,574 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
-import { ChevronDown, ChevronRight, History, Save } from "lucide-react";
+import { useMemo, useState, useTransition } from "react";
+import { AlertTriangle, CheckCircle2, Clock3, Plus, Power, RefreshCw, Save, Search } from "lucide-react";
 
-import { getFamilyColor, getFamilyName } from "@/lib/product-families";
-import type { ProductCost, ProductCostHistoryEntry } from "@/lib/types";
+import type { CatalogChangeRecord, PosCatalog, PosCategory, PosProduct } from "@/lib/types";
 
-function detectCategory(productName: string): string {
-  return getFamilyName(productName);
-}
+type ProductDraft = {
+  name: string;
+  categoryId: string;
+  price: string;
+  vatRate: string;
+  sortOrder: string;
+  active: boolean;
+};
 
-function getCategoryColor(name: string): string {
-  return getFamilyColor(name);
-}
-
-/* ---- Group products by category ---- */
-
-interface CategoryGroup {
+type CategoryDraft = {
   name: string;
   color: string;
-  products: ProductCost[];
-  withCost: number;
-}
+  sortOrder: string;
+};
 
-function groupByCategory(products: ProductCost[]): CategoryGroup[] {
-  const map = new Map<string, CategoryGroup>();
-  for (const p of products) {
-    const cat = p.category !== "Altres" ? p.category : detectCategory(p.productName);
-    const existing = map.get(cat);
-    if (existing) {
-      existing.products.push(p);
-      if (p.unitCost > 0) existing.withCost++;
-    } else {
-      map.set(cat, { name: cat, color: getCategoryColor(cat), products: [p], withCost: p.unitCost > 0 ? 1 : 0 });
-    }
+const EMPTY_PRODUCT: ProductDraft = {
+  name: "",
+  categoryId: "",
+  price: "",
+  vatRate: "10",
+  sortOrder: "0",
+  active: true,
+};
+
+const EMPTY_CATEGORY: CategoryDraft = {
+  name: "",
+  color: "#64748b",
+  sortOrder: "0",
+};
+
+export function ProductesPanel({ catalog }: { catalog: PosCatalog }) {
+  const [data, setData] = useState(catalog);
+  const [query, setQuery] = useState("");
+  const [isPending, startTransition] = useTransition();
+
+  const pendingCount = data.pendingChanges.filter((change) => change.status === "pending").length;
+  const errorCount = data.pendingChanges.filter((change) => change.status === "error").length;
+  const activeCount = data.products.filter((product) => product.active).length;
+
+  async function refreshCatalog() {
+    const response = await fetch("/api/catalog", { cache: "no-store" });
+    if (!response.ok) return;
+    setData(await response.json());
   }
-  return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
-}
 
-/* ---- Component ---- */
+  function run(action: () => Promise<void>) {
+    startTransition(async () => {
+      await action();
+      await refreshCatalog();
+    });
+  }
 
-export function ProductesPanel({ products, readOnly = false }: { products: ProductCost[]; readOnly?: boolean }) {
-  const categories = groupByCategory(products);
-  const totalProducts = products.length;
-  const withCost = products.filter((p) => p.unitCost > 0).length;
+  const filteredProducts = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return data.products;
+    return data.products.filter((product) =>
+      `${product.id} ${product.name} ${product.categoryName}`.toLowerCase().includes(term),
+    );
+  }, [data.products, query]);
 
   return (
     <div className="space-y-5">
-      {/* KPIs */}
-      <section className="grid gap-4 sm:grid-cols-3">
-        <MiniCard label="Total productes" value={String(totalProducts)} />
-        <MiniCard label={readOnly ? "Origen" : "Amb cost definit"} value={readOnly ? "POS" : `${withCost} / ${totalProducts}`} />
-        <MiniCard label="Categories" value={String(categories.length)} />
+      <section className="grid gap-4 md:grid-cols-4">
+        <MiniCard label="Productes" value={String(data.products.length)} helper={`${activeCount} actius`} />
+        <MiniCard label="Categories" value={String(data.categories.length)} helper="estructura POS" />
+        <MiniCard label="Pendents" value={String(pendingCount)} helper="cap a heladeria" tone={pendingCount ? "amber" : "emerald"} />
+        <MiniCard label="Errors" value={String(errorCount)} helper="canvis no aplicats" tone={errorCount ? "red" : "slate"} />
       </section>
 
-      {/* Category list */}
-      <div className="space-y-3">
-        {categories.map((cat) => (
-          <CategorySection key={cat.name} category={cat} readOnly={readOnly} />
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center">
+              <div>
+                <h2 className="text-[17px] font-bold text-slate-950">Cataleg del POS</h2>
+                <p className="text-[13px] text-slate-500">Els canvis es posen en cua i el PC de la heladeria els aplica automaticament.</p>
+              </div>
+              <div className="ml-auto flex w-full gap-2 md:w-auto">
+                <label className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2 text-[13px] md:w-80">
+                  <Search className="size-4 shrink-0 text-slate-400" />
+                  <input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Buscar producte o categoria"
+                    className="min-w-0 flex-1 bg-transparent outline-none"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => run(refreshCatalog)}
+                  disabled={isPending}
+                  className="inline-flex items-center justify-center rounded-xl border border-[var(--line)] bg-white px-3 text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                  title="Actualitzar"
+                >
+                  <RefreshCw className="size-4" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <CategoryTable categories={data.categories} run={run} busy={isPending} />
+          <ProductTable products={filteredProducts} categories={data.categories} changes={data.pendingChanges} run={run} busy={isPending} />
+        </div>
+
+        <div className="space-y-4">
+          <NewCategoryForm run={run} busy={isPending} />
+          <NewProductForm categories={data.categories} run={run} busy={isPending} />
+          <ChangeQueue changes={data.pendingChanges} />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function CategoryTable({ categories, run, busy }: { categories: PosCategory[]; run: (action: () => Promise<void>) => void; busy: boolean }) {
+  return (
+    <section className="rounded-2xl border border-[var(--line)] bg-white shadow-sm">
+      <div className="border-b border-[var(--line)] px-4 py-3">
+        <h3 className="text-[14px] font-bold text-slate-950">Categories</h3>
+      </div>
+      <div className="divide-y divide-[var(--line)]">
+        {categories.map((category) => (
+          <CategoryRow key={category.id} category={category} run={run} busy={busy} />
         ))}
       </div>
-
-      {totalProducts === 0 && (
-        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 py-12 text-center">
-          <p className="text-[14px] text-slate-500">No hi ha productes. Puja un Excel d&apos;Articles Venda a la seccio Vendes i els productes apareixeran aqui automaticament.</p>
-        </div>
-      )}
-    </div>
+    </section>
   );
 }
 
-/* ---- Category section ---- */
+function CategoryRow({ category, run, busy }: { category: PosCategory; run: (action: () => Promise<void>) => void; busy: boolean }) {
+  const [draft, setDraft] = useState<CategoryDraft>({
+    name: category.name,
+    color: category.color,
+    sortOrder: String(category.sortOrder),
+  });
 
-function CategorySection({ category, readOnly }: { category: CategoryGroup; readOnly: boolean }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const changed =
+    draft.name !== category.name ||
+    draft.color !== category.color ||
+    Number(draft.sortOrder) !== category.sortOrder;
 
-  return (
-    <div className="rounded-2xl border border-[var(--line)] bg-white shadow-sm overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full items-center gap-3 p-4 text-left transition hover:bg-slate-50/50"
-      >
-        {isOpen ? <ChevronDown className="size-4 text-slate-400" /> : <ChevronRight className="size-4 text-slate-400" />}
-        <span className={`size-3 rounded-full ${category.color}`} />
-        <span className="text-[15px] font-semibold text-slate-900">{category.name}</span>
-        <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-500">
-          {category.products.length} productes
-        </span>
-        <span className="ml-auto text-[12px] text-slate-400">
-          {readOnly ? "lectura POS" : `${category.withCost}/${category.products.length} amb cost`}
-        </span>
-      </button>
-
-      {isOpen && (
-        <div className="border-t border-[var(--line)]">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50/80 text-[11px] font-medium uppercase tracking-wider text-slate-500">
-                <th className="px-5 py-2.5 text-left">Codi</th>
-                <th className="px-5 py-2.5 text-left">Producte</th>
-                <th className="px-5 py-2.5 text-right w-32">{readOnly ? "Origen" : "Cost unitari (EUR)"}</th>
-                <th className="px-5 py-2.5 w-12" />
-              </tr>
-            </thead>
-            <tbody>
-              {category.products
-                .sort((a, b) => a.productName.localeCompare(b.productName))
-                .map((p) => (
-                  <ProductRow key={p.id} product={p} categoryName={category.name} readOnly={readOnly} />
-                ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ---- Product row with inline edit + cost history ---- */
-
-function todayIso() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function ProductRow({ product, categoryName, readOnly }: { product: ProductCost; categoryName: string; readOnly: boolean }) {
-  const router = useRouter();
-  const [cost, setCost] = useState(product.unitCost);
-  const [effectiveFrom, setEffectiveFrom] = useState(todayIso());
-  const [isPending, startTransition] = useTransition();
-  const [showHistory, setShowHistory] = useState(false);
-  const hasChanged = cost !== product.unitCost;
-
-  function save() {
-    startTransition(async () => {
-      await fetch("/api/products", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          productCode: product.productCode,
-          productName: product.productName,
-          category: categoryName,
-          unitCost: cost,
-          effectiveFrom,
-        }),
-      });
-      router.refresh();
+  async function save() {
+    await fetch(`/api/catalog/categories/${category.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: draft.name,
+        color: draft.color,
+        sortOrder: Number(draft.sortOrder || 0),
+      }),
     });
   }
 
   return (
-    <>
-      <tr className="border-t border-[var(--line)]/50 transition hover:bg-slate-50/50">
-        <td className="px-5 py-2 text-[13px] text-slate-400">{product.productCode}</td>
-        <td className="px-5 py-2 text-[13px] font-medium text-slate-800">{product.productName}</td>
-        <td className="px-5 py-2 text-right">
-          {readOnly ? (
-            <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
-              POS
-            </span>
-          ) : (
-            <div className="inline-flex items-center gap-1">
-            <input
-              type="number"
-              min={0}
-              step={0.01}
-              value={cost}
-              onChange={(e) => setCost(Number(e.target.value))}
-              onKeyDown={(e) => e.key === "Enter" && hasChanged && save()}
-              className={`w-24 rounded-lg border px-2.5 py-1 text-right text-[13px] outline-none transition ${
-                hasChanged
-                  ? "border-indigo-300 bg-indigo-50/50 ring-2 ring-indigo-500/10"
-                  : cost > 0
-                    ? "border-emerald-200 bg-emerald-50/30"
-                    : "border-[var(--line)] bg-slate-50/50"
-              }`}
-            />
-            {hasChanged && (
-              <input
-                type="date"
-                value={effectiveFrom}
-                onChange={(e) => setEffectiveFrom(e.target.value)}
-                title="Vàlid des de"
-                className="w-32 rounded-lg border border-indigo-200 bg-white px-2 py-1 text-[11px] text-slate-700 outline-none focus:border-indigo-300"
-              />
-            )}
-            </div>
-          )}
-        </td>
-        <td className="px-5 py-2">
-          {!readOnly && (
-            <div className="flex items-center justify-end gap-1">
-            <button
-              type="button"
-              onClick={() => setShowHistory((v) => !v)}
-              className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 transition"
-              title="Veure històric de costos"
-            >
-              <History className="size-4" />
-            </button>
-            {hasChanged && (
-              <button
-                type="button"
-                onClick={save}
-                disabled={isPending}
-                className="rounded-lg p-1.5 text-indigo-600 hover:bg-indigo-50 transition disabled:opacity-50"
-                title="Guardar"
-              >
-                <Save className="size-4" />
-              </button>
-            )}
-            </div>
-          )}
-        </td>
-      </tr>
-      {showHistory && <CostHistoryRow productCode={product.productCode} />}
-    </>
+    <div className="grid gap-2 px-4 py-3 md:grid-cols-[54px_minmax(0,1fr)_92px_40px] md:items-center">
+      <span className="text-[12px] font-medium text-slate-400">#{category.id}</span>
+      <div className="flex min-w-0 items-center gap-2">
+        <input
+          type="color"
+          value={draft.color}
+          onChange={(event) => setDraft((current) => ({ ...current, color: event.target.value }))}
+          className="h-9 w-10 rounded-lg border border-[var(--line)] bg-white"
+          title="Color"
+        />
+        <input
+          value={draft.name}
+          onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+          className="min-w-0 flex-1 rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2 text-[13px] font-semibold outline-none focus:border-indigo-300"
+        />
+      </div>
+      <input
+        type="number"
+        value={draft.sortOrder}
+        onChange={(event) => setDraft((current) => ({ ...current, sortOrder: event.target.value }))}
+        className="rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2 text-right text-[13px] outline-none focus:border-indigo-300"
+        title="Ordre"
+      />
+      <button
+        type="button"
+        onClick={() => run(save)}
+        disabled={!changed || busy}
+        className="inline-flex size-10 items-center justify-center rounded-xl bg-indigo-600 text-white transition hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400"
+        title="Guardar categoria"
+      >
+        <Save className="size-4" />
+      </button>
+    </div>
   );
 }
 
-/** Fetches and renders the cost-history timeline for a product. Lazy-loaded
- * only when the user expands the row. */
-function CostHistoryRow({ productCode }: { productCode: string }) {
-  const [history, setHistory] = useState<ProductCostHistoryEntry[] | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    fetch(`/api/products?historyFor=${encodeURIComponent(productCode)}`)
-      .then((r) => r.json())
-      .then((data: ProductCostHistoryEntry[]) => {
-        if (!cancelled) setHistory(data);
-      })
-      .catch(() => {
-        if (!cancelled) setHistory([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [productCode]);
+function ProductTable({
+  products,
+  categories,
+  changes,
+  run,
+  busy,
+}: {
+  products: PosProduct[];
+  categories: PosCategory[];
+  changes: CatalogChangeRecord[];
+  run: (action: () => Promise<void>) => void;
+  busy: boolean;
+}) {
+  const pendingByProduct = useMemo(() => {
+    const map = new Map<number, CatalogChangeRecord>();
+    for (const change of changes) {
+      if (change.entityType === "product" && change.entityId && change.status === "pending" && !map.has(change.entityId)) {
+        map.set(change.entityId, change);
+      }
+    }
+    return map;
+  }, [changes]);
 
   return (
-    <tr className="border-t border-[var(--line)]/50 bg-slate-50/30">
-      <td colSpan={4} className="px-5 py-3">
-        {history === null ? (
-          <p className="text-[12px] text-slate-400">Carregant històric…</p>
-        ) : history.length === 0 ? (
-          <p className="text-[12px] text-slate-400">Aquest producte encara no té històric de costos registrat.</p>
-        ) : (
-          <div className="space-y-1">
-            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Històric de costos</p>
-            {history.map((entry) => (
-              <div key={entry.id} className="flex items-center gap-3 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-[12px]">
-                <span className="font-mono text-slate-400">
-                  {entry.validFrom} → {entry.validUntil ?? "avui"}
-                </span>
-                <span className="ml-auto font-semibold text-slate-800">
-                  {entry.unitCost.toFixed(4)} €
-                </span>
-                {entry.validUntil === null && (
-                  <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">actual</span>
-                )}
-              </div>
-            ))}
-          </div>
+    <section className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-sm">
+      <div className="grid grid-cols-[58px_minmax(220px,1.4fr)_minmax(160px,0.8fr)_92px_72px_72px_88px_92px] border-b border-[var(--line)] bg-slate-50 px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+        <span>ID</span>
+        <span>Producte</span>
+        <span>Categoria</span>
+        <span className="text-right">Preu</span>
+        <span className="text-right">IVA</span>
+        <span className="text-right">Ordre</span>
+        <span>Estat</span>
+        <span className="text-right">Accions</span>
+      </div>
+      <div className="max-h-[720px] divide-y divide-[var(--line)] overflow-auto">
+        {products.map((product) => (
+          <ProductRow
+            key={product.id}
+            product={product}
+            categories={categories}
+            pendingChange={pendingByProduct.get(product.id)}
+            run={run}
+            busy={busy}
+          />
+        ))}
+        {products.length === 0 && (
+          <div className="px-4 py-10 text-center text-[13px] text-slate-500">No hi ha productes amb aquest filtre.</div>
         )}
-      </td>
-    </tr>
+      </div>
+    </section>
   );
 }
 
-/* ---- Helpers ---- */
+function ProductRow({
+  product,
+  categories,
+  pendingChange,
+  run,
+  busy,
+}: {
+  product: PosProduct;
+  categories: PosCategory[];
+  pendingChange?: CatalogChangeRecord;
+  run: (action: () => Promise<void>) => void;
+  busy: boolean;
+}) {
+  const [draft, setDraft] = useState<ProductDraft>({
+    name: product.name,
+    categoryId: String(product.categoryId ?? ""),
+    price: product.price.toFixed(2),
+    vatRate: String(product.vatRate),
+    sortOrder: String(product.sortOrder),
+    active: product.active,
+  });
 
-function MiniCard({ label, value }: { label: string; value: string }) {
+  const changed =
+    draft.name !== product.name ||
+    Number(draft.categoryId) !== product.categoryId ||
+    Number(draft.price) !== product.price ||
+    Number(draft.vatRate) !== product.vatRate ||
+    Number(draft.sortOrder) !== product.sortOrder ||
+    draft.active !== product.active;
+
+  async function save() {
+    await fetch(`/api/catalog/products/${product.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: draft.name,
+        categoryId: Number(draft.categoryId),
+        price: Number(draft.price),
+        vatRate: Number(draft.vatRate),
+        sortOrder: Number(draft.sortOrder || 0),
+        active: draft.active,
+      }),
+    });
+  }
+
+  async function deactivate() {
+    await fetch(`/api/catalog/products/${product.id}`, { method: "DELETE" });
+  }
+
   return (
-    <article className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
-      <p className="text-[13px] font-medium text-slate-500">{label}</p>
-      <p className="mt-2 text-[26px] font-bold tracking-tight text-slate-900">{value}</p>
+    <div className="grid grid-cols-[58px_minmax(220px,1.4fr)_minmax(160px,0.8fr)_92px_72px_72px_88px_92px] items-center gap-2 px-4 py-3 text-[13px]">
+      <span className="font-medium text-slate-400">#{product.id}</span>
+      <input
+        value={draft.name}
+        onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+        className="min-w-0 rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2 font-semibold text-slate-900 outline-none focus:border-indigo-300"
+      />
+      <select
+        value={draft.categoryId}
+        onChange={(event) => setDraft((current) => ({ ...current, categoryId: event.target.value }))}
+        className="min-w-0 rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2 outline-none focus:border-indigo-300"
+      >
+        <option value="">Sense categoria</option>
+        {categories.map((category) => (
+          <option key={category.id} value={category.id}>
+            {category.name}
+          </option>
+        ))}
+      </select>
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        value={draft.price}
+        onChange={(event) => setDraft((current) => ({ ...current, price: event.target.value }))}
+        className="rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2 text-right outline-none focus:border-indigo-300"
+      />
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        value={draft.vatRate}
+        onChange={(event) => setDraft((current) => ({ ...current, vatRate: event.target.value }))}
+        className="rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2 text-right outline-none focus:border-indigo-300"
+      />
+      <input
+        type="number"
+        value={draft.sortOrder}
+        onChange={(event) => setDraft((current) => ({ ...current, sortOrder: event.target.value }))}
+        className="rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2 text-right outline-none focus:border-indigo-300"
+      />
+      <button
+        type="button"
+        onClick={() => setDraft((current) => ({ ...current, active: !current.active }))}
+        className={`inline-flex items-center justify-center rounded-full px-3 py-1.5 text-[11px] font-bold ${
+          draft.active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+        }`}
+      >
+        {pendingChange ? "Pendent" : draft.active ? "Actiu" : "Baixa"}
+      </button>
+      <div className="flex justify-end gap-1">
+        <button
+          type="button"
+          onClick={() => run(save)}
+          disabled={!changed || busy}
+          className="inline-flex size-9 items-center justify-center rounded-xl bg-indigo-600 text-white transition hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400"
+          title="Guardar producte"
+        >
+          <Save className="size-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => run(deactivate)}
+          disabled={!product.active || busy}
+          className="inline-flex size-9 items-center justify-center rounded-xl border border-red-100 text-red-600 transition hover:bg-red-50 disabled:border-slate-100 disabled:text-slate-300"
+          title="Donar de baixa"
+        >
+          <Power className="size-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function NewCategoryForm({ run, busy }: { run: (action: () => Promise<void>) => void; busy: boolean }) {
+  const [draft, setDraft] = useState<CategoryDraft>(EMPTY_CATEGORY);
+
+  async function create() {
+    await fetch("/api/catalog/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: draft.name,
+        color: draft.color,
+        sortOrder: Number(draft.sortOrder || 0),
+      }),
+    });
+    setDraft(EMPTY_CATEGORY);
+  }
+
+  return (
+    <section className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+      <h3 className="text-[14px] font-bold text-slate-950">Nova categoria</h3>
+      <div className="mt-3 space-y-2">
+        <input
+          value={draft.name}
+          onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+          placeholder="Nom"
+          className="w-full rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2 text-[13px] outline-none focus:border-indigo-300"
+        />
+        <div className="grid grid-cols-[56px_1fr] gap-2">
+          <input
+            type="color"
+            value={draft.color}
+            onChange={(event) => setDraft((current) => ({ ...current, color: event.target.value }))}
+            className="h-10 w-full rounded-xl border border-[var(--line)] bg-white"
+          />
+          <input
+            type="number"
+            value={draft.sortOrder}
+            onChange={(event) => setDraft((current) => ({ ...current, sortOrder: event.target.value }))}
+            placeholder="Ordre"
+            className="rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2 text-[13px] outline-none focus:border-indigo-300"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => run(create)}
+          disabled={!draft.name.trim() || busy}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-[13px] font-bold text-white transition hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400"
+        >
+          <Plus className="size-4" />
+          Crear categoria
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function NewProductForm({ categories, run, busy }: { categories: PosCategory[]; run: (action: () => Promise<void>) => void; busy: boolean }) {
+  const [draft, setDraft] = useState<ProductDraft>({
+    ...EMPTY_PRODUCT,
+    categoryId: categories[0] ? String(categories[0].id) : "",
+  });
+
+  async function create() {
+    await fetch("/api/catalog/products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: draft.name,
+        categoryId: Number(draft.categoryId),
+        price: Number(draft.price),
+        vatRate: Number(draft.vatRate || 10),
+        sortOrder: Number(draft.sortOrder || 0),
+        active: draft.active,
+      }),
+    });
+    setDraft({ ...EMPTY_PRODUCT, categoryId: draft.categoryId });
+  }
+
+  return (
+    <section className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+      <h3 className="text-[14px] font-bold text-slate-950">Nou producte</h3>
+      <div className="mt-3 space-y-2">
+        <input
+          value={draft.name}
+          onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
+          placeholder="Nom"
+          className="w-full rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2 text-[13px] outline-none focus:border-indigo-300"
+        />
+        <select
+          value={draft.categoryId}
+          onChange={(event) => setDraft((current) => ({ ...current, categoryId: event.target.value }))}
+          className="w-full rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2 text-[13px] outline-none focus:border-indigo-300"
+        >
+          <option value="">Categoria</option>
+          {categories.map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.name}
+            </option>
+          ))}
+        </select>
+        <div className="grid grid-cols-3 gap-2">
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={draft.price}
+            onChange={(event) => setDraft((current) => ({ ...current, price: event.target.value }))}
+            placeholder="Preu"
+            className="rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2 text-[13px] outline-none focus:border-indigo-300"
+          />
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={draft.vatRate}
+            onChange={(event) => setDraft((current) => ({ ...current, vatRate: event.target.value }))}
+            placeholder="IVA"
+            className="rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2 text-[13px] outline-none focus:border-indigo-300"
+          />
+          <input
+            type="number"
+            value={draft.sortOrder}
+            onChange={(event) => setDraft((current) => ({ ...current, sortOrder: event.target.value }))}
+            placeholder="Ordre"
+            className="rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2 text-[13px] outline-none focus:border-indigo-300"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => run(create)}
+          disabled={!draft.name.trim() || !draft.categoryId || !draft.price || busy}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-[13px] font-bold text-white transition hover:bg-indigo-700 disabled:bg-slate-200 disabled:text-slate-400"
+        >
+          <Plus className="size-4" />
+          Crear producte
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function ChangeQueue({ changes }: { changes: CatalogChangeRecord[] }) {
+  const latest = changes.slice(0, 12);
+
+  return (
+    <section className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+      <h3 className="text-[14px] font-bold text-slate-950">Cua de canvis</h3>
+      <div className="mt-3 space-y-2">
+        {latest.map((change) => (
+          <div key={change.id} className="rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2">
+            <div className="flex items-center gap-2">
+              <StatusIcon status={change.status} />
+              <span className="text-[12px] font-bold uppercase text-slate-600">
+                {change.action} {change.entityType}
+              </span>
+              <span className="ml-auto text-[11px] text-slate-400">{new Date(change.requestedAt).toLocaleString("ca-ES")}</span>
+            </div>
+            <p className="mt-1 truncate text-[12px] text-slate-500">
+              {change.entityId ? `ID ${change.entityId}` : "nou"} {change.errorMessage ? `- ${change.errorMessage}` : ""}
+            </p>
+          </div>
+        ))}
+        {latest.length === 0 && <p className="text-[13px] text-slate-500">Encara no hi ha canvis.</p>}
+      </div>
+    </section>
+  );
+}
+
+function StatusIcon({ status }: { status: CatalogChangeRecord["status"] }) {
+  if (status === "applied") return <CheckCircle2 className="size-4 text-emerald-600" />;
+  if (status === "error") return <AlertTriangle className="size-4 text-red-600" />;
+  return <Clock3 className="size-4 text-amber-600" />;
+}
+
+function MiniCard({
+  label,
+  value,
+  helper,
+  tone = "slate",
+}: {
+  label: string;
+  value: string;
+  helper: string;
+  tone?: "slate" | "emerald" | "amber" | "red";
+}) {
+  const tones = {
+    slate: "text-slate-950 bg-white",
+    emerald: "text-emerald-700 bg-emerald-50",
+    amber: "text-amber-700 bg-amber-50",
+    red: "text-red-700 bg-red-50",
+  };
+
+  return (
+    <article className={`rounded-2xl border border-[var(--line)] p-5 shadow-sm ${tones[tone]}`}>
+      <p className="text-[13px] font-medium opacity-70">{label}</p>
+      <p className="mt-2 text-[28px] font-black tracking-tight">{value}</p>
+      <p className="mt-1 text-[12px] opacity-60">{helper}</p>
     </article>
   );
 }

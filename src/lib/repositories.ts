@@ -16,6 +16,9 @@ import {
 import type {
   AlertRecord,
   CashClosingRecord,
+  CatalogChangeAction,
+  CatalogChangeRecord,
+  CatalogEntityType,
   DocumentRecord,
   Employee,
   EmployeeShift,
@@ -27,6 +30,7 @@ import type {
   InvoiceLineRecord,
   InvoiceRecord,
   PayrollRecord,
+  PosCatalog,
   ProductSaleRecord,
   SalesReport,
   TelegramMessage,
@@ -500,6 +504,128 @@ export async function listTelegramMessages() {
     answer: String(row.answer),
     createdAt: new Date(String(row.created_at)).toISOString(),
   })) satisfies TelegramMessage[];
+}
+
+/* ---------- POS Catalog ---------- */
+
+async function ensureCatalogChangeQueue() {
+  if (!hasDatabase() || !isPosDataSource()) return;
+
+  const sql = getSql();
+  await sql.query(`
+    CREATE TABLE IF NOT EXISTS pos.catalog_change_queue (
+      id TEXT PRIMARY KEY,
+      entity_type VARCHAR(20) NOT NULL CHECK (entity_type IN ('category', 'product')),
+      action VARCHAR(20) NOT NULL CHECK (action IN ('create', 'update', 'deactivate')),
+      entity_id INTEGER,
+      payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'applied', 'error')),
+      requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      requested_by TEXT,
+      applied_at TIMESTAMPTZ,
+      applied_entity_id INTEGER,
+      error_message TEXT
+    )
+  `);
+  await sql.query(`
+    CREATE INDEX IF NOT EXISTS idx_catalog_change_queue_status
+    ON pos.catalog_change_queue(status, requested_at)
+  `);
+}
+
+function mapCatalogChange(row: Record<string, unknown>): CatalogChangeRecord {
+  const payload = row.payload && typeof row.payload === "object"
+    ? (row.payload as Record<string, unknown>)
+    : {};
+  return {
+    id: String(row.id),
+    entityType: String(row.entity_type) as CatalogEntityType,
+    action: String(row.action) as CatalogChangeAction,
+    entityId: row.entity_id == null ? null : Number(row.entity_id),
+    payload,
+    status: String(row.status) as CatalogChangeRecord["status"],
+    requestedAt: new Date(String(row.requested_at)).toISOString(),
+    appliedAt: row.applied_at ? new Date(String(row.applied_at)).toISOString() : null,
+    appliedEntityId: row.applied_entity_id == null ? null : Number(row.applied_entity_id),
+    errorMessage: row.error_message ? String(row.error_message) : null,
+  };
+}
+
+export async function listPosCatalog(): Promise<PosCatalog> {
+  if (!hasDatabase() || !isPosDataSource()) {
+    return { categories: [], products: [], pendingChanges: [] };
+  }
+
+  await ensureCatalogChangeQueue();
+  const sql = getSql();
+  const categories = await sql`
+    SELECT id, name, sort_order, color
+    FROM pos.categories
+    ORDER BY sort_order ASC, name ASC
+  `;
+  const products = await sql`
+    SELECT p.id, p.name, p.category_id, p.price, p.vat_rate, p.image_url, p.active, p.sort_order,
+           COALESCE(c.name, 'Sense categoria') AS category_name,
+           COALESCE(c.color, '#64748b') AS category_color
+    FROM pos.products p
+    LEFT JOIN pos.categories c ON c.id = p.category_id
+    ORDER BY p.active DESC, c.sort_order ASC NULLS LAST, p.sort_order ASC, p.name ASC
+  `;
+  const changes = await sql`
+    SELECT id, entity_type, action, entity_id, payload, status, requested_at,
+           applied_at, applied_entity_id, error_message
+    FROM pos.catalog_change_queue
+    ORDER BY requested_at DESC
+    LIMIT 120
+  `;
+
+  return {
+    categories: categories.map((row) => ({
+      id: Number(row.id),
+      name: String(row.name),
+      sortOrder: Number(row.sort_order ?? 0),
+      color: String(row.color ?? "#64748b"),
+    })),
+    products: products.map((row) => ({
+      id: Number(row.id),
+      name: String(row.name),
+      categoryId: row.category_id == null ? null : Number(row.category_id),
+      categoryName: String(row.category_name),
+      categoryColor: String(row.category_color ?? "#64748b"),
+      price: toNumber(row.price),
+      vatRate: toNumber(row.vat_rate),
+      imageUrl: row.image_url ? String(row.image_url) : null,
+      active: Boolean(row.active),
+      sortOrder: Number(row.sort_order ?? 0),
+    })),
+    pendingChanges: changes.map(mapCatalogChange),
+  };
+}
+
+export async function enqueueCatalogChange(input: {
+  entityType: CatalogEntityType;
+  action: CatalogChangeAction;
+  entityId?: number | null;
+  payload: Record<string, unknown>;
+  requestedBy?: string;
+}) {
+  if (!hasDatabase()) {
+    throw new Error("No hi ha base de dades configurada.");
+  }
+  if (!isPosDataSource()) {
+    throw new Error("El cataleg editable nomes esta disponible en mode POS.");
+  }
+
+  await ensureCatalogChangeQueue();
+  const sql = getSql();
+  const id = randomUUID();
+  const rows = await sql`
+    INSERT INTO pos.catalog_change_queue (id, entity_type, action, entity_id, payload, requested_by)
+    VALUES (${id}, ${input.entityType}, ${input.action}, ${input.entityId ?? null}, ${JSON.stringify(input.payload)}::jsonb, ${input.requestedBy ?? "dashboard"})
+    RETURNING id, entity_type, action, entity_id, payload, status, requested_at,
+              applied_at, applied_entity_id, error_message
+  `;
+  return mapCatalogChange(rows[0]);
 }
 
 /* ---------- Product Costs ---------- */

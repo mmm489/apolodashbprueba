@@ -167,6 +167,49 @@ export interface ProductCostHistoryEntry {
   createdAt: string;
 }
 
+export interface PosCategory {
+  id: number;
+  name: string;
+  sortOrder: number;
+  color: string;
+}
+
+export interface PosProduct {
+  id: number;
+  name: string;
+  categoryId: number | null;
+  categoryName: string;
+  categoryColor: string;
+  price: number;
+  vatRate: number;
+  imageUrl: string | null;
+  active: boolean;
+  sortOrder: number;
+}
+
+export type CatalogEntityType = "category" | "product";
+export type CatalogChangeAction = "create" | "update" | "deactivate";
+export type CatalogChangeStatus = "pending" | "applied" | "error";
+
+export interface CatalogChangeRecord {
+  id: string;
+  entityType: CatalogEntityType;
+  action: CatalogChangeAction;
+  entityId: number | null;
+  payload: Record<string, unknown>;
+  status: CatalogChangeStatus;
+  requestedAt: string;
+  appliedAt: string | null;
+  appliedEntityId: number | null;
+  errorMessage: string | null;
+}
+
+export interface PosCatalog {
+  categories: PosCategory[];
+  products: PosProduct[];
+  pendingChanges: CatalogChangeRecord[];
+}
+
 export interface KpiSnapshot {
   totalSales: number;
   totalExpenses: number;
