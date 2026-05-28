@@ -78,23 +78,23 @@ export async function listSalesReports(from?: string, to?: string) {
   if (isPosDataSource()) {
     const rows = from && to
       ? await sql`
-          SELECT created_at::date AS business_date, payment_method,
+          SELECT (created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date, payment_method,
                  COALESCE(SUM(total), 0)::float AS total_sales,
                  COUNT(*)::int AS order_count
           FROM pos.orders
-          WHERE created_at::date >= ${from}::date
-            AND created_at::date <= ${to}::date
+          WHERE (created_at AT TIME ZONE 'Europe/Madrid')::date >= ${from}::date
+            AND (created_at AT TIME ZONE 'Europe/Madrid')::date <= ${to}::date
             AND status <> 'cancelled'
-          GROUP BY created_at::date, payment_method
+          GROUP BY 1, payment_method
           ORDER BY business_date DESC
         `
       : await sql`
-          SELECT created_at::date AS business_date, payment_method,
+          SELECT (created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date, payment_method,
                  COALESCE(SUM(total), 0)::float AS total_sales,
                  COUNT(*)::int AS order_count
           FROM pos.orders
           WHERE status <> 'cancelled'
-          GROUP BY created_at::date, payment_method
+          GROUP BY 1, payment_method
           ORDER BY business_date DESC
           LIMIT 1200
         `;
@@ -146,25 +146,25 @@ export async function listHourlySales(from?: string, to?: string) {
   if (isPosDataSource()) {
     const rows = from && to
       ? await sql`
-          SELECT created_at::date AS business_date,
-                 EXTRACT(HOUR FROM created_at)::int AS hour_num,
+          SELECT (created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date,
+                 EXTRACT(HOUR FROM created_at AT TIME ZONE 'Europe/Madrid')::int AS hour_num,
                  COALESCE(SUM(total), 0)::float AS sales,
                  COUNT(*)::int AS order_count
           FROM pos.orders
-          WHERE created_at::date >= ${from}::date
-            AND created_at::date <= ${to}::date
+          WHERE (created_at AT TIME ZONE 'Europe/Madrid')::date >= ${from}::date
+            AND (created_at AT TIME ZONE 'Europe/Madrid')::date <= ${to}::date
             AND status <> 'cancelled'
-          GROUP BY created_at::date, hour_num
+          GROUP BY 1, 2
           ORDER BY business_date DESC, hour_num ASC
         `
       : await sql`
-          SELECT created_at::date AS business_date,
-                 EXTRACT(HOUR FROM created_at)::int AS hour_num,
+          SELECT (created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date,
+                 EXTRACT(HOUR FROM created_at AT TIME ZONE 'Europe/Madrid')::int AS hour_num,
                  COALESCE(SUM(total), 0)::float AS sales,
                  COUNT(*)::int AS order_count
           FROM pos.orders
           WHERE status <> 'cancelled'
-          GROUP BY created_at::date, hour_num
+          GROUP BY 1, 2
           ORDER BY business_date DESC, hour_num ASC
           LIMIT 10000
         `;
@@ -201,8 +201,8 @@ export async function listHourlyProductSales(from?: string, to?: string) {
   if (isPosDataSource()) {
     const rows = from && to
       ? await sql`
-          SELECT o.created_at::date AS business_date,
-                 EXTRACT(HOUR FROM o.created_at)::int AS hour_num,
+          SELECT (o.created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date,
+                 EXTRACT(HOUR FROM o.created_at AT TIME ZONE 'Europe/Madrid')::int AS hour_num,
                  oi.product_id,
                  p.name AS product_name,
                  SUM(oi.qty)::float AS units,
@@ -210,15 +210,15 @@ export async function listHourlyProductSales(from?: string, to?: string) {
           FROM pos.order_items oi
           JOIN pos.orders o ON o.id = oi.order_id
           JOIN pos.products p ON p.id = oi.product_id
-          WHERE o.created_at::date >= ${from}::date
-            AND o.created_at::date <= ${to}::date
+          WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date >= ${from}::date
+            AND (o.created_at AT TIME ZONE 'Europe/Madrid')::date <= ${to}::date
             AND o.status <> 'cancelled'
-          GROUP BY o.created_at::date, hour_num, oi.product_id, p.name
+          GROUP BY 1, 2, oi.product_id, p.name
           ORDER BY business_date DESC, hour_num ASC, amount DESC
         `
       : await sql`
-          SELECT o.created_at::date AS business_date,
-                 EXTRACT(HOUR FROM o.created_at)::int AS hour_num,
+          SELECT (o.created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date,
+                 EXTRACT(HOUR FROM o.created_at AT TIME ZONE 'Europe/Madrid')::int AS hour_num,
                  oi.product_id,
                  p.name AS product_name,
                  SUM(oi.qty)::float AS units,
@@ -227,7 +227,7 @@ export async function listHourlyProductSales(from?: string, to?: string) {
           JOIN pos.orders o ON o.id = oi.order_id
           JOIN pos.products p ON p.id = oi.product_id
           WHERE o.status <> 'cancelled'
-          GROUP BY o.created_at::date, hour_num, oi.product_id, p.name
+          GROUP BY 1, 2, oi.product_id, p.name
           ORDER BY business_date DESC, hour_num ASC, amount DESC
           LIMIT 50000
         `;
@@ -314,7 +314,7 @@ export async function listProductSales(from?: string, to?: string) {
   if (isPosDataSource()) {
     const rows = from && to
       ? await sql`
-          SELECT o.created_at::date AS business_date,
+          SELECT (o.created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date,
                  oi.product_id,
                  p.name AS product_name,
                  SUM(oi.qty)::float AS units,
@@ -322,14 +322,14 @@ export async function listProductSales(from?: string, to?: string) {
           FROM pos.order_items oi
           JOIN pos.orders o ON o.id = oi.order_id
           JOIN pos.products p ON p.id = oi.product_id
-          WHERE o.created_at::date >= ${from}::date
-            AND o.created_at::date <= ${to}::date
+          WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date >= ${from}::date
+            AND (o.created_at AT TIME ZONE 'Europe/Madrid')::date <= ${to}::date
             AND o.status <> 'cancelled'
-          GROUP BY o.created_at::date, oi.product_id, p.name
+          GROUP BY 1, oi.product_id, p.name
           ORDER BY business_date DESC, amount DESC
         `
       : await sql`
-          SELECT o.created_at::date AS business_date,
+          SELECT (o.created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date,
                  oi.product_id,
                  p.name AS product_name,
                  SUM(oi.qty)::float AS units,
@@ -338,7 +338,7 @@ export async function listProductSales(from?: string, to?: string) {
           JOIN pos.orders o ON o.id = oi.order_id
           JOIN pos.products p ON p.id = oi.product_id
           WHERE o.status <> 'cancelled'
-          GROUP BY o.created_at::date, oi.product_id, p.name
+          GROUP BY 1, oi.product_id, p.name
           ORDER BY business_date DESC, amount DESC
           LIMIT 20000
         `;
@@ -388,8 +388,8 @@ export async function listCashClosings(from?: string, to?: string) {
                e.name AS employee_name
         FROM pos.cash_closings c
         LEFT JOIN pos.employees e ON e.id = c.employee_id
-        WHERE c.closed_at::date >= ${from}::date
-          AND c.closed_at::date <= ${to}::date
+        WHERE (c.closed_at AT TIME ZONE 'Europe/Madrid')::date >= ${from}::date
+          AND (c.closed_at AT TIME ZONE 'Europe/Madrid')::date <= ${to}::date
         ORDER BY c.closed_at DESC
       `
     : await sql`
