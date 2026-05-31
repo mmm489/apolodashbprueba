@@ -16,6 +16,8 @@ export async function POST(request: Request) {
   const sortOrder = numberOrDefault(body.sortOrder ?? body.sort_order, 0);
   const imageUrl = body.imageUrl ?? body.image_url;
   const modifierGroupId = body.modifierGroupId ?? body.modifier_group_id;
+  const modifierIncludedCount = numberOrDefault(body.modifierIncludedCount ?? body.modifier_included_count, 0);
+  const modifierExtraPrice = numberOrDefault(body.modifierExtraPrice ?? body.modifier_extra_price, 0);
 
   if (!name || !Number.isInteger(categoryId) || categoryId <= 0 || !Number.isFinite(price)) {
     return NextResponse.json({ error: "Falten camps: nom, categoria i preu" }, { status: 400 });
@@ -31,6 +33,8 @@ export async function POST(request: Request) {
       vat_rate: vatRate,
       image_url: imageUrl ? String(imageUrl) : null,
       modifier_group_id: modifierGroupId ? numberOrDefault(modifierGroupId, NaN) : null,
+      modifier_included_count: modifierGroupId ? Math.max(0, Math.floor(modifierIncludedCount)) : 0,
+      modifier_extra_price: modifierGroupId ? Math.max(0, Math.round(modifierExtraPrice * 100) / 100) : 0,
       active: body.active == null ? true : Boolean(body.active),
       sort_order: sortOrder,
     },

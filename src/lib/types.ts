@@ -181,6 +181,8 @@ export interface PosProduct {
   categoryName: string;
   categoryColor: string;
   modifierGroupId: number | null;
+  modifierIncludedCount: number;
+  modifierExtraPrice: number;
   price: number;
   vatRate: number;
   imageUrl: string | null;

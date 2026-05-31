@@ -567,8 +567,18 @@ async function ensurePosModifierTables() {
   await sql.query(`
     CREATE TABLE IF NOT EXISTS pos.product_modifier_groups (
       product_id INTEGER PRIMARY KEY REFERENCES pos.products(id) ON DELETE CASCADE,
-      group_id INTEGER REFERENCES pos.modifier_groups(id) ON DELETE SET NULL
+      group_id INTEGER REFERENCES pos.modifier_groups(id) ON DELETE SET NULL,
+      included_count INTEGER NOT NULL DEFAULT 0,
+      extra_price NUMERIC(8,2) NOT NULL DEFAULT 0
     )
+  `);
+  await sql.query(`
+    ALTER TABLE pos.product_modifier_groups
+    ADD COLUMN IF NOT EXISTS included_count INTEGER NOT NULL DEFAULT 0
+  `);
+  await sql.query(`
+    ALTER TABLE pos.product_modifier_groups
+    ADD COLUMN IF NOT EXISTS extra_price NUMERIC(8,2) NOT NULL DEFAULT 0
   `);
   await sql.query(`
     CREATE INDEX IF NOT EXISTS idx_product_modifier_groups_group
@@ -610,7 +620,9 @@ export async function listPosCatalog(): Promise<PosCatalog> {
     SELECT p.id, p.name, p.category_id, p.price, p.vat_rate, p.image_url, p.active, p.sort_order,
            COALESCE(c.name, 'Sense categoria') AS category_name,
            COALESCE(c.color, '#64748b') AS category_color,
-           pmg.group_id AS modifier_group_id
+           pmg.group_id AS modifier_group_id,
+           pmg.included_count AS modifier_included_count,
+           pmg.extra_price AS modifier_extra_price
     FROM pos.products p
     LEFT JOIN pos.categories c ON c.id = p.category_id
     LEFT JOIN pos.product_modifier_groups pmg ON pmg.product_id = p.id
@@ -661,6 +673,8 @@ export async function listPosCatalog(): Promise<PosCatalog> {
       categoryName: String(row.category_name),
       categoryColor: String(row.category_color ?? "#64748b"),
       modifierGroupId: row.modifier_group_id == null ? null : Number(row.modifier_group_id),
+      modifierIncludedCount: toNumber(row.modifier_included_count),
+      modifierExtraPrice: toNumber(row.modifier_extra_price),
       price: toNumber(row.price),
       vatRate: toNumber(row.vat_rate),
       imageUrl: row.image_url ? String(row.image_url) : null,

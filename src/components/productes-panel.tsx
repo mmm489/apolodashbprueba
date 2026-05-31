@@ -9,6 +9,8 @@ type ProductDraft = {
   name: string;
   categoryId: string;
   modifierGroupId: string;
+  modifierIncludedCount: string;
+  modifierExtraPrice: string;
   price: string;
   vatRate: string;
   sortOrder: string;
@@ -32,6 +34,8 @@ const EMPTY_PRODUCT: ProductDraft = {
   name: "",
   categoryId: "",
   modifierGroupId: "",
+  modifierIncludedCount: "0",
+  modifierExtraPrice: "0",
   price: "",
   vatRate: "10",
   sortOrder: "0",
@@ -393,12 +397,14 @@ function ProductTable({
   }, [changes]);
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-sm">
-      <div className="grid grid-cols-[58px_minmax(210px,1.2fr)_minmax(150px,0.7fr)_minmax(150px,0.7fr)_92px_72px_72px_88px_92px] border-b border-[var(--line)] bg-slate-50 px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+    <section className="overflow-x-auto rounded-2xl border border-[var(--line)] bg-white shadow-sm">
+      <div className="grid min-w-[1180px] grid-cols-[58px_minmax(210px,1.2fr)_minmax(150px,0.7fr)_minmax(150px,0.7fr)_72px_82px_92px_72px_72px_88px_92px] border-b border-[var(--line)] bg-slate-50 px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-slate-500">
         <span>ID</span>
         <span>Producte</span>
         <span>Categoria</span>
         <span>Toppings</span>
+        <span className="text-right">Gratis</span>
+        <span className="text-right">Extra</span>
         <span className="text-right">Preu</span>
         <span className="text-right">IVA</span>
         <span className="text-right">Ordre</span>
@@ -444,6 +450,8 @@ function ProductRow({
     name: product.name,
     categoryId: String(product.categoryId ?? ""),
     modifierGroupId: product.modifierGroupId ? String(product.modifierGroupId) : "",
+    modifierIncludedCount: String(product.modifierIncludedCount ?? 0),
+    modifierExtraPrice: product.modifierExtraPrice.toFixed(2),
     price: product.price.toFixed(2),
     vatRate: String(product.vatRate),
     sortOrder: String(product.sortOrder),
@@ -454,6 +462,8 @@ function ProductRow({
     draft.name !== product.name ||
     Number(draft.categoryId) !== product.categoryId ||
     (draft.modifierGroupId ? Number(draft.modifierGroupId) : null) !== product.modifierGroupId ||
+    Number(draft.modifierIncludedCount) !== product.modifierIncludedCount ||
+    Number(draft.modifierExtraPrice) !== product.modifierExtraPrice ||
     Number(draft.price) !== product.price ||
     Number(draft.vatRate) !== product.vatRate ||
     Number(draft.sortOrder) !== product.sortOrder ||
@@ -467,6 +477,8 @@ function ProductRow({
         name: draft.name,
         categoryId: Number(draft.categoryId),
         modifierGroupId: draft.modifierGroupId ? Number(draft.modifierGroupId) : null,
+        modifierIncludedCount: draft.modifierGroupId ? Number(draft.modifierIncludedCount || 0) : 0,
+        modifierExtraPrice: draft.modifierGroupId ? Number(draft.modifierExtraPrice || 0) : 0,
         price: Number(draft.price),
         vatRate: Number(draft.vatRate),
         sortOrder: Number(draft.sortOrder || 0),
@@ -480,7 +492,7 @@ function ProductRow({
   }
 
   return (
-    <div className="grid grid-cols-[58px_minmax(210px,1.2fr)_minmax(150px,0.7fr)_minmax(150px,0.7fr)_92px_72px_72px_88px_92px] items-center gap-2 px-4 py-3 text-[13px]">
+    <div className="grid min-w-[1180px] grid-cols-[58px_minmax(210px,1.2fr)_minmax(150px,0.7fr)_minmax(150px,0.7fr)_72px_82px_92px_72px_72px_88px_92px] items-center gap-2 px-4 py-3 text-[13px]">
       <span className="font-medium text-slate-400">#{product.id}</span>
       <input
         value={draft.name}
@@ -513,6 +525,24 @@ function ProductRow({
             </option>
           ))}
       </select>
+      <input
+        type="number"
+        min="0"
+        step="1"
+        value={draft.modifierIncludedCount}
+        onChange={(event) => setDraft((current) => ({ ...current, modifierIncludedCount: event.target.value }))}
+        disabled={!draft.modifierGroupId}
+        className="rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2 text-right outline-none focus:border-indigo-300 disabled:bg-slate-100 disabled:text-slate-400"
+      />
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        value={draft.modifierExtraPrice}
+        onChange={(event) => setDraft((current) => ({ ...current, modifierExtraPrice: event.target.value }))}
+        disabled={!draft.modifierGroupId}
+        className="rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2 text-right outline-none focus:border-indigo-300 disabled:bg-slate-100 disabled:text-slate-400"
+      />
       <input
         type="number"
         min="0"
@@ -721,13 +751,21 @@ function NewProductForm({
         name: draft.name,
         categoryId: Number(draft.categoryId),
         modifierGroupId: draft.modifierGroupId ? Number(draft.modifierGroupId) : null,
+        modifierIncludedCount: draft.modifierGroupId ? Number(draft.modifierIncludedCount || 0) : 0,
+        modifierExtraPrice: draft.modifierGroupId ? Number(draft.modifierExtraPrice || 0) : 0,
         price: Number(draft.price),
         vatRate: Number(draft.vatRate || 10),
         sortOrder: Number(draft.sortOrder || 0),
         active: draft.active,
       }),
     });
-    setDraft({ ...EMPTY_PRODUCT, categoryId: draft.categoryId, modifierGroupId: draft.modifierGroupId });
+    setDraft({
+      ...EMPTY_PRODUCT,
+      categoryId: draft.categoryId,
+      modifierGroupId: draft.modifierGroupId,
+      modifierIncludedCount: draft.modifierIncludedCount,
+      modifierExtraPrice: draft.modifierExtraPrice,
+    });
   }
 
   return (
@@ -766,6 +804,28 @@ function NewProductForm({
               </option>
             ))}
         </select>
+        <div className="grid grid-cols-2 gap-2">
+          <input
+            type="number"
+            min="0"
+            step="1"
+            value={draft.modifierIncludedCount}
+            onChange={(event) => setDraft((current) => ({ ...current, modifierIncludedCount: event.target.value }))}
+            placeholder="Toppings gratis"
+            disabled={!draft.modifierGroupId}
+            className="rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2 text-[13px] outline-none focus:border-indigo-300 disabled:bg-slate-100 disabled:text-slate-400"
+          />
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={draft.modifierExtraPrice}
+            onChange={(event) => setDraft((current) => ({ ...current, modifierExtraPrice: event.target.value }))}
+            placeholder="Extra EUR"
+            disabled={!draft.modifierGroupId}
+            className="rounded-xl border border-[var(--line)] bg-slate-50 px-3 py-2 text-[13px] outline-none focus:border-indigo-300 disabled:bg-slate-100 disabled:text-slate-400"
+          />
+        </div>
         <div className="grid grid-cols-3 gap-2">
           <input
             type="number"
