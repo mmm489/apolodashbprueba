@@ -515,7 +515,7 @@ async function ensureCatalogChangeQueue() {
   await sql.query(`
     CREATE TABLE IF NOT EXISTS pos.catalog_change_queue (
       id TEXT PRIMARY KEY,
-      entity_type VARCHAR(20) NOT NULL CHECK (entity_type IN ('category', 'product')),
+      entity_type VARCHAR(20) NOT NULL,
       action VARCHAR(20) NOT NULL CHECK (action IN ('create', 'update', 'deactivate')),
       entity_id INTEGER,
       payload JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -528,8 +528,51 @@ async function ensureCatalogChangeQueue() {
     )
   `);
   await sql.query(`
+    ALTER TABLE pos.catalog_change_queue
+    DROP CONSTRAINT IF EXISTS catalog_change_queue_entity_type_check
+  `);
+  await sql.query(`
+    ALTER TABLE pos.catalog_change_queue
+    ADD CONSTRAINT catalog_change_queue_entity_type_check
+    CHECK (entity_type IN ('category', 'product', 'modifier_group'))
+  `);
+  await ensurePosModifierTables();
+  await sql.query(`
     CREATE INDEX IF NOT EXISTS idx_catalog_change_queue_status
     ON pos.catalog_change_queue(status, requested_at)
+  `);
+}
+
+async function ensurePosModifierTables() {
+  if (!hasDatabase() || !isPosDataSource()) return;
+
+  const sql = getSql();
+  await sql.query(`
+    CREATE TABLE IF NOT EXISTS pos.modifier_groups (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(120) NOT NULL UNIQUE,
+      description TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      active BOOLEAN NOT NULL DEFAULT true
+    )
+  `);
+  await sql.query(`
+    CREATE TABLE IF NOT EXISTS pos.modifier_group_categories (
+      group_id INTEGER NOT NULL REFERENCES pos.modifier_groups(id) ON DELETE CASCADE,
+      category_id INTEGER NOT NULL REFERENCES pos.categories(id) ON DELETE CASCADE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (group_id, category_id)
+    )
+  `);
+  await sql.query(`
+    CREATE TABLE IF NOT EXISTS pos.product_modifier_groups (
+      product_id INTEGER PRIMARY KEY REFERENCES pos.products(id) ON DELETE CASCADE,
+      group_id INTEGER REFERENCES pos.modifier_groups(id) ON DELETE SET NULL
+    )
+  `);
+  await sql.query(`
+    CREATE INDEX IF NOT EXISTS idx_product_modifier_groups_group
+    ON pos.product_modifier_groups(group_id)
   `);
 }
 
@@ -553,7 +596,7 @@ function mapCatalogChange(row: Record<string, unknown>): CatalogChangeRecord {
 
 export async function listPosCatalog(): Promise<PosCatalog> {
   if (!hasDatabase() || !isPosDataSource()) {
-    return { categories: [], products: [], pendingChanges: [] };
+    return { categories: [], products: [], modifierGroups: [], pendingChanges: [] };
   }
 
   await ensureCatalogChangeQueue();
@@ -566,10 +609,35 @@ export async function listPosCatalog(): Promise<PosCatalog> {
   const products = await sql`
     SELECT p.id, p.name, p.category_id, p.price, p.vat_rate, p.image_url, p.active, p.sort_order,
            COALESCE(c.name, 'Sense categoria') AS category_name,
-           COALESCE(c.color, '#64748b') AS category_color
+           COALESCE(c.color, '#64748b') AS category_color,
+           pmg.group_id AS modifier_group_id
     FROM pos.products p
     LEFT JOIN pos.categories c ON c.id = p.category_id
+    LEFT JOIN pos.product_modifier_groups pmg ON pmg.product_id = p.id
     ORDER BY p.active DESC, c.sort_order ASC NULLS LAST, p.sort_order ASC, p.name ASC
+  `;
+  const modifierGroups = await sql`
+    SELECT
+      g.id,
+      g.name,
+      g.description,
+      g.sort_order,
+      g.active,
+      COALESCE(
+        array_agg(c.id ORDER BY mgc.sort_order, c.sort_order, c.name)
+          FILTER (WHERE c.id IS NOT NULL),
+        '{}'
+      ) AS category_ids,
+      COALESCE(
+        array_agg(c.name ORDER BY mgc.sort_order, c.sort_order, c.name)
+          FILTER (WHERE c.id IS NOT NULL),
+        '{}'
+      ) AS category_names
+    FROM pos.modifier_groups g
+    LEFT JOIN pos.modifier_group_categories mgc ON mgc.group_id = g.id
+    LEFT JOIN pos.categories c ON c.id = mgc.category_id
+    GROUP BY g.id
+    ORDER BY g.sort_order ASC, g.name ASC
   `;
   const changes = await sql`
     SELECT id, entity_type, action, entity_id, payload, status, requested_at,
@@ -592,14 +660,28 @@ export async function listPosCatalog(): Promise<PosCatalog> {
       categoryId: row.category_id == null ? null : Number(row.category_id),
       categoryName: String(row.category_name),
       categoryColor: String(row.category_color ?? "#64748b"),
+      modifierGroupId: row.modifier_group_id == null ? null : Number(row.modifier_group_id),
       price: toNumber(row.price),
       vatRate: toNumber(row.vat_rate),
       imageUrl: row.image_url ? String(row.image_url) : null,
       active: Boolean(row.active),
       sortOrder: Number(row.sort_order ?? 0),
     })),
+    modifierGroups: modifierGroups.map((row) => ({
+      id: Number(row.id),
+      name: String(row.name),
+      description: row.description == null ? null : String(row.description),
+      sortOrder: Number(row.sort_order ?? 0),
+      active: Boolean(row.active),
+      categoryIds: normalizePgArray(row.category_ids).map(Number).filter((id) => Number.isFinite(id)),
+      categoryNames: normalizePgArray(row.category_names).map(String),
+    })),
     pendingChanges: changes.map(mapCatalogChange),
   };
+}
+
+function normalizePgArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
 }
 
 export async function enqueueCatalogChange(input: {

@@ -23,6 +23,7 @@ export async function PUT(request: Request, context: RouteContext) {
   const vatRate = numberOrDefault(body.vatRate ?? body.vat_rate, 10);
   const sortOrder = numberOrDefault(body.sortOrder ?? body.sort_order, 0);
   const imageUrl = body.imageUrl ?? body.image_url;
+  const modifierGroupId = body.modifierGroupId ?? body.modifier_group_id;
 
   if (!name || !Number.isInteger(categoryId) || categoryId <= 0 || !Number.isFinite(price)) {
     return NextResponse.json({ error: "Falten camps: nom, categoria i preu" }, { status: 400 });
@@ -38,6 +39,7 @@ export async function PUT(request: Request, context: RouteContext) {
       price,
       vat_rate: vatRate,
       image_url: imageUrl ? String(imageUrl) : null,
+      modifier_group_id: modifierGroupId ? numberOrDefault(modifierGroupId, NaN) : null,
       active: body.active == null ? true : Boolean(body.active),
       sort_order: sortOrder,
     },

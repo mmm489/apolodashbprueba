@@ -180,6 +180,7 @@ export interface PosProduct {
   categoryId: number | null;
   categoryName: string;
   categoryColor: string;
+  modifierGroupId: number | null;
   price: number;
   vatRate: number;
   imageUrl: string | null;
@@ -187,7 +188,17 @@ export interface PosProduct {
   sortOrder: number;
 }
 
-export type CatalogEntityType = "category" | "product";
+export interface PosModifierGroup {
+  id: number;
+  name: string;
+  description: string | null;
+  sortOrder: number;
+  active: boolean;
+  categoryIds: number[];
+  categoryNames: string[];
+}
+
+export type CatalogEntityType = "category" | "product" | "modifier_group";
 export type CatalogChangeAction = "create" | "update" | "deactivate";
 export type CatalogChangeStatus = "pending" | "applied" | "error";
 
@@ -207,6 +218,7 @@ export interface CatalogChangeRecord {
 export interface PosCatalog {
   categories: PosCategory[];
   products: PosProduct[];
+  modifierGroups: PosModifierGroup[];
   pendingChanges: CatalogChangeRecord[];
 }
 
