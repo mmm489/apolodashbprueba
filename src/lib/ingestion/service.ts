@@ -9,7 +9,7 @@ import {
   persistExtraction,
   updateDocumentProcessingState,
 } from "@/lib/repositories";
-import { buildDocumentHash } from "@/lib/utils";
+import { buildDocumentHash } from "@/lib/server-utils";
 
 import type { VisionMediaType } from "@/lib/ai/claude";
 

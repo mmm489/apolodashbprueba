@@ -217,11 +217,29 @@ export interface CatalogChangeRecord {
   errorMessage: string | null;
 }
 
+export interface CatalogDraftChange {
+  entityType: CatalogEntityType;
+  action: CatalogChangeAction;
+  entityId?: number | null;
+  payload: Record<string, unknown>;
+}
+
+export interface CatalogPublishRequest {
+  changes: CatalogDraftChange[];
+}
+
+export interface CatalogSyncStatus {
+  lastSyncedAt: string | null;
+  ok: boolean | null;
+  message: string | null;
+}
+
 export interface PosCatalog {
   categories: PosCategory[];
   products: PosProduct[];
   modifierGroups: PosModifierGroup[];
   pendingChanges: CatalogChangeRecord[];
+  syncStatus: CatalogSyncStatus;
 }
 
 export interface KpiSnapshot {

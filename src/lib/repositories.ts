@@ -17,6 +17,7 @@ import type {
   AlertRecord,
   CashClosingRecord,
   CatalogChangeAction,
+  CatalogDraftChange,
   CatalogChangeRecord,
   CatalogEntityType,
   DocumentRecord,
@@ -528,13 +529,34 @@ async function ensureCatalogChangeQueue() {
     )
   `);
   await sql.query(`
-    ALTER TABLE pos.catalog_change_queue
-    DROP CONSTRAINT IF EXISTS catalog_change_queue_entity_type_check
-  `);
-  await sql.query(`
-    ALTER TABLE pos.catalog_change_queue
-    ADD CONSTRAINT catalog_change_queue_entity_type_check
-    CHECK (entity_type IN ('category', 'product', 'modifier_group'))
+    DO $$
+    DECLARE
+      constraint_def TEXT;
+    BEGIN
+      SELECT pg_get_constraintdef(c.oid)
+      INTO constraint_def
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+      WHERE n.nspname = 'pos'
+        AND t.relname = 'catalog_change_queue'
+        AND c.conname = 'catalog_change_queue_entity_type_check';
+
+      IF constraint_def IS NULL THEN
+        ALTER TABLE pos.catalog_change_queue
+        ADD CONSTRAINT catalog_change_queue_entity_type_check
+        CHECK (entity_type IN ('category', 'product', 'modifier_group'));
+      ELSIF constraint_def NOT LIKE '%modifier_group%' THEN
+        ALTER TABLE pos.catalog_change_queue
+        DROP CONSTRAINT catalog_change_queue_entity_type_check;
+
+        ALTER TABLE pos.catalog_change_queue
+        ADD CONSTRAINT catalog_change_queue_entity_type_check
+        CHECK (entity_type IN ('category', 'product', 'modifier_group'));
+      END IF;
+    EXCEPTION WHEN duplicate_object THEN
+      NULL;
+    END $$;
   `);
   await ensurePosModifierTables();
   await sql.query(`
@@ -606,7 +628,13 @@ function mapCatalogChange(row: Record<string, unknown>): CatalogChangeRecord {
 
 export async function listPosCatalog(): Promise<PosCatalog> {
   if (!hasDatabase() || !isPosDataSource()) {
-    return { categories: [], products: [], modifierGroups: [], pendingChanges: [] };
+    return {
+      categories: [],
+      products: [],
+      modifierGroups: [],
+      pendingChanges: [],
+      syncStatus: { lastSyncedAt: null, ok: null, message: null },
+    };
   }
 
   await ensureCatalogChangeQueue();
@@ -658,6 +686,7 @@ export async function listPosCatalog(): Promise<PosCatalog> {
     ORDER BY requested_at DESC
     LIMIT 120
   `;
+  const syncStatus = await readDashboardSyncStatus();
 
   return {
     categories: categories.map((row) => ({
@@ -691,7 +720,32 @@ export async function listPosCatalog(): Promise<PosCatalog> {
       categoryNames: normalizePgArray(row.category_names).map(String),
     })),
     pendingChanges: changes.map(mapCatalogChange),
+    syncStatus,
   };
+}
+
+async function readDashboardSyncStatus() {
+  const fallback = { lastSyncedAt: null, ok: null, message: null };
+  try {
+    const sql = getSql();
+    const exists = await sql`SELECT to_regclass('pos.dashboard_sync_status') AS table_name`;
+    if (!exists[0]?.table_name) return fallback;
+    const rows = await sql`
+      SELECT synced_at, ok, message
+      FROM pos.dashboard_sync_status
+      WHERE id = 'main'
+      LIMIT 1
+    `;
+    const row = rows[0];
+    if (!row) return fallback;
+    return {
+      lastSyncedAt: row.synced_at ? new Date(String(row.synced_at)).toISOString() : null,
+      ok: row.ok == null ? null : Boolean(row.ok),
+      message: row.message == null ? null : String(row.message),
+    };
+  } catch {
+    return fallback;
+  }
 }
 
 function normalizePgArray(value: unknown): unknown[] {
@@ -722,6 +776,22 @@ export async function enqueueCatalogChange(input: {
               applied_at, applied_entity_id, error_message
   `;
   return mapCatalogChange(rows[0]);
+}
+
+export async function enqueueCatalogChanges(changes: CatalogDraftChange[], requestedBy = "dashboard") {
+  const created: CatalogChangeRecord[] = [];
+  for (const change of changes) {
+    created.push(
+      await enqueueCatalogChange({
+        entityType: change.entityType,
+        action: change.action,
+        entityId: change.entityId ?? null,
+        payload: change.payload,
+        requestedBy,
+      }),
+    );
+  }
+  return created;
 }
 
 /* ---------- Product Costs ---------- */

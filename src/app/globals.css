@@ -57,6 +57,22 @@ textarea {
   font: inherit;
 }
 
+.field {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #f8fafc;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  color: #0f172a;
+  outline: none;
+}
+
+.field:focus {
+  border-color: #a5b4fc;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+
 .app-shell {
   min-height: 100vh;
 }
