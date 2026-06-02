@@ -53,6 +53,7 @@ function normalizePaymentMethod(value: unknown): string {
   if (method === "cash") return "efectivo";
   if (method === "card") return "tarjeta";
   if (method === "manual") return "manual";
+  if (method === "parked") return "aparcat";
   return method || "otros";
 }
 
@@ -87,6 +88,7 @@ export async function listSalesReports(from?: string, to?: string) {
           WHERE (created_at AT TIME ZONE 'Europe/Madrid')::date >= ${from}::date
             AND (created_at AT TIME ZONE 'Europe/Madrid')::date <= ${to}::date
             AND status <> 'cancelled'
+            AND payment_method <> 'parked'
           GROUP BY 1, payment_method
           ORDER BY business_date DESC
         `
@@ -96,6 +98,7 @@ export async function listSalesReports(from?: string, to?: string) {
                  COUNT(*)::int AS order_count
           FROM pos.orders
           WHERE status <> 'cancelled'
+            AND payment_method <> 'parked'
           GROUP BY 1, payment_method
           ORDER BY business_date DESC
           LIMIT 1200
@@ -156,6 +159,7 @@ export async function listHourlySales(from?: string, to?: string) {
           WHERE (created_at AT TIME ZONE 'Europe/Madrid')::date >= ${from}::date
             AND (created_at AT TIME ZONE 'Europe/Madrid')::date <= ${to}::date
             AND status <> 'cancelled'
+            AND payment_method <> 'parked'
           GROUP BY 1, 2
           ORDER BY business_date DESC, hour_num ASC
         `
@@ -166,6 +170,7 @@ export async function listHourlySales(from?: string, to?: string) {
                  COUNT(*)::int AS order_count
           FROM pos.orders
           WHERE status <> 'cancelled'
+            AND payment_method <> 'parked'
           GROUP BY 1, 2
           ORDER BY business_date DESC, hour_num ASC
           LIMIT 10000
@@ -215,6 +220,7 @@ export async function listHourlyProductSales(from?: string, to?: string) {
           WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date >= ${from}::date
             AND (o.created_at AT TIME ZONE 'Europe/Madrid')::date <= ${to}::date
             AND o.status <> 'cancelled'
+            AND o.payment_method <> 'parked'
           GROUP BY 1, 2, oi.product_id, p.name
           ORDER BY business_date DESC, hour_num ASC, amount DESC
         `
@@ -229,6 +235,7 @@ export async function listHourlyProductSales(from?: string, to?: string) {
           JOIN pos.orders o ON o.id = oi.order_id
           JOIN pos.products p ON p.id = oi.product_id
           WHERE o.status <> 'cancelled'
+            AND o.payment_method <> 'parked'
           GROUP BY 1, 2, oi.product_id, p.name
           ORDER BY business_date DESC, hour_num ASC, amount DESC
           LIMIT 50000
@@ -327,6 +334,7 @@ export async function listProductSales(from?: string, to?: string) {
           WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date >= ${from}::date
             AND (o.created_at AT TIME ZONE 'Europe/Madrid')::date <= ${to}::date
             AND o.status <> 'cancelled'
+            AND o.payment_method <> 'parked'
           GROUP BY 1, oi.product_id, p.name
           ORDER BY business_date DESC, amount DESC
         `
@@ -340,6 +348,7 @@ export async function listProductSales(from?: string, to?: string) {
           JOIN pos.orders o ON o.id = oi.order_id
           JOIN pos.products p ON p.id = oi.product_id
           WHERE o.status <> 'cancelled'
+            AND o.payment_method <> 'parked'
           GROUP BY 1, oi.product_id, p.name
           ORDER BY business_date DESC, amount DESC
           LIMIT 20000

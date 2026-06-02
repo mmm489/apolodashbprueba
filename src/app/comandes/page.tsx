@@ -41,12 +41,13 @@ export default async function ComandesPage({
   });
   const lines = await listPosOrderLines(filter.from, filter.to);
   const orders = groupOrders(lines);
-  const activeOrders = orders.filter((order) => order.status !== "cancelled");
-  const activeLines = lines.filter((line) => line.status !== "cancelled");
+  const activeOrders = orders.filter((order) => order.status !== "cancelled" && order.paymentMethod !== "aparcat");
+  const activeLines = lines.filter((line) => line.status !== "cancelled" && line.paymentMethod !== "aparcat");
   const totalBase = activeOrders.reduce((sum, order) => sum + order.base, 0);
   const totalWithVat = activeOrders.reduce((sum, order) => sum + order.total, 0);
   const averageTicket = activeOrders.length > 0 ? totalBase / activeOrders.length : 0;
   const cancelledOrders = orders.filter((order) => order.status === "cancelled").length;
+  const parkedOrders = orders.filter((order) => order.paymentMethod === "aparcat" && order.status !== "cancelled").length;
 
   return (
     <AppFrame
@@ -67,6 +68,13 @@ export default async function ComandesPage({
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
           Hi ha {cancelledOrders} comanda{cancelledOrders === 1 ? "" : "s"} cancel·lada
           {cancelledOrders === 1 ? "" : "s"} en aquest període. Es mostren a la llista, però no compten als totals.
+        </div>
+      )}
+
+      {parkedOrders > 0 && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">
+          Hi ha {parkedOrders} comanda{parkedOrders === 1 ? "" : "s"} aparcada
+          {parkedOrders === 1 ? "" : "s"} en aquest període. Es mostren a la llista, però no compten com a venda fins que es cobrin.
         </div>
       )}
 
@@ -418,6 +426,7 @@ function paymentLabel(method: string) {
     efectivo: "Efectiu",
     tarjeta: "Targeta",
     manual: "Manual",
+    aparcat: "Aparcat",
   };
   return labels[method] ?? method;
 }
