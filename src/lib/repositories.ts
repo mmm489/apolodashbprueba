@@ -32,6 +32,7 @@ import type {
   InvoiceRecord,
   PayrollRecord,
   PosCatalog,
+  PosOrderLineRecord,
   ProductSaleRecord,
   SalesReport,
   TelegramMessage,
@@ -424,6 +425,113 @@ export async function listCashClosings(from?: string, to?: string) {
     lastInvoice: row.last_invoice ? String(row.last_invoice) : null,
     employeeName: row.employee_name ? String(row.employee_name) : null,
   })) satisfies CashClosingRecord[];
+}
+
+export async function listPosOrderLines(from?: string, to?: string) {
+  if (!hasDatabase() || !isPosDataSource()) {
+    return [];
+  }
+
+  const sql = getSql();
+  const rows = from && to
+    ? await sql`
+        SELECT oi.id,
+               oi.order_id,
+               o.order_number,
+               o.invoice_number,
+               o.status,
+               o.payment_method,
+               o.table_number,
+               e.name AS employee_name,
+               (o.created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date,
+               to_char(o.created_at AT TIME ZONE 'Europe/Madrid', 'HH24:MI') AS order_time,
+               o.created_at,
+               o.completed_at,
+               oi.product_id,
+               p.name AS product_name,
+               c.name AS category_name,
+               oi.qty,
+               oi.unit_price,
+               COALESCE(oi.vat_rate, p.vat_rate, 10) AS vat_rate,
+               ROUND((oi.qty * oi.unit_price)::numeric, 2)::float AS line_total,
+               ROUND((oi.qty * oi.unit_price / NULLIF(1 + COALESCE(oi.vat_rate, p.vat_rate, 10) / 100, 0))::numeric, 2)::float AS line_base,
+               ROUND((oi.qty * oi.unit_price - (oi.qty * oi.unit_price / NULLIF(1 + COALESCE(oi.vat_rate, p.vat_rate, 10) / 100, 0)))::numeric, 2)::float AS line_vat,
+               COALESCE(o.total, 0)::float AS order_total,
+               COALESCE(o.total_base, o.total, 0)::float AS order_base,
+               COALESCE(o.total_vat, 0)::float AS order_vat,
+               oi.notes
+        FROM pos.order_items oi
+        JOIN pos.orders o ON o.id = oi.order_id
+        JOIN pos.products p ON p.id = oi.product_id
+        LEFT JOIN pos.categories c ON c.id = p.category_id
+        LEFT JOIN pos.employees e ON e.id = o.employee_id
+        WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date >= ${from}::date
+          AND (o.created_at AT TIME ZONE 'Europe/Madrid')::date <= ${to}::date
+        ORDER BY o.created_at DESC, oi.id ASC
+        LIMIT 10000
+      `
+    : await sql`
+        SELECT oi.id,
+               oi.order_id,
+               o.order_number,
+               o.invoice_number,
+               o.status,
+               o.payment_method,
+               o.table_number,
+               e.name AS employee_name,
+               (o.created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date,
+               to_char(o.created_at AT TIME ZONE 'Europe/Madrid', 'HH24:MI') AS order_time,
+               o.created_at,
+               o.completed_at,
+               oi.product_id,
+               p.name AS product_name,
+               c.name AS category_name,
+               oi.qty,
+               oi.unit_price,
+               COALESCE(oi.vat_rate, p.vat_rate, 10) AS vat_rate,
+               ROUND((oi.qty * oi.unit_price)::numeric, 2)::float AS line_total,
+               ROUND((oi.qty * oi.unit_price / NULLIF(1 + COALESCE(oi.vat_rate, p.vat_rate, 10) / 100, 0))::numeric, 2)::float AS line_base,
+               ROUND((oi.qty * oi.unit_price - (oi.qty * oi.unit_price / NULLIF(1 + COALESCE(oi.vat_rate, p.vat_rate, 10) / 100, 0)))::numeric, 2)::float AS line_vat,
+               COALESCE(o.total, 0)::float AS order_total,
+               COALESCE(o.total_base, o.total, 0)::float AS order_base,
+               COALESCE(o.total_vat, 0)::float AS order_vat,
+               oi.notes
+        FROM pos.order_items oi
+        JOIN pos.orders o ON o.id = oi.order_id
+        JOIN pos.products p ON p.id = oi.product_id
+        LEFT JOIN pos.categories c ON c.id = p.category_id
+        LEFT JOIN pos.employees e ON e.id = o.employee_id
+        ORDER BY o.created_at DESC, oi.id ASC
+        LIMIT 10000
+      `;
+
+  return rows.map((row) => ({
+    id: String(row.id),
+    orderId: String(row.order_id),
+    orderNumber: String(row.order_number),
+    invoiceNumber: row.invoice_number ? String(row.invoice_number) : null,
+    status: String(row.status),
+    paymentMethod: normalizePaymentMethod(row.payment_method),
+    tableNumber: row.table_number ? String(row.table_number) : null,
+    employeeName: row.employee_name ? String(row.employee_name) : null,
+    businessDate: normalizeDate(row.business_date),
+    orderTime: String(row.order_time),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+    completedAt: row.completed_at ? new Date(String(row.completed_at)).toISOString() : null,
+    productId: String(row.product_id),
+    productName: String(row.product_name),
+    categoryName: row.category_name ? String(row.category_name) : null,
+    qty: toNumber(row.qty),
+    unitPrice: toNumber(row.unit_price),
+    vatRate: toNumber(row.vat_rate),
+    lineTotal: toNumber(row.line_total),
+    lineBase: toNumber(row.line_base),
+    lineVat: toNumber(row.line_vat),
+    orderTotal: toNumber(row.order_total),
+    orderBase: toNumber(row.order_base),
+    orderVat: toNumber(row.order_vat),
+    notes: row.notes ? String(row.notes) : null,
+  })) satisfies PosOrderLineRecord[];
 }
 
 export async function listPayrolls(from?: string, to?: string) {

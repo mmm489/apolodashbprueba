@@ -47,6 +47,34 @@ export interface CashClosingRecord {
   employeeName: string | null;
 }
 
+export interface PosOrderLineRecord {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  invoiceNumber: string | null;
+  status: "pending" | "preparing" | "ready" | "completed" | "cancelled" | string;
+  paymentMethod: string;
+  tableNumber: string | null;
+  employeeName: string | null;
+  businessDate: string;
+  orderTime: string;
+  createdAt: string;
+  completedAt: string | null;
+  productId: string;
+  productName: string;
+  categoryName: string | null;
+  qty: number;
+  unitPrice: number;
+  vatRate: number;
+  lineTotal: number;
+  lineBase: number;
+  lineVat: number;
+  orderTotal: number;
+  orderBase: number;
+  orderVat: number;
+  notes: string | null;
+}
+
 export interface ProductSaleRecord {
   id: string;
   salesReportId: string;
