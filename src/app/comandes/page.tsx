@@ -78,148 +78,149 @@ export default async function ComandesPage({
           </p>
         </section>
       ) : (
-        <>
-          <section className="grid gap-4 xl:grid-cols-2">
-            {orders.slice(0, 80).map((order) => (
-              <article
-                key={order.id}
-                className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-sm"
-              >
-                <div className="flex flex-col gap-3 border-b border-[var(--line)] bg-slate-50/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h2 className="text-xl font-bold tracking-tight text-slate-950">
-                        {order.orderNumber}
-                      </h2>
-                      <StatusBadge status={order.status} />
-                      <PaymentBadge method={order.paymentMethod} />
-                      {order.tableNumber && (
-                        <span className="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-bold text-slate-700">
-                          Taula {order.tableNumber}
-                        </span>
-                      )}
-                    </div>
-                    <p className="mt-1 text-sm font-medium text-slate-500">
-                      {formatDate(order.businessDate)} · {order.orderTime}
-                      {order.employeeName ? ` · ${order.employeeName}` : ""}
-                      {order.invoiceNumber ? ` · ${order.invoiceNumber}` : ""}
-                    </p>
-                  </div>
-                  <div className="text-left sm:text-right">
-                    <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Total</p>
-                    <p className="text-2xl font-black tabular-nums text-slate-950">{euro(order.total)}</p>
-                    <p className="text-xs font-semibold text-slate-500">{euro(order.base)} s/IVA</p>
-                  </div>
-                </div>
+        <section className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-sm">
+          <div className="border-b border-[var(--line)] px-5 py-4">
+            <h2 className="text-lg font-bold tracking-tight text-slate-950">Historial de comandes</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Cada comanda surt en una línia. Obre-la per revisar productes, sabors i complements.
+            </p>
+          </div>
 
-                <div className="divide-y divide-slate-100">
-                  {order.lines.map((line) => (
-                    <div key={line.id} className="px-5 py-3">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0">
-                          <p className="text-[15px] font-bold text-slate-900">
-                            {fmtQty(line.qty)}x {line.displayName}
-                          </p>
-                          <p className="mt-0.5 text-xs font-medium text-slate-500">
-                            {line.categoryName || "Sense categoria"} · IVA {fmtNum(line.vatRate)}%
-                          </p>
-                          {line.visibleNote && (
-                            <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
-                              Nota: {line.visibleNote}
-                            </p>
-                          )}
+          <div className="overflow-x-auto">
+            <div className="min-w-[980px]">
+              <div className="grid grid-cols-[1.25fr_1.25fr_0.9fr_1fr_1fr_170px] gap-4 border-b border-[var(--line)] bg-slate-50 px-5 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
+                <div>Comanda</div>
+                <div>Data</div>
+                <div>Items</div>
+                <div>Pagament</div>
+                <div className="text-right">Total</div>
+                <div className="text-right">Detall</div>
+              </div>
+
+              <div className="divide-y divide-slate-100">
+                {orders.slice(0, 160).map((order) => (
+                  <details key={order.id} className="group bg-white open:bg-slate-50/40">
+                    <summary className="grid cursor-pointer list-none grid-cols-[1.25fr_1.25fr_0.9fr_1fr_1fr_170px] items-center gap-4 px-5 py-4 transition hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-lg font-black tracking-tight text-slate-950">
+                            {order.orderNumber}
+                          </span>
+                          <StatusBadge status={order.status} />
                         </div>
-                        <div className="shrink-0 text-right">
-                          <p className="text-sm font-bold tabular-nums text-slate-900">
-                            {euro(line.lineTotal)}
+                        {order.invoiceNumber && (
+                          <p className="mt-1 truncate text-xs font-semibold text-slate-500">
+                            {order.invoiceNumber}
                           </p>
-                          <p className="text-xs font-medium text-slate-500">
-                            {euro(line.lineBase)} s/IVA
-                          </p>
-                        </div>
+                        )}
                       </div>
 
-                      {line.modifiers.length > 0 && (
-                        <div className="mt-3 border-l-2 border-indigo-200 pl-3">
-                          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                            Complements
-                          </p>
-                          <div className="space-y-1.5">
-                            {line.modifiers.map((modifier) => (
-                              <div
-                                key={modifier.id}
-                                className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2"
-                              >
-                                <p className="min-w-0 truncate text-sm font-semibold text-slate-700">
-                                  + {fmtQty(modifier.qty)}x {modifier.displayName}
-                                </p>
-                                <p className="shrink-0 text-sm font-bold tabular-nums text-slate-700">
-                                  {euro(modifier.lineTotal)}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </article>
-            ))}
-          </section>
+                      <div className="min-w-0">
+                        <p className="font-bold text-slate-900">
+                          {formatDate(order.businessDate)} · {order.orderTime}
+                        </p>
+                        <p className="mt-1 truncate text-xs font-semibold text-slate-500">
+                          {order.employeeName || "Sense empleat"}
+                          {order.tableNumber ? ` · Taula ${order.tableNumber}` : ""}
+                        </p>
+                      </div>
 
-          <section className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-sm">
-            <div className="border-b border-[var(--line)] px-5 py-4">
-              <h2 className="text-lg font-bold tracking-tight text-slate-950">Línies de comanda</h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Vista plana per revisar imports, quantitats i productes.
-              </p>
+                      <div>
+                        <p className="font-bold text-slate-900">{orderItemLabel(order)}</p>
+                        <p className="mt-1 text-xs font-semibold text-slate-500">{modifierLabel(order)}</p>
+                      </div>
+
+                      <div>
+                        <PaymentBadge method={order.paymentMethod} />
+                      </div>
+
+                      <div className="text-right">
+                        <p className="text-xl font-black tabular-nums text-slate-950">{euro(order.total)}</p>
+                        <p className="text-xs font-semibold text-slate-500">{euro(order.base)} s/IVA</p>
+                      </div>
+
+                      <div className="text-right">
+                        <span className="inline-flex min-w-[130px] justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm transition group-open:bg-slate-950 group-open:text-white">
+                          <span className="group-open:hidden">Ver items</span>
+                          <span className="hidden group-open:inline">Ocultar</span>
+                        </span>
+                      </div>
+                    </summary>
+
+                    <div className="border-t border-slate-100 bg-slate-50/70 px-5 pb-5 pt-2">
+                      <div className="rounded-2xl border border-slate-200 bg-white">
+                        <div className="grid grid-cols-[1fr_110px_120px_120px] gap-4 border-b border-slate-100 px-4 py-3 text-xs font-bold uppercase tracking-wider text-slate-400">
+                          <div>Producte</div>
+                          <div className="text-right">Qty</div>
+                          <div className="text-right">Base</div>
+                          <div className="text-right">Total</div>
+                        </div>
+
+                        <div className="divide-y divide-slate-100">
+                          {order.lines.map((line) => (
+                            <div key={line.id} className="px-4 py-3">
+                              <div className="grid grid-cols-[1fr_110px_120px_120px] items-start gap-4">
+                                <div className="min-w-0">
+                                  <p className="font-bold text-slate-950">{line.displayName}</p>
+                                  <p className="mt-0.5 text-xs font-semibold text-slate-500">
+                                    {line.categoryName || "Sense categoria"} · IVA {fmtNum(line.vatRate)}%
+                                  </p>
+                                  {line.visibleNote && (
+                                    <p className="mt-2 inline-flex rounded-lg bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
+                                      Nota: {line.visibleNote}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="text-right font-bold tabular-nums text-slate-900">
+                                  {fmtQty(line.qty)}
+                                </div>
+                                <div className="text-right font-semibold tabular-nums text-slate-600">
+                                  {euro(line.lineBase)}
+                                </div>
+                                <div className="text-right font-black tabular-nums text-slate-950">
+                                  {euro(line.lineTotal)}
+                                </div>
+                              </div>
+
+                              {line.modifiers.length > 0 && (
+                                <div className="mt-3 ml-4 border-l-2 border-indigo-200 pl-3">
+                                  <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                    Complements d'aquest producte
+                                  </p>
+                                  <div className="space-y-1.5">
+                                    {line.modifiers.map((modifier) => (
+                                      <div
+                                        key={modifier.id}
+                                        className="grid grid-cols-[1fr_110px_120px_120px] items-center gap-4 rounded-xl bg-slate-50 px-3 py-2"
+                                      >
+                                        <p className="min-w-0 truncate text-sm font-semibold text-slate-700">
+                                          + {modifier.displayName}
+                                        </p>
+                                        <p className="text-right text-sm font-bold tabular-nums text-slate-700">
+                                          {fmtQty(modifier.qty)}
+                                        </p>
+                                        <p className="text-right text-sm font-semibold tabular-nums text-slate-500">
+                                          {euro(modifier.lineBase)}
+                                        </p>
+                                        <p className="text-right text-sm font-bold tabular-nums text-slate-700">
+                                          {euro(modifier.lineTotal)}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </details>
+                ))}
+              </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] text-sm">
-                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
-                  <tr>
-                    <Th>Data</Th>
-                    <Th>Comanda</Th>
-                    <Th>Producte</Th>
-                    <Th>Categoria</Th>
-                    <Th align="right">Qty</Th>
-                    <Th align="right">Preu u.</Th>
-                    <Th align="right">Base</Th>
-                    <Th align="right">IVA</Th>
-                    <Th align="right">Total</Th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {lines.slice(0, 400).map((line) => (
-                    <tr key={line.id} className={line.status === "cancelled" ? "bg-rose-50/50 text-slate-400" : ""}>
-                      <Td>
-                        <div className="font-semibold text-slate-900">{formatDate(line.businessDate)}</div>
-                        <div className="text-xs text-slate-500">{line.orderTime}</div>
-                      </Td>
-                      <Td>
-                        <div className="font-bold text-slate-900">{line.orderNumber}</div>
-                        <div className="text-xs text-slate-500">{statusLabel(line.status)}</div>
-                      </Td>
-                      <Td>
-                        <div className="max-w-[280px] truncate font-semibold text-slate-900">{displayLineName(line)}</div>
-                        {visibleNote(line.notes) && (
-                          <div className="max-w-[280px] truncate text-xs text-amber-700">{visibleNote(line.notes)}</div>
-                        )}
-                      </Td>
-                      <Td>{line.categoryName || "-"}</Td>
-                      <Td align="right">{fmtQty(line.qty)}</Td>
-                      <Td align="right">{euro(line.unitPrice)}</Td>
-                      <Td align="right">{euro(line.lineBase)}</Td>
-                      <Td align="right">{euro(line.lineVat)}</Td>
-                      <Td align="right" className="font-bold text-slate-900">{euro(line.lineTotal)}</Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </>
+          </div>
+        </section>
       )}
     </AppFrame>
   );
@@ -295,6 +296,17 @@ function groupLines(lines: PosOrderLineRecord[]): GroupedLine[] {
   });
 
   return bases;
+}
+
+function orderItemLabel(order: OrderGroup) {
+  const count = order.lines.length;
+  return `${fmtNum(count)} producte${count === 1 ? "" : "s"}`;
+}
+
+function modifierLabel(order: OrderGroup) {
+  const count = order.lines.reduce((sum, line) => sum + line.modifiers.length, 0);
+  if (count === 0) return "Sense complements";
+  return `${fmtNum(count)} complement${count === 1 ? "" : "s"}`;
 }
 
 function displayLineName(line: PosOrderLineRecord) {
@@ -388,22 +400,6 @@ function Metric({ label, value, color = "indigo" }: { label: string; value: stri
       <p className="mt-2 text-[22px] font-bold tracking-tight text-slate-900">{value}</p>
     </div>
   );
-}
-
-function Th({ children, align = "left" }: { children: React.ReactNode; align?: "left" | "right" }) {
-  return <th className={`px-5 py-3 ${align === "right" ? "text-right" : "text-left"}`}>{children}</th>;
-}
-
-function Td({
-  children,
-  align = "left",
-  className = "",
-}: {
-  children: React.ReactNode;
-  align?: "left" | "right";
-  className?: string;
-}) {
-  return <td className={`px-5 py-3 ${align === "right" ? "text-right" : "text-left"} ${className}`}>{children}</td>;
 }
 
 function statusLabel(status: string) {
