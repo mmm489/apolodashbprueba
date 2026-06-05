@@ -195,6 +195,53 @@ export interface ProductCostHistoryEntry {
   createdAt: string;
 }
 
+export type ProductCostReconcileStatus = "mapped" | "exact" | "review" | "conflict" | "missing";
+export type ProductCostMatchType = "exact" | "same_name" | "fuzzy";
+
+export interface ProductCostCandidate {
+  legacyProductCode: string;
+  legacyProductName: string;
+  legacyCategory: string;
+  unitCost: number;
+  confidence: number;
+  matchType: ProductCostMatchType;
+  categoryCompatible: boolean;
+}
+
+export interface ProductCostReconcileRow {
+  posProductId: string;
+  posProductName: string;
+  posCategory: string;
+  price: number;
+  vatRate: number;
+  active: boolean;
+  isTopping: boolean;
+  unitCost: number | null;
+  margin: number | null;
+  marginPct: number | null;
+  status: ProductCostReconcileStatus;
+  currentCost: ProductCost | null;
+  exactCandidate: ProductCostCandidate | null;
+  candidates: ProductCostCandidate[];
+  hasCodeConflict: boolean;
+}
+
+export interface ProductCostWorkspace {
+  products: ProductCostReconcileRow[];
+  categories: string[];
+  firstPosSaleDate: string | null;
+  stats: {
+    total: number;
+    active: number;
+    mapped: number;
+    exact: number;
+    review: number;
+    conflict: number;
+    missing: number;
+    toppings: number;
+  };
+}
+
 export interface PosCategory {
   id: number;
   name: string;

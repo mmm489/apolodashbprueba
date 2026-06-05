@@ -26,7 +26,10 @@ import type {
   ExtractionResult,
   HourlyProductSale,
   ProductCost,
+  ProductCostCandidate,
   ProductCostHistoryEntry,
+  ProductCostReconcileRow,
+  ProductCostWorkspace,
   HourlySalesEntry,
   InvoiceLineRecord,
   InvoiceRecord,
@@ -84,6 +87,61 @@ function normalizePaymentMix(value: unknown): Record<string, number> {
 
 function sortByBusinessDateDesc<T extends { businessDate: string }>(items: T[]) {
   return items.sort((a, b) => b.businessDate.localeCompare(a.businessDate));
+}
+
+function normalizeProductText(value: unknown) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function categoryFamily(value: unknown) {
+  const text = normalizeProductText(value);
+  if (!text) return "altres";
+  if (text.includes("topping") || text.includes("extre") || text.includes("sabor") || text.includes("bola")) return "toppings";
+  if (text.includes("frozen") || text.includes("frozzen") || text.includes("iogurt") || text.includes("acai")) return "frozen";
+  if (text.includes("gelat")) return "gelats";
+  if (text.includes("begud")) return "begudes";
+  if (text.includes("batut")) return "batuts";
+  if (text.includes("berlin")) return "berlines";
+  if (text.includes("cafe")) return "cafes";
+  if (text.includes("crep")) return "crepes";
+  if (text.includes("frappe")) return "frappes";
+  if (text.includes("granissat") || text.includes("granitzat")) return "granissats";
+  if (text.includes("hipop") || text.includes("waffle")) return "hi-pop";
+  if (text.includes("ice")) return "ice-drinks";
+  if (text.includes("recept")) return "receptes";
+  if (text.includes("smooth")) return "smoothies";
+  if (text.includes("xurro")) return "xurros";
+  if (text.includes("especial")) return "especialitats";
+  return text;
+}
+
+function categoriesCompatible(a: unknown, b: unknown) {
+  const left = normalizeProductText(a);
+  const right = normalizeProductText(b);
+  if (!left || !right) return true;
+  if (left === right || left.includes(right) || right.includes(left)) return true;
+  return categoryFamily(a) === categoryFamily(b);
+}
+
+function productNamesMatch(a: unknown, b: unknown) {
+  return normalizeProductText(a) === normalizeProductText(b);
+}
+
+function roughNameConfidence(a: unknown, b: unknown) {
+  const left = normalizeProductText(a);
+  const right = normalizeProductText(b);
+  if (!left || !right) return 0;
+  if (left === right) return 100;
+  if (left.includes(right) || right.includes(left)) return 76;
+  const leftTokens = new Set(String(a ?? "").toLowerCase().split(/\s+/).map(normalizeProductText).filter(Boolean));
+  const rightTokens = new Set(String(b ?? "").toLowerCase().split(/\s+/).map(normalizeProductText).filter(Boolean));
+  if (leftTokens.size === 0 || rightTokens.size === 0) return 0;
+  const overlap = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+  return Math.round((overlap / Math.max(leftTokens.size, rightTokens.size)) * 70);
 }
 
 export async function listDocuments(from?: string, to?: string) {
@@ -1150,20 +1208,102 @@ export async function enqueueCatalogChanges(changes: CatalogDraftChange[], reque
 
 /* ---------- Product Costs ---------- */
 
+async function ensureProductCostTables() {
+  if (!hasDatabase()) return;
+
+  const sql = getSql();
+  await sql.query(`
+    CREATE TABLE IF NOT EXISTS product_costs (
+      id TEXT PRIMARY KEY,
+      product_code TEXT NOT NULL,
+      product_name TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'Altres',
+      unit_cost NUMERIC(8,4) NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(product_code)
+    )
+  `);
+  await sql.query(`
+    CREATE TABLE IF NOT EXISTS product_cost_history (
+      id TEXT PRIMARY KEY,
+      product_code TEXT NOT NULL,
+      product_name TEXT NOT NULL,
+      unit_cost NUMERIC(8,4) NOT NULL,
+      valid_from DATE NOT NULL,
+      valid_until DATE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await sql.query(`
+    CREATE TABLE IF NOT EXISTS product_cost_mappings (
+      id TEXT PRIMARY KEY,
+      pos_product_id TEXT NOT NULL,
+      pos_product_name TEXT NOT NULL,
+      pos_category TEXT NOT NULL,
+      legacy_product_code TEXT,
+      legacy_product_name TEXT,
+      legacy_category TEXT,
+      unit_cost NUMERIC(8,4) NOT NULL,
+      source TEXT NOT NULL,
+      confidence INTEGER NOT NULL DEFAULT 0,
+      effective_from DATE NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await sql.query(`
+    CREATE INDEX IF NOT EXISTS idx_product_cost_mappings_pos_product
+    ON product_cost_mappings(pos_product_id, created_at DESC)
+  `);
+  await sql.query(`
+    CREATE INDEX IF NOT EXISTS idx_cost_history_lookup
+    ON product_cost_history(product_code, valid_from DESC)
+  `);
+}
+
+function mapProductCost(row: Record<string, unknown>): ProductCost {
+  return {
+    id: String(row.id),
+    productCode: String(row.product_code),
+    productName: String(row.product_name),
+    category: String(row.category),
+    unitCost: toNumber(row.unit_cost),
+  };
+}
+
+async function getFirstPosSaleDate() {
+  if (!isPosDataSource()) return null;
+  const sql = getSql();
+  try {
+    const exists = await sql.query("SELECT to_regclass('pos.orders') AS table_name");
+    if (!exists[0]?.table_name) return null;
+    const rows = await sql`
+      SELECT MIN((created_at AT TIME ZONE 'Europe/Madrid')::date) AS first_date
+      FROM pos.orders
+      WHERE status <> 'cancelled'
+        AND payment_method <> 'parked'
+    `;
+    return rows[0]?.first_date ? normalizeDate(rows[0].first_date) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function listProductCosts() {
   if (!hasDatabase()) return [];
 
   const sql = getSql();
   if (isPosDataSource()) {
     if (await hasPublicTable(sql, "product_costs")) {
-      const rows = await sql`SELECT id, product_code, product_name, category, unit_cost FROM product_costs ORDER BY category ASC, product_name ASC`;
-      return rows.map((row) => ({
-        id: String(row.id),
-        productCode: String(row.product_code),
-        productName: String(row.product_name),
-        category: String(row.category),
-        unitCost: toNumber(row.unit_cost),
-      })) satisfies ProductCost[];
+      const rows = await sql`
+        SELECT pc.id, pc.product_code, pc.product_name, pc.category, pc.unit_cost,
+               p.name AS pos_product_name
+        FROM product_costs pc
+        LEFT JOIN pos.products p ON p.id::text = pc.product_code
+        ORDER BY pc.category ASC, pc.product_name ASC
+      `;
+      return rows
+        .filter((row) => !row.pos_product_name || productNamesMatch(row.product_name, row.pos_product_name))
+        .map(mapProductCost) satisfies ProductCost[];
     }
 
     const rows = await sql`
@@ -1183,13 +1323,259 @@ export async function listProductCosts() {
   }
 
   const rows = await sql`SELECT id, product_code, product_name, category, unit_cost FROM product_costs ORDER BY category ASC, product_name ASC`;
-  return rows.map((row) => ({
-    id: String(row.id),
-    productCode: String(row.product_code),
-    productName: String(row.product_name),
-    category: String(row.category),
-    unitCost: toNumber(row.unit_cost),
-  })) satisfies ProductCost[];
+  return rows.map(mapProductCost) satisfies ProductCost[];
+}
+
+async function listAllRawProductCosts() {
+  if (!hasDatabase()) return [] satisfies ProductCost[];
+  await ensureProductCostTables();
+  const sql = getSql();
+  const rows = await sql`SELECT id, product_code, product_name, category, unit_cost FROM product_costs ORDER BY category ASC, product_name ASC`;
+  return rows.map(mapProductCost) satisfies ProductCost[];
+}
+
+function buildCostCandidates(product: {
+  name: string;
+  categoryName: string;
+}, costs: ProductCost[], currentCode: string) {
+  const candidates: ProductCostCandidate[] = [];
+  for (const cost of costs) {
+    if (cost.productCode === currentCode && productNamesMatch(cost.productName, product.name)) continue;
+    const confidence = roughNameConfidence(product.name, cost.productName);
+    if (confidence < 45 || cost.unitCost <= 0) continue;
+    const categoryCompatible = categoriesCompatible(product.categoryName, cost.category);
+    const exactName = productNamesMatch(product.name, cost.productName);
+    candidates.push({
+      legacyProductCode: cost.productCode,
+      legacyProductName: cost.productName,
+      legacyCategory: cost.category,
+      unitCost: cost.unitCost,
+      confidence: exactName && categoryCompatible ? 100 : exactName ? 88 : confidence,
+      matchType: exactName && categoryCompatible ? "exact" : exactName ? "same_name" : "fuzzy",
+      categoryCompatible,
+    });
+  }
+  return candidates
+    .sort((a, b) => b.confidence - a.confidence || a.legacyProductName.localeCompare(b.legacyProductName))
+    .slice(0, 8);
+}
+
+function chooseExactCandidate(candidates: ProductCostCandidate[]) {
+  const exactCandidates = candidates.filter((candidate) => candidate.matchType === "exact" && candidate.categoryCompatible);
+  const uniqueCosts = new Map<string, ProductCostCandidate>();
+  for (const candidate of exactCandidates) {
+    uniqueCosts.set(candidate.unitCost.toFixed(4), candidate);
+  }
+  if (uniqueCosts.size === 1) return [...uniqueCosts.values()][0];
+  return null;
+}
+
+function calculateProductMargin(price: number, vatRate: number, unitCost: number | null) {
+  if (unitCost == null) return { margin: null, marginPct: null };
+  const netPrice = price / (1 + vatRate / 100);
+  const margin = netPrice - unitCost;
+  return {
+    margin,
+    marginPct: netPrice > 0 ? (margin / netPrice) * 100 : null,
+  };
+}
+
+function isToppingLike(category: string, productName: string) {
+  return categoryFamily(category) === "toppings" || categoryFamily(productName) === "toppings";
+}
+
+export async function listProductCostWorkspace(): Promise<ProductCostWorkspace> {
+  if (!hasDatabase() || !isPosDataSource()) {
+    return {
+      products: [],
+      categories: [],
+      firstPosSaleDate: null,
+      stats: { total: 0, active: 0, mapped: 0, exact: 0, review: 0, conflict: 0, missing: 0, toppings: 0 },
+    };
+  }
+
+  await ensureProductCostTables();
+  await ensurePosModifierTables();
+  const sql = getSql();
+  const [productRows, rawCosts, firstPosSaleDate] = await Promise.all([
+    sql`
+      SELECT p.id, p.name, p.price, p.vat_rate, p.active,
+             COALESCE(c.name, 'Sense categoria') AS category_name,
+             COALESCE(c.sort_order, 9999) AS category_sort,
+             COALESCE(p.sort_order, 9999) AS product_sort
+      FROM pos.products p
+      LEFT JOIN pos.categories c ON c.id = p.category_id
+      ORDER BY p.active DESC, category_sort ASC, product_sort ASC, p.name ASC
+    `,
+    listAllRawProductCosts(),
+    getFirstPosSaleDate(),
+  ]);
+
+  const costsByCode = new Map<string, ProductCost[]>();
+  for (const cost of rawCosts) {
+    const list = costsByCode.get(cost.productCode) ?? [];
+    list.push(cost);
+    costsByCode.set(cost.productCode, list);
+  }
+
+  const products = productRows.map((row) => {
+    const posProductId = String(row.id);
+    const posProductName = String(row.name);
+    const posCategory = String(row.category_name);
+    const price = toNumber(row.price);
+    const vatRate = toNumber(row.vat_rate);
+    const currentCost = (costsByCode.get(posProductId) ?? [])
+      .find((cost) => productNamesMatch(cost.productName, posProductName)) ?? null;
+    const hasCodeConflict = (costsByCode.get(posProductId) ?? [])
+      .some((cost) => !productNamesMatch(cost.productName, posProductName) && cost.unitCost > 0);
+    const candidates = buildCostCandidates({ name: posProductName, categoryName: posCategory }, rawCosts, posProductId);
+    const exactCandidate = chooseExactCandidate(candidates);
+    const exactCandidateCosts = new Set(
+      candidates
+        .filter((candidate) => candidate.matchType === "exact" && candidate.categoryCompatible)
+        .map((candidate) => candidate.unitCost.toFixed(4)),
+    );
+    const status: ProductCostReconcileRow["status"] = currentCost && currentCost.unitCost > 0
+      ? "mapped"
+      : exactCandidate
+        ? "exact"
+        : exactCandidateCosts.size > 1 || hasCodeConflict
+          ? "conflict"
+          : candidates.length > 0
+            ? "review"
+            : "missing";
+    const effectiveCost = currentCost?.unitCost ?? exactCandidate?.unitCost ?? null;
+    const { margin, marginPct } = calculateProductMargin(price, vatRate, effectiveCost);
+    return {
+      posProductId,
+      posProductName,
+      posCategory,
+      price,
+      vatRate,
+      active: Boolean(row.active),
+      isTopping: isToppingLike(posCategory, posProductName),
+      unitCost: currentCost?.unitCost ?? null,
+      margin,
+      marginPct,
+      status,
+      currentCost,
+      exactCandidate,
+      candidates,
+      hasCodeConflict,
+    } satisfies ProductCostReconcileRow;
+  });
+
+  const stats = products.reduce<ProductCostWorkspace["stats"]>((acc, product) => {
+    acc.total += 1;
+    if (product.active) acc.active += 1;
+    if (product.isTopping) acc.toppings += 1;
+    acc[product.status] += 1;
+    return acc;
+  }, { total: 0, active: 0, mapped: 0, exact: 0, review: 0, conflict: 0, missing: 0, toppings: 0 });
+
+  return {
+    products,
+    categories: [...new Set(products.map((product) => product.posCategory))].sort(),
+    firstPosSaleDate,
+    stats,
+  };
+}
+
+async function recordProductCostMapping(input: {
+  posProductId: string;
+  posProductName: string;
+  posCategory: string;
+  legacyProductCode?: string | null;
+  legacyProductName?: string | null;
+  legacyCategory?: string | null;
+  unitCost: number;
+  source: string;
+  confidence?: number;
+  effectiveFrom: string;
+}) {
+  await ensureProductCostTables();
+  const sql = getSql();
+  await sql`
+    INSERT INTO product_cost_mappings (
+      id, pos_product_id, pos_product_name, pos_category,
+      legacy_product_code, legacy_product_name, legacy_category,
+      unit_cost, source, confidence, effective_from
+    )
+    VALUES (
+      ${randomUUID()}, ${input.posProductId}, ${input.posProductName}, ${input.posCategory},
+      ${input.legacyProductCode ?? null}, ${input.legacyProductName ?? null}, ${input.legacyCategory ?? null},
+      ${input.unitCost}, ${input.source}, ${input.confidence ?? 0}, ${input.effectiveFrom}
+    )
+  `;
+}
+
+export async function applyExactProductCosts() {
+  const workspace = await listProductCostWorkspace();
+  const effectiveFrom = workspace.firstPosSaleDate ?? todayIsoLocal();
+  let applied = 0;
+  for (const product of workspace.products) {
+    if (product.status !== "exact" || !product.exactCandidate) continue;
+    await upsertProductCost({
+      productCode: product.posProductId,
+      productName: product.posProductName,
+      category: product.posCategory,
+      unitCost: product.exactCandidate.unitCost,
+      effectiveFrom,
+      mapping: {
+        source: "exact",
+        confidence: product.exactCandidate.confidence,
+        legacyProductCode: product.exactCandidate.legacyProductCode,
+        legacyProductName: product.exactCandidate.legacyProductName,
+        legacyCategory: product.exactCandidate.legacyCategory,
+      },
+    });
+    applied += 1;
+  }
+  return { applied, workspace: await listProductCostWorkspace() };
+}
+
+export async function applyProductCostAssignments(input: {
+  items: Array<{
+    posProductId: string;
+    unitCost?: number | null;
+    legacyProductCode?: string | null;
+    effectiveFrom?: string | null;
+  }>;
+}) {
+  const workspace = await listProductCostWorkspace();
+  const byId = new Map(workspace.products.map((product) => [product.posProductId, product]));
+  const effectiveFallback = todayIsoLocal();
+  let applied = 0;
+
+  for (const item of input.items) {
+    const product = byId.get(String(item.posProductId));
+    if (!product) continue;
+
+    const candidate = item.legacyProductCode
+      ? product.candidates.find((entry) => entry.legacyProductCode === String(item.legacyProductCode))
+      : null;
+    const unitCost = candidate ? candidate.unitCost : Number(item.unitCost ?? NaN);
+    if (!Number.isFinite(unitCost) || unitCost < 0) continue;
+    const effectiveFrom = item.effectiveFrom ? String(item.effectiveFrom) : effectiveFallback;
+
+    await upsertProductCost({
+      productCode: product.posProductId,
+      productName: product.posProductName,
+      category: product.posCategory,
+      unitCost,
+      effectiveFrom,
+      mapping: {
+        source: candidate ? "candidate" : "manual",
+        confidence: candidate?.confidence ?? 0,
+        legacyProductCode: candidate?.legacyProductCode ?? null,
+        legacyProductName: candidate?.legacyProductName ?? null,
+        legacyCategory: candidate?.legacyCategory ?? null,
+      },
+    });
+    applied += 1;
+  }
+
+  return { applied, workspace: await listProductCostWorkspace() };
 }
 
 /** Updates or creates a product cost and logs the change in the history
@@ -1202,9 +1588,16 @@ export async function upsertProductCost(input: {
   category: string;
   unitCost: number;
   effectiveFrom?: string; // YYYY-MM-DD, defaults to today
+  mapping?: {
+    source: string;
+    confidence?: number;
+    legacyProductCode?: string | null;
+    legacyProductName?: string | null;
+    legacyCategory?: string | null;
+  };
 }) {
   if (!hasDatabase()) return;
-  assertLegacyWritable();
+  await ensureProductCostTables();
 
   const sql = getSql();
   const effective = input.effectiveFrom ?? todayIsoLocal();
@@ -1244,6 +1637,21 @@ export async function upsertProductCost(input: {
     ON CONFLICT (product_code)
     DO UPDATE SET product_name = EXCLUDED.product_name, category = EXCLUDED.category, unit_cost = EXCLUDED.unit_cost, updated_at = NOW()
   `;
+
+  if (input.mapping) {
+    await recordProductCostMapping({
+      posProductId: input.productCode,
+      posProductName: input.productName,
+      posCategory: input.category,
+      legacyProductCode: input.mapping.legacyProductCode ?? null,
+      legacyProductName: input.mapping.legacyProductName ?? null,
+      legacyCategory: input.mapping.legacyCategory ?? null,
+      unitCost: input.unitCost,
+      source: input.mapping.source,
+      confidence: input.mapping.confidence ?? 0,
+      effectiveFrom: effective,
+    });
+  }
 }
 
 /** Returns the full cost history for a product, newest first. Used in the
@@ -1276,18 +1684,33 @@ export async function listAllProductCostHistory() {
   if (!hasDatabase()) return [];
   const sql = getSql();
   if (isPosDataSource() && !(await hasPublicTable(sql, "product_cost_history"))) return [];
-  const rows = await sql`
-    SELECT id, product_code, product_name, unit_cost, valid_from, valid_until, created_at
-    FROM product_cost_history
-    ORDER BY product_code ASC, valid_from DESC
-  `;
+  const firstPosSaleDate = isPosDataSource() ? await getFirstPosSaleDate() : null;
+  const rows = isPosDataSource()
+    ? await sql`
+        SELECT pch.id, pch.product_code, pch.product_name, pch.unit_cost,
+               pch.valid_from, pch.valid_until, pch.created_at,
+               p.name AS pos_product_name
+        FROM product_cost_history pch
+        LEFT JOIN pos.products p ON p.id::text = pch.product_code
+        ORDER BY pch.product_code ASC, pch.valid_from DESC
+      `
+    : await sql`
+        SELECT id, product_code, product_name, unit_cost, valid_from, valid_until, created_at,
+               NULL AS pos_product_name
+        FROM product_cost_history
+        ORDER BY product_code ASC, valid_from DESC
+      `;
   return rows.map((row) => ({
     id: String(row.id),
     productCode: String(row.product_code),
     productName: String(row.product_name),
     unitCost: toNumber(row.unit_cost),
     validFrom: normalizeDate(row.valid_from),
-    validUntil: row.valid_until ? normalizeDate(row.valid_until) : null,
+    validUntil: row.valid_until
+      ? normalizeDate(row.valid_until)
+      : firstPosSaleDate && row.pos_product_name && !productNamesMatch(row.product_name, row.pos_product_name)
+        ? firstPosSaleDate
+        : null,
     createdAt: new Date(String(row.created_at)).toISOString(),
   })) satisfies ProductCostHistoryEntry[];
 }

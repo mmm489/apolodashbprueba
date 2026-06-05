@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import {
   Bell,
+  Calculator,
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
@@ -31,6 +32,7 @@ const navItems = [
   { href: "/gastos", label: "Despeses", section: "General", icon: Receipt },
   { href: "/empleados", label: "Empleats", section: "General", icon: Users },
   { href: "/productes", label: "Productes", section: "General", icon: Package },
+  { href: "/coste-productos", label: "Coste productos", section: "General", icon: Calculator },
 ];
 
 export function AppFrame({
