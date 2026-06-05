@@ -106,6 +106,15 @@ async function vercelGet<T>(path: string, token: string, teamId?: string, extraP
   return (await response.json()) as T;
 }
 
+async function readDecryptedEnvValue(projectId: string, envId: string, token: string, teamId?: string) {
+  const detail = await vercelGet<VercelEnvVar>(
+    `/v1/projects/${projectId}/env/${envId}`,
+    token,
+    teamId,
+  );
+  return detail.value ?? "";
+}
+
 function envTargetsProduction(envVar: VercelEnvVar) {
   if (!envVar.target) return true;
   if (Array.isArray(envVar.target)) return envVar.target.includes("production");
@@ -143,13 +152,19 @@ async function main() {
     `/v9/projects/${project.id}/env`,
     token,
     teamId,
-    { decrypt: "true" },
   );
-  const candidate = DB_ENV_KEYS
-    .map((key) => envResponse.envs.find((envVar) => envVar.key === key && envTargetsProduction(envVar) && envVar.value))
-    .find(Boolean);
+  let candidate: { key: string; value: string } | null = null;
+  for (const key of DB_ENV_KEYS) {
+    const envVar = envResponse.envs.find((entry) => entry.key === key && envTargetsProduction(entry));
+    if (!envVar) continue;
+    const value = await readDecryptedEnvValue(project.id, envVar.id, token, teamId);
+    if (value.startsWith("postgresql://") || value.startsWith("postgres://")) {
+      candidate = { key, value };
+      break;
+    }
+  }
 
-  if (!candidate?.value) {
+  if (!candidate) {
     const keys = envResponse.envs.map((envVar) => envVar.key).sort().join(", ");
     throw new Error(`No encuentro una variable de BD conocida en "${oldProjectName}". Variables visibles: ${keys}`);
   }
