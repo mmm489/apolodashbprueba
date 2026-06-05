@@ -57,15 +57,44 @@ function normalizePaymentMethod(value: unknown): string {
   return method || "otros";
 }
 
+type DashboardSql = ReturnType<typeof getSql>;
+
+async function hasPublicTable(sql: DashboardSql, tableName: string) {
+  const rows = await sql.query("SELECT to_regclass($1) AS table_name", [`public.${tableName}`]);
+  return Boolean(rows[0]?.table_name);
+}
+
+function normalizePaymentMix(value: unknown): Record<string, number> {
+  if (!value) return {};
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value) as Record<string, unknown>;
+      return normalizePaymentMix(parsed);
+    } catch {
+      return {};
+    }
+  }
+  if (typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, number> = {};
+  for (const [key, amount] of Object.entries(value as Record<string, unknown>)) {
+    out[key] = toNumber(amount);
+  }
+  return out;
+}
+
+function sortByBusinessDateDesc<T extends { businessDate: string }>(items: T[]) {
+  return items.sort((a, b) => b.businessDate.localeCompare(a.businessDate));
+}
+
 export async function listDocuments(from?: string, to?: string) {
   if (!hasDatabase()) {
     return mockDocuments;
   }
-  if (isPosDataSource()) {
-    return [];
-  }
 
   const sql = getSql();
+  if (isPosDataSource() && !(await hasPublicTable(sql, "documents"))) {
+    return [];
+  }
   const rows = from && to
     ? await sql`SELECT id, file_name, source_path, document_type, status, confidence, extractor_version, error_message, created_at FROM documents WHERE created_at::date >= ${from} AND created_at::date <= ${to} ORDER BY created_at DESC`
     : await sql`SELECT id, file_name, source_path, document_type, status, confidence, extractor_version, error_message, created_at FROM documents ORDER BY created_at DESC LIMIT 50`;
@@ -123,7 +152,50 @@ export async function listSalesReports(from?: string, to?: string) {
       byDate.set(businessDate, report);
     }
 
-    return [...byDate.values()].map((report) => ({
+    if (await hasPublicTable(sql, "sales_reports")) {
+      const legacyRows = from && to
+        ? await sql`
+            SELECT id, business_date, total_sales, order_count, average_ticket, payment_mix
+            FROM sales_reports sr
+            WHERE sr.business_date >= ${from}::date
+              AND sr.business_date <= ${to}::date
+              AND NOT EXISTS (
+                SELECT 1
+                FROM pos.orders o
+                WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date = sr.business_date
+                  AND o.status <> 'cancelled'
+                  AND o.payment_method <> 'parked'
+              )
+            ORDER BY sr.business_date DESC
+          `
+        : await sql`
+            SELECT id, business_date, total_sales, order_count, average_ticket, payment_mix
+            FROM sales_reports sr
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM pos.orders o
+              WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date = sr.business_date
+                AND o.status <> 'cancelled'
+                AND o.payment_method <> 'parked'
+            )
+            ORDER BY sr.business_date DESC
+            LIMIT 5000
+          `;
+
+      for (const row of legacyRows) {
+        const businessDate = normalizeDate(row.business_date);
+        byDate.set(businessDate, {
+          id: String(row.id),
+          businessDate,
+          totalSales: toNumber(row.total_sales),
+          orderCount: toNumber(row.order_count),
+          averageTicket: toNumber(row.average_ticket),
+          paymentMix: normalizePaymentMix(row.payment_mix),
+        });
+      }
+    }
+
+    return sortByBusinessDateDesc([...byDate.values()]).map((report) => ({
       ...report,
       averageTicket: report.orderCount > 0 ? report.totalSales / report.orderCount : 0,
     })) satisfies SalesReport[];
@@ -138,7 +210,7 @@ export async function listSalesReports(from?: string, to?: string) {
     totalSales: toNumber(row.total_sales),
     orderCount: toNumber(row.order_count),
     averageTicket: toNumber(row.average_ticket),
-    paymentMix: (row.payment_mix as Record<string, number>) ?? {},
+    paymentMix: normalizePaymentMix(row.payment_mix),
   })) satisfies SalesReport[];
 }
 
@@ -176,7 +248,7 @@ export async function listHourlySales(from?: string, to?: string) {
           LIMIT 10000
         `;
 
-    return rows.map((row) => {
+    const entries = rows.map((row) => {
       const businessDate = normalizeDate(row.business_date);
       const hour = `${String(row.hour_num).padStart(2, "0")}:00`;
       return {
@@ -187,6 +259,47 @@ export async function listHourlySales(from?: string, to?: string) {
         orderCount: toNumber(row.order_count),
       };
     }) satisfies HourlySalesEntry[];
+
+    if (await hasPublicTable(sql, "hourly_sales")) {
+      const legacyRows = from && to
+        ? await sql`
+            SELECT id, business_date, hour_label, sales, order_count
+            FROM hourly_sales hs
+            WHERE hs.business_date >= ${from}::date
+              AND hs.business_date <= ${to}::date
+              AND NOT EXISTS (
+                SELECT 1
+                FROM pos.orders o
+                WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date = hs.business_date
+                  AND o.status <> 'cancelled'
+                  AND o.payment_method <> 'parked'
+              )
+            ORDER BY hs.business_date DESC, hs.hour_label ASC
+          `
+        : await sql`
+            SELECT id, business_date, hour_label, sales, order_count
+            FROM hourly_sales hs
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM pos.orders o
+              WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date = hs.business_date
+                AND o.status <> 'cancelled'
+                AND o.payment_method <> 'parked'
+            )
+            ORDER BY hs.business_date DESC, hs.hour_label ASC
+            LIMIT 20000
+          `;
+
+      entries.push(...legacyRows.map((row) => ({
+        id: String(row.id),
+        businessDate: normalizeDate(row.business_date),
+        hour: String(row.hour_label),
+        sales: toNumber(row.sales),
+        orderCount: toNumber(row.order_count),
+      })));
+    }
+
+    return sortByBusinessDateDesc(entries);
   }
 
   const rows = from && to
@@ -241,7 +354,7 @@ export async function listHourlyProductSales(from?: string, to?: string) {
           LIMIT 50000
         `;
 
-    return rows.map((row) => {
+    const entries = rows.map((row) => {
       const businessDate = normalizeDate(row.business_date);
       const hourLabel = `${String(row.hour_num).padStart(2, "0")}:00`;
       const productCode = String(row.product_id);
@@ -255,6 +368,49 @@ export async function listHourlyProductSales(from?: string, to?: string) {
         amount: toNumber(row.amount),
       };
     }) satisfies HourlyProductSale[];
+
+    if (await hasPublicTable(sql, "hourly_product_sales")) {
+      const legacyRows = from && to
+        ? await sql`
+            SELECT id, business_date, hour_label, product_code, product_name, units, amount
+            FROM hourly_product_sales hps
+            WHERE hps.business_date >= ${from}::date
+              AND hps.business_date <= ${to}::date
+              AND NOT EXISTS (
+                SELECT 1
+                FROM pos.orders o
+                WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date = hps.business_date
+                  AND o.status <> 'cancelled'
+                  AND o.payment_method <> 'parked'
+              )
+            ORDER BY hps.business_date DESC, hps.hour_label ASC, hps.amount DESC
+          `
+        : await sql`
+            SELECT id, business_date, hour_label, product_code, product_name, units, amount
+            FROM hourly_product_sales hps
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM pos.orders o
+              WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date = hps.business_date
+                AND o.status <> 'cancelled'
+                AND o.payment_method <> 'parked'
+            )
+            ORDER BY hps.business_date DESC, hps.hour_label ASC, hps.amount DESC
+            LIMIT 50000
+          `;
+
+      entries.push(...legacyRows.map((row) => ({
+        id: String(row.id),
+        businessDate: normalizeDate(row.business_date),
+        hourLabel: String(row.hour_label),
+        productCode: String(row.product_code),
+        productName: String(row.product_name),
+        units: toNumber(row.units),
+        amount: toNumber(row.amount),
+      })));
+    }
+
+    return sortByBusinessDateDesc(entries);
   }
 
   const rows = from && to
@@ -275,11 +431,11 @@ export async function listInvoices(from?: string, to?: string) {
   if (!hasDatabase()) {
     return mockInvoices;
   }
-  if (isPosDataSource()) {
-    return [];
-  }
 
   const sql = getSql();
+  if (isPosDataSource() && !(await hasPublicTable(sql, "invoices"))) {
+    return [];
+  }
   const rows = from && to
     ? await sql`SELECT id, supplier_name, issue_date, due_date, total_amount, tax_amount, category FROM invoices WHERE issue_date >= ${from} AND issue_date <= ${to} ORDER BY issue_date DESC`
     : await sql`SELECT id, supplier_name, issue_date, due_date, total_amount, tax_amount, category FROM invoices ORDER BY issue_date DESC LIMIT 500`;
@@ -296,9 +452,11 @@ export async function listInvoices(from?: string, to?: string) {
 
 export async function listInvoiceLines(from?: string, to?: string) {
   if (!hasDatabase()) return [];
-  if (isPosDataSource()) return [];
 
   const sql = getSql();
+  if (isPosDataSource() && (!(await hasPublicTable(sql, "invoice_lines")) || !(await hasPublicTable(sql, "invoices")))) {
+    return [];
+  }
   const rows = from && to
     ? await sql`SELECT il.id, il.invoice_id, il.description, il.quantity, il.unit_price, il.amount, il.vat_rate, il.vat_amount FROM invoice_lines il JOIN invoices i ON i.id = il.invoice_id WHERE i.issue_date >= ${from} AND i.issue_date <= ${to} ORDER BY il.invoice_id`
     : await sql`SELECT id, invoice_id, description, quantity, unit_price, amount, vat_rate, vat_amount FROM invoice_lines ORDER BY invoice_id`;
@@ -354,7 +512,7 @@ export async function listProductSales(from?: string, to?: string) {
           LIMIT 20000
         `;
 
-    return rows.map((row) => {
+    const entries = rows.map((row) => {
       const businessDate = normalizeDate(row.business_date);
       const productCode = String(row.product_id);
       return {
@@ -367,6 +525,49 @@ export async function listProductSales(from?: string, to?: string) {
         amount: toNumber(row.amount),
       };
     }) satisfies ProductSaleRecord[];
+
+    if (await hasPublicTable(sql, "product_sales")) {
+      const legacyRows = from && to
+        ? await sql`
+            SELECT id, sales_report_id, business_date, product_code, product_name, units, amount
+            FROM product_sales ps
+            WHERE ps.business_date >= ${from}::date
+              AND ps.business_date <= ${to}::date
+              AND NOT EXISTS (
+                SELECT 1
+                FROM pos.orders o
+                WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date = ps.business_date
+                  AND o.status <> 'cancelled'
+                  AND o.payment_method <> 'parked'
+              )
+            ORDER BY ps.business_date DESC, ps.amount DESC
+          `
+        : await sql`
+            SELECT id, sales_report_id, business_date, product_code, product_name, units, amount
+            FROM product_sales ps
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM pos.orders o
+              WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date = ps.business_date
+                AND o.status <> 'cancelled'
+                AND o.payment_method <> 'parked'
+            )
+            ORDER BY ps.business_date DESC, ps.amount DESC
+            LIMIT 50000
+          `;
+
+      entries.push(...legacyRows.map((row) => ({
+        id: String(row.id),
+        salesReportId: String(row.sales_report_id),
+        businessDate: normalizeDate(row.business_date),
+        productCode: String(row.product_code),
+        productName: String(row.product_name),
+        units: toNumber(row.units),
+        amount: toNumber(row.amount),
+      })));
+    }
+
+    return sortByBusinessDateDesc(entries);
   }
 
   const rows = from && to
@@ -583,11 +784,11 @@ export async function listPayrolls(from?: string, to?: string) {
   if (!hasDatabase()) {
     return mockPayrolls;
   }
-  if (isPosDataSource()) {
-    return [];
-  }
 
   const sql = getSql();
+  if (isPosDataSource() && !(await hasPublicTable(sql, "payrolls"))) {
+    return [];
+  }
   const fromMonth = from ? from.slice(0, 7) : undefined;
   const toMonth = to ? to.slice(0, 7) : undefined;
   const rows = fromMonth && toMonth
@@ -606,11 +807,11 @@ export async function listAlerts() {
   if (!hasDatabase()) {
     return mockAlerts;
   }
-  if (isPosDataSource()) {
-    return [];
-  }
 
   const sql = getSql();
+  if (isPosDataSource() && !(await hasPublicTable(sql, "alerts"))) {
+    return [];
+  }
   const rows = await sql`SELECT id, title, description, severity, created_at FROM alerts ORDER BY created_at DESC LIMIT 10`;
   return rows.map((row) => ({
     id: String(row.id),
@@ -625,11 +826,11 @@ export async function listTelegramUsers() {
   if (!hasDatabase()) {
     return mockTelegramUsers;
   }
-  if (isPosDataSource()) {
-    return [];
-  }
 
   const sql = getSql();
+  if (isPosDataSource() && !(await hasPublicTable(sql, "telegram_users"))) {
+    return [];
+  }
   const rows = await sql`SELECT id, telegram_user_id, username, display_name, is_active FROM telegram_users WHERE is_active = TRUE ORDER BY created_at ASC`;
   return rows.map((row) => ({
     id: String(row.id),
@@ -644,11 +845,11 @@ export async function listTelegramMessages() {
   if (!hasDatabase()) {
     return mockTelegramMessages;
   }
-  if (isPosDataSource()) {
-    return [];
-  }
 
   const sql = getSql();
+  if (isPosDataSource() && !(await hasPublicTable(sql, "telegram_messages"))) {
+    return [];
+  }
   const rows = await sql`SELECT id, telegram_user_id, username, question, answer, created_at FROM telegram_messages ORDER BY created_at DESC LIMIT 10`;
   return rows.map((row) => ({
     id: String(row.id),
@@ -954,6 +1155,17 @@ export async function listProductCosts() {
 
   const sql = getSql();
   if (isPosDataSource()) {
+    if (await hasPublicTable(sql, "product_costs")) {
+      const rows = await sql`SELECT id, product_code, product_name, category, unit_cost FROM product_costs ORDER BY category ASC, product_name ASC`;
+      return rows.map((row) => ({
+        id: String(row.id),
+        productCode: String(row.product_code),
+        productName: String(row.product_name),
+        category: String(row.category),
+        unitCost: toNumber(row.unit_cost),
+      })) satisfies ProductCost[];
+    }
+
     const rows = await sql`
       SELECT p.id, p.name AS product_name, COALESCE(c.name, 'Sense categoria') AS category
       FROM pos.products p
@@ -1038,8 +1250,8 @@ export async function upsertProductCost(input: {
  * product detail UI so the owner can audit when a price changed. */
 export async function listProductCostHistory(productCode: string) {
   if (!hasDatabase()) return [];
-  if (isPosDataSource()) return [];
   const sql = getSql();
+  if (isPosDataSource() && !(await hasPublicTable(sql, "product_cost_history"))) return [];
   const rows = await sql`
     SELECT id, product_code, product_name, unit_cost, valid_from, valid_until, created_at
     FROM product_cost_history
@@ -1062,8 +1274,8 @@ export async function listProductCostHistory(productCode: string) {
  * without issuing one query per sale. */
 export async function listAllProductCostHistory() {
   if (!hasDatabase()) return [];
-  if (isPosDataSource()) return [];
   const sql = getSql();
+  if (isPosDataSource() && !(await hasPublicTable(sql, "product_cost_history"))) return [];
   const rows = await sql`
     SELECT id, product_code, product_name, unit_cost, valid_from, valid_until, created_at
     FROM product_cost_history
@@ -1121,13 +1333,28 @@ export async function listEmployees() {
 
   const sql = getSql();
   if (isPosDataSource()) {
+    const employees: Employee[] = [];
+    if (await hasPublicTable(sql, "employees")) {
+      const legacyRows = await sql`SELECT id, name, shift_start, shift_end, working_days_per_month, hourly_cost, is_active, created_at FROM employees WHERE is_active = TRUE ORDER BY name ASC`;
+      employees.push(...legacyRows.map((row) => ({
+        id: String(row.id),
+        name: String(row.name),
+        shiftStart: String(row.shift_start),
+        shiftEnd: String(row.shift_end),
+        workingDaysPerMonth: Number(row.working_days_per_month),
+        hourlyCost: toNumber(row.hourly_cost),
+        isActive: Boolean(row.is_active),
+        createdAt: new Date(String(row.created_at)).toISOString(),
+      })));
+    }
+
     const rows = await sql`
       SELECT id, name, active
       FROM pos.employees
       WHERE active = TRUE
       ORDER BY name ASC
     `;
-    return rows.map((row) => ({
+    employees.push(...rows.map((row) => ({
       id: String(row.id),
       name: String(row.name),
       shiftStart: "00:00",
@@ -1136,7 +1363,8 @@ export async function listEmployees() {
       hourlyCost: 0,
       isActive: Boolean(row.active),
       createdAt: "1970-01-01T00:00:00.000Z",
-    })) satisfies Employee[];
+    })));
+    return employees satisfies Employee[];
   }
 
   const rows = await sql`SELECT id, name, shift_start, shift_end, working_days_per_month, hourly_cost, is_active, created_at FROM employees WHERE is_active = TRUE ORDER BY name ASC`;
@@ -1202,9 +1430,9 @@ export async function deleteEmployee(id: string) {
 
 export async function listEmployeeShifts(from?: string, to?: string) {
   if (!hasDatabase()) return [];
-  if (isPosDataSource()) return [];
 
   const sql = getSql();
+  if (isPosDataSource() && (!(await hasPublicTable(sql, "employee_shifts")) || !(await hasPublicTable(sql, "employees")))) return [];
   const rows = from && to
     ? await sql`SELECT s.id, s.employee_id, e.name AS employee_name, s.business_date, s.shift_start, s.shift_end FROM employee_shifts s JOIN employees e ON e.id = s.employee_id WHERE s.business_date >= ${from} AND s.business_date <= ${to} ORDER BY s.business_date DESC, e.name ASC`
     : await sql`SELECT s.id, s.employee_id, e.name AS employee_name, s.business_date, s.shift_start, s.shift_end FROM employee_shifts s JOIN employees e ON e.id = s.employee_id ORDER BY s.business_date DESC, e.name ASC LIMIT 200`;

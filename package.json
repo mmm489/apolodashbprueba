@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "db:setup": "tsx scripts/setup-db.ts",
+    "history:import:legacy": "tsx scripts/import-old-dashboard-history.ts",
     "ingest:onedrive": "tsx scripts/scan-onedrive.ts",
     "ingest:graph": "tsx scripts/sync-microsoft-graph.ts"
   },
