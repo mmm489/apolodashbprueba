@@ -425,7 +425,7 @@ function paymentLabel(method: string) {
   const labels: Record<string, string> = {
     efectivo: "Efectiu",
     tarjeta: "Targeta",
-    manual: "Manual",
+    manual: "Targeta",
     aparcat: "Aparcat",
   };
   return labels[method] ?? method;

@@ -52,7 +52,7 @@ function normalizePaymentMethod(value: unknown): string {
   const method = String(value ?? "otros").toLowerCase();
   if (method === "cash") return "efectivo";
   if (method === "card") return "tarjeta";
-  if (method === "manual") return "manual";
+  if (method === "manual") return "tarjeta";
   if (method === "parked") return "aparcat";
   return method || "otros";
 }
