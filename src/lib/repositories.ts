@@ -392,26 +392,62 @@ export async function listCashClosings(from?: string, to?: string) {
   const rows = from && to
     ? await sql`
         SELECT c.id, c.z_number, c.z_label, c.opened_at, c.closed_at,
-               c.total_cash, c.total_card, c.total_sales,
-               c.ticket_count, c.cash_count, c.card_count,
+               COALESCE(payment_totals.total_cash, c.total_cash) AS total_cash,
+               COALESCE(payment_totals.total_card, c.total_card) AS total_card,
+               COALESCE(payment_totals.total_sales, c.total_sales) AS total_sales,
+               COALESCE(payment_totals.ticket_count, c.ticket_count) AS ticket_count,
+               COALESCE(payment_totals.cash_count, c.cash_count) AS cash_count,
+               COALESCE(payment_totals.card_count, c.card_count) AS card_count,
                c.cancelled_count, c.total_refunded,
                c.first_invoice, c.last_invoice,
                e.name AS employee_name
         FROM pos.cash_closings c
         LEFT JOIN pos.employees e ON e.id = c.employee_id
+        LEFT JOIN LATERAL (
+          SELECT
+            COALESCE(SUM(CASE WHEN o.payment_method = 'cash' THEN o.total END), 0)::float AS total_cash,
+            COALESCE(SUM(CASE WHEN o.payment_method IN ('card', 'manual') THEN o.total END), 0)::float AS total_card,
+            COALESCE(SUM(o.total), 0)::float AS total_sales,
+            COUNT(*)::int AS ticket_count,
+            COUNT(*) FILTER (WHERE o.payment_method = 'cash')::int AS cash_count,
+            COUNT(*) FILTER (WHERE o.payment_method IN ('card', 'manual'))::int AS card_count
+          FROM pos.orders o
+          WHERE o.created_at >= c.opened_at
+            AND o.created_at <= c.closed_at
+            AND o.status NOT IN ('pending', 'cancelled')
+            AND o.payment_method <> 'parked'
+        ) payment_totals ON TRUE
         WHERE (c.closed_at AT TIME ZONE 'Europe/Madrid')::date >= ${from}::date
           AND (c.closed_at AT TIME ZONE 'Europe/Madrid')::date <= ${to}::date
         ORDER BY c.closed_at DESC
       `
     : await sql`
         SELECT c.id, c.z_number, c.z_label, c.opened_at, c.closed_at,
-               c.total_cash, c.total_card, c.total_sales,
-               c.ticket_count, c.cash_count, c.card_count,
+               COALESCE(payment_totals.total_cash, c.total_cash) AS total_cash,
+               COALESCE(payment_totals.total_card, c.total_card) AS total_card,
+               COALESCE(payment_totals.total_sales, c.total_sales) AS total_sales,
+               COALESCE(payment_totals.ticket_count, c.ticket_count) AS ticket_count,
+               COALESCE(payment_totals.cash_count, c.cash_count) AS cash_count,
+               COALESCE(payment_totals.card_count, c.card_count) AS card_count,
                c.cancelled_count, c.total_refunded,
                c.first_invoice, c.last_invoice,
                e.name AS employee_name
         FROM pos.cash_closings c
         LEFT JOIN pos.employees e ON e.id = c.employee_id
+        LEFT JOIN LATERAL (
+          SELECT
+            COALESCE(SUM(CASE WHEN o.payment_method = 'cash' THEN o.total END), 0)::float AS total_cash,
+            COALESCE(SUM(CASE WHEN o.payment_method IN ('card', 'manual') THEN o.total END), 0)::float AS total_card,
+            COALESCE(SUM(o.total), 0)::float AS total_sales,
+            COUNT(*)::int AS ticket_count,
+            COUNT(*) FILTER (WHERE o.payment_method = 'cash')::int AS cash_count,
+            COUNT(*) FILTER (WHERE o.payment_method IN ('card', 'manual'))::int AS card_count
+          FROM pos.orders o
+          WHERE o.created_at >= c.opened_at
+            AND o.created_at <= c.closed_at
+            AND o.status NOT IN ('pending', 'cancelled')
+            AND o.payment_method <> 'parked'
+        ) payment_totals ON TRUE
         ORDER BY c.closed_at DESC
         LIMIT 200
       `;
