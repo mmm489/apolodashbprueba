@@ -1,4 +1,4 @@
-import { addDays, differenceInCalendarDays, endOfDay, formatISO, parseISO, startOfMonth, startOfYear, subDays, subWeeks } from "date-fns";
+import { addDays, differenceInCalendarDays, endOfDay, formatISO, parseISO, startOfMonth, startOfYear, subDays, subHours, subWeeks } from "date-fns";
 
 import {
   listAlerts,
@@ -21,12 +21,14 @@ import { describeCalendarContext, getCalendarContext } from "@/lib/calendar";
 import { classifyFamily } from "@/lib/product-families";
 import type { ChatAnswer, DailyCalendarNote, DailyDigest as DailyDigestType, DateFilter, DatePreset, Employee, EmployeeShift, FamilyMovement, FinancialWorkspace, HistoricalWeather, HourlyProductSale, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, ProductCost, ProductCostHistoryEntry, ProductSaleRecord, SalesReport } from "@/lib/types";
 
+const BUSINESS_DAY_START_HOUR = 4;
+
 export function resolveDateFilter(input?: {
   preset?: string;
   from?: string;
   to?: string;
 }): DateFilter {
-  const now = new Date();
+  const now = subHours(new Date(), BUSINESS_DAY_START_HOUR);
   const preset = normalizePreset(input?.preset);
 
   if (preset === "custom" && input?.from && input?.to) {

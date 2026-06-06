@@ -44,6 +44,8 @@ import type {
 import { toNumber } from "@/lib/utils";
 
 const READ_ONLY_POS_MESSAGE = "Apolodashprueba esta conectado al POS en modo solo lectura.";
+// Dashboard business days follow the POS cash-closing rhythm: sales made after
+// midnight and before 04:00 belong to the previous service day.
 
 function assertLegacyWritable() {
   if (isPosDataSource()) {
@@ -168,19 +170,19 @@ export async function listSalesReports(from?: string, to?: string) {
   if (isPosDataSource()) {
     const rows = from && to
       ? await sql`
-          SELECT (created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date, payment_method,
+          SELECT ((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date, payment_method,
                  COALESCE(SUM(COALESCE(total_base, total)), 0)::float AS total_sales,
                  COUNT(*)::int AS order_count
           FROM pos.orders
-          WHERE (created_at AT TIME ZONE 'Europe/Madrid')::date >= ${from}::date
-            AND (created_at AT TIME ZONE 'Europe/Madrid')::date <= ${to}::date
+          WHERE ((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date >= ${from}::date
+            AND ((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
             AND status <> 'cancelled'
             AND payment_method <> 'parked'
           GROUP BY 1, payment_method
           ORDER BY business_date DESC
         `
       : await sql`
-          SELECT (created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date, payment_method,
+          SELECT ((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date, payment_method,
                  COALESCE(SUM(COALESCE(total_base, total)), 0)::float AS total_sales,
                  COUNT(*)::int AS order_count
           FROM pos.orders
@@ -220,7 +222,7 @@ export async function listSalesReports(from?: string, to?: string) {
               AND NOT EXISTS (
                 SELECT 1
                 FROM pos.orders o
-                WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date = sr.business_date
+                WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = sr.business_date
                   AND o.status <> 'cancelled'
                   AND o.payment_method <> 'parked'
               )
@@ -232,7 +234,7 @@ export async function listSalesReports(from?: string, to?: string) {
             WHERE NOT EXISTS (
               SELECT 1
               FROM pos.orders o
-              WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date = sr.business_date
+              WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = sr.business_date
                 AND o.status <> 'cancelled'
                 AND o.payment_method <> 'parked'
             )
@@ -281,20 +283,20 @@ export async function listHourlySales(from?: string, to?: string) {
   if (isPosDataSource()) {
     const rows = from && to
       ? await sql`
-          SELECT (created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date,
+          SELECT ((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
                  EXTRACT(HOUR FROM created_at AT TIME ZONE 'Europe/Madrid')::int AS hour_num,
                  COALESCE(SUM(COALESCE(total_base, total)), 0)::float AS sales,
                  COUNT(*)::int AS order_count
           FROM pos.orders
-          WHERE (created_at AT TIME ZONE 'Europe/Madrid')::date >= ${from}::date
-            AND (created_at AT TIME ZONE 'Europe/Madrid')::date <= ${to}::date
+          WHERE ((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date >= ${from}::date
+            AND ((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
             AND status <> 'cancelled'
             AND payment_method <> 'parked'
           GROUP BY 1, 2
           ORDER BY business_date DESC, hour_num ASC
         `
       : await sql`
-          SELECT (created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date,
+          SELECT ((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
                  EXTRACT(HOUR FROM created_at AT TIME ZONE 'Europe/Madrid')::int AS hour_num,
                  COALESCE(SUM(COALESCE(total_base, total)), 0)::float AS sales,
                  COUNT(*)::int AS order_count
@@ -328,7 +330,7 @@ export async function listHourlySales(from?: string, to?: string) {
               AND NOT EXISTS (
                 SELECT 1
                 FROM pos.orders o
-                WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date = hs.business_date
+                WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = hs.business_date
                   AND o.status <> 'cancelled'
                   AND o.payment_method <> 'parked'
               )
@@ -340,7 +342,7 @@ export async function listHourlySales(from?: string, to?: string) {
             WHERE NOT EXISTS (
               SELECT 1
               FROM pos.orders o
-              WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date = hs.business_date
+              WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = hs.business_date
                 AND o.status <> 'cancelled'
                 AND o.payment_method <> 'parked'
             )
@@ -379,7 +381,7 @@ export async function listHourlyProductSales(from?: string, to?: string) {
   if (isPosDataSource()) {
     const rows = from && to
       ? await sql`
-          SELECT (o.created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date,
+          SELECT ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
                  EXTRACT(HOUR FROM o.created_at AT TIME ZONE 'Europe/Madrid')::int AS hour_num,
                  oi.product_id,
                  p.name AS product_name,
@@ -388,15 +390,15 @@ export async function listHourlyProductSales(from?: string, to?: string) {
           FROM pos.order_items oi
           JOIN pos.orders o ON o.id = oi.order_id
           JOIN pos.products p ON p.id = oi.product_id
-          WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date >= ${from}::date
-            AND (o.created_at AT TIME ZONE 'Europe/Madrid')::date <= ${to}::date
+          WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date >= ${from}::date
+            AND ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
             AND o.status <> 'cancelled'
             AND o.payment_method <> 'parked'
           GROUP BY 1, 2, oi.product_id, p.name
           ORDER BY business_date DESC, hour_num ASC, amount DESC
         `
       : await sql`
-          SELECT (o.created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date,
+          SELECT ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
                  EXTRACT(HOUR FROM o.created_at AT TIME ZONE 'Europe/Madrid')::int AS hour_num,
                  oi.product_id,
                  p.name AS product_name,
@@ -437,7 +439,7 @@ export async function listHourlyProductSales(from?: string, to?: string) {
               AND NOT EXISTS (
                 SELECT 1
                 FROM pos.orders o
-                WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date = hps.business_date
+                WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = hps.business_date
                   AND o.status <> 'cancelled'
                   AND o.payment_method <> 'parked'
               )
@@ -449,7 +451,7 @@ export async function listHourlyProductSales(from?: string, to?: string) {
             WHERE NOT EXISTS (
               SELECT 1
               FROM pos.orders o
-              WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date = hps.business_date
+              WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = hps.business_date
                 AND o.status <> 'cancelled'
                 AND o.payment_method <> 'parked'
             )
@@ -539,7 +541,7 @@ export async function listProductSales(from?: string, to?: string) {
   if (isPosDataSource()) {
     const rows = from && to
       ? await sql`
-          SELECT (o.created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date,
+          SELECT ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
                  oi.product_id,
                  p.name AS product_name,
                  SUM(oi.qty)::float AS units,
@@ -547,15 +549,15 @@ export async function listProductSales(from?: string, to?: string) {
           FROM pos.order_items oi
           JOIN pos.orders o ON o.id = oi.order_id
           JOIN pos.products p ON p.id = oi.product_id
-          WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date >= ${from}::date
-            AND (o.created_at AT TIME ZONE 'Europe/Madrid')::date <= ${to}::date
+          WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date >= ${from}::date
+            AND ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
             AND o.status <> 'cancelled'
             AND o.payment_method <> 'parked'
           GROUP BY 1, oi.product_id, p.name
           ORDER BY business_date DESC, amount DESC
         `
       : await sql`
-          SELECT (o.created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date,
+          SELECT ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
                  oi.product_id,
                  p.name AS product_name,
                  SUM(oi.qty)::float AS units,
@@ -594,7 +596,7 @@ export async function listProductSales(from?: string, to?: string) {
               AND NOT EXISTS (
                 SELECT 1
                 FROM pos.orders o
-                WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date = ps.business_date
+                WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = ps.business_date
                   AND o.status <> 'cancelled'
                   AND o.payment_method <> 'parked'
               )
@@ -606,7 +608,7 @@ export async function listProductSales(from?: string, to?: string) {
             WHERE NOT EXISTS (
               SELECT 1
               FROM pos.orders o
-              WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date = ps.business_date
+              WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = ps.business_date
                 AND o.status <> 'cancelled'
                 AND o.payment_method <> 'parked'
             )
@@ -676,8 +678,8 @@ export async function listCashClosings(from?: string, to?: string) {
             AND o.status NOT IN ('pending', 'cancelled')
             AND o.payment_method <> 'parked'
         ) payment_totals ON TRUE
-        WHERE (c.closed_at AT TIME ZONE 'Europe/Madrid')::date >= ${from}::date
-          AND (c.closed_at AT TIME ZONE 'Europe/Madrid')::date <= ${to}::date
+        WHERE ((c.closed_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date >= ${from}::date
+          AND ((c.closed_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
         ORDER BY c.closed_at DESC
       `
     : await sql`
@@ -747,7 +749,7 @@ export async function listPosOrderLines(from?: string, to?: string) {
                o.payment_method,
                o.table_number,
                e.name AS employee_name,
-               (o.created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date,
+               ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
                to_char(o.created_at AT TIME ZONE 'Europe/Madrid', 'HH24:MI') AS order_time,
                o.created_at,
                o.completed_at,
@@ -769,8 +771,8 @@ export async function listPosOrderLines(from?: string, to?: string) {
         JOIN pos.products p ON p.id = oi.product_id
         LEFT JOIN pos.categories c ON c.id = p.category_id
         LEFT JOIN pos.employees e ON e.id = o.employee_id
-        WHERE (o.created_at AT TIME ZONE 'Europe/Madrid')::date >= ${from}::date
-          AND (o.created_at AT TIME ZONE 'Europe/Madrid')::date <= ${to}::date
+        WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date >= ${from}::date
+          AND ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
         ORDER BY o.created_at DESC, oi.id ASC
         LIMIT 10000
       `
@@ -783,7 +785,7 @@ export async function listPosOrderLines(from?: string, to?: string) {
                o.payment_method,
                o.table_number,
                e.name AS employee_name,
-               (o.created_at AT TIME ZONE 'Europe/Madrid')::date AS business_date,
+               ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
                to_char(o.created_at AT TIME ZONE 'Europe/Madrid', 'HH24:MI') AS order_time,
                o.created_at,
                o.completed_at,
@@ -1277,7 +1279,7 @@ async function getFirstPosSaleDate() {
     const exists = await sql.query("SELECT to_regclass('pos.orders') AS table_name");
     if (!exists[0]?.table_name) return null;
     const rows = await sql`
-      SELECT MIN((created_at AT TIME ZONE 'Europe/Madrid')::date) AS first_date
+      SELECT MIN(((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date) AS first_date
       FROM pos.orders
       WHERE status <> 'cancelled'
         AND payment_method <> 'parked'
