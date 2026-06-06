@@ -40,6 +40,8 @@ import type {
   SalesReport,
   TelegramMessage,
   TelegramUser,
+  TimeClockAuditRecord,
+  TimeClockSessionRecord,
 } from "@/lib/types";
 import { toNumber } from "@/lib/utils";
 
@@ -66,6 +68,11 @@ type DashboardSql = ReturnType<typeof getSql>;
 
 async function hasPublicTable(sql: DashboardSql, tableName: string) {
   const rows = await sql.query("SELECT to_regclass($1) AS table_name", [`public.${tableName}`]);
+  return Boolean(rows[0]?.table_name);
+}
+
+async function hasPosTable(sql: DashboardSql, tableName: string) {
+  const rows = await sql.query("SELECT to_regclass($1) AS table_name", [`pos.${tableName}`]);
   return Boolean(rows[0]?.table_name);
 }
 
@@ -1871,6 +1878,82 @@ export async function listEmployeeShifts(from?: string, to?: string) {
   })) satisfies EmployeeShift[];
 }
 
+/* ---------- Time Clock ---------- */
+
+export async function listTimeClockSessions(from?: string, to?: string) {
+  if (!hasDatabase() || !isPosDataSource()) return [];
+
+  const sql = getSql();
+  if (!(await hasPosTable(sql, "time_clock_sessions"))) return [];
+
+  const rows = from && to
+    ? await sql`
+        SELECT s.id, s.employee_id, e.name AS employee_name, s.business_date,
+               s.clock_in_at, s.clock_out_at, s.status, s.source, s.device_name,
+               s.created_at, s.updated_at,
+               CASE
+                 WHEN s.clock_out_at IS NULL THEN FLOOR(EXTRACT(EPOCH FROM (NOW() - s.clock_in_at)) / 60)
+                 ELSE FLOOR(EXTRACT(EPOCH FROM (s.clock_out_at - s.clock_in_at)) / 60)
+               END::int AS duration_minutes
+        FROM pos.time_clock_sessions s
+        JOIN pos.employees e ON e.id = s.employee_id
+        WHERE s.business_date >= ${from}::date
+          AND s.business_date <= ${to}::date
+        ORDER BY s.business_date DESC, s.clock_in_at DESC
+      `
+    : await sql`
+        SELECT s.id, s.employee_id, e.name AS employee_name, s.business_date,
+               s.clock_in_at, s.clock_out_at, s.status, s.source, s.device_name,
+               s.created_at, s.updated_at,
+               CASE
+                 WHEN s.clock_out_at IS NULL THEN FLOOR(EXTRACT(EPOCH FROM (NOW() - s.clock_in_at)) / 60)
+                 ELSE FLOOR(EXTRACT(EPOCH FROM (s.clock_out_at - s.clock_in_at)) / 60)
+               END::int AS duration_minutes
+        FROM pos.time_clock_sessions s
+        JOIN pos.employees e ON e.id = s.employee_id
+        ORDER BY s.business_date DESC, s.clock_in_at DESC
+        LIMIT 500
+      `;
+
+  return rows.map(mapTimeClockSession);
+}
+
+export async function listTimeClockAudit(sessionId?: string) {
+  if (!hasDatabase() || !isPosDataSource()) return [];
+
+  const sql = getSql();
+  if (!(await hasPosTable(sql, "time_clock_audit"))) return [];
+
+  const rows = sessionId
+    ? await sql`
+        SELECT a.*, e.name AS employee_name
+        FROM pos.time_clock_audit a
+        LEFT JOIN pos.employees e ON e.id = a.employee_id
+        WHERE a.session_id = ${Number(sessionId)}
+        ORDER BY a.created_at DESC
+      `
+    : await sql`
+        SELECT a.*, e.name AS employee_name
+        FROM pos.time_clock_audit a
+        LEFT JOIN pos.employees e ON e.id = a.employee_id
+        ORDER BY a.created_at DESC
+        LIMIT 100
+      `;
+
+  return rows.map((row) => ({
+    id: String(row.id),
+    sessionId: row.session_id == null ? null : String(row.session_id),
+    employeeId: row.employee_id == null ? null : String(row.employee_id),
+    employeeName: row.employee_name == null ? null : String(row.employee_name),
+    action: String(row.action),
+    previousData: normalizeJsonObject(row.previous_data),
+    newData: normalizeJsonObject(row.new_data),
+    reason: row.reason == null ? null : String(row.reason),
+    changedBy: row.changed_by == null ? null : String(row.changed_by),
+    createdAt: normalizeDateTime(row.created_at),
+  })) satisfies TimeClockAuditRecord[];
+}
+
 export async function upsertEmployeeShift(input: {
   employeeId: string;
   businessDate: string;
@@ -2214,6 +2297,50 @@ function normalizeDate(value: unknown): string {
     return `${y}-${mm}-${dd}`;
   }
   return str.slice(0, 10);
+}
+
+function normalizeDateTime(value: unknown): string {
+  if (!value) return "";
+  if (value instanceof Date) return value.toISOString();
+  const date = new Date(String(value));
+  if (!Number.isNaN(date.getTime())) return date.toISOString();
+  return String(value);
+}
+
+function normalizeJsonObject(value: unknown): Record<string, unknown> | null {
+  if (value == null) return null;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return typeof parsed === "object" && parsed && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : null;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
+}
+
+function mapTimeClockSession(row: Record<string, unknown>): TimeClockSessionRecord {
+  const status = String(row.status);
+  return {
+    id: String(row.id),
+    employeeId: String(row.employee_id),
+    employeeName: String(row.employee_name ?? "Sense empleat"),
+    businessDate: normalizeDate(row.business_date),
+    clockInAt: normalizeDateTime(row.clock_in_at),
+    clockOutAt: row.clock_out_at == null ? null : normalizeDateTime(row.clock_out_at),
+    status,
+    source: String(row.source ?? "pos"),
+    deviceName: row.device_name == null ? null : String(row.device_name),
+    durationMinutes: row.duration_minutes == null ? null : Number(row.duration_minutes),
+    createdAt: normalizeDateTime(row.created_at),
+    updatedAt: normalizeDateTime(row.updated_at),
+  };
 }
 
 function mapDocument(row: Record<string, unknown>): DocumentRecord {

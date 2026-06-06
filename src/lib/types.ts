@@ -167,6 +167,34 @@ export interface EmployeeShift {
   shiftEnd: string;
 }
 
+export interface TimeClockSessionRecord {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  businessDate: string;
+  clockInAt: string;
+  clockOutAt: string | null;
+  status: "open" | "closed" | string;
+  source: string;
+  deviceName: string | null;
+  durationMinutes: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TimeClockAuditRecord {
+  id: string;
+  sessionId: string | null;
+  employeeId: string | null;
+  employeeName: string | null;
+  action: string;
+  previousData: Record<string, unknown> | null;
+  newData: Record<string, unknown> | null;
+  reason: string | null;
+  changedBy: string | null;
+  createdAt: string;
+}
+
 export interface HourlyProductSale {
   id: string;
   businessDate: string;

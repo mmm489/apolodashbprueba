@@ -8,6 +8,7 @@ import {
   Calculator,
   ChevronLeft,
   ChevronRight,
+  Clock,
   ClipboardCheck,
   ClipboardList,
   LayoutDashboard,
@@ -31,6 +32,7 @@ const navItems = [
   { href: "/cierres", label: "Tancaments", section: "General", icon: ClipboardCheck },
   { href: "/gastos", label: "Despeses", section: "General", icon: Receipt },
   { href: "/empleados", label: "Empleats", section: "General", icon: Users },
+  { href: "/control-horario", label: "Control horario", section: "General", icon: Clock },
   { href: "/productes", label: "Productes", section: "General", icon: Package },
   { href: "/coste-productos", label: "Coste productos", section: "General", icon: Calculator },
 ];
