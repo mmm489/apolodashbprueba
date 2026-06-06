@@ -157,6 +157,9 @@ export interface Employee {
   isActive: boolean;
   createdAt: string;
   role?: "admin" | "employee";
+  canAccessCashlogy?: boolean;
+  canAccessSupplierPayments?: boolean;
+  canAccessProducts?: boolean;
   syncStatus?: "synced" | "pending";
   pendingAction?: CatalogChangeAction;
 }

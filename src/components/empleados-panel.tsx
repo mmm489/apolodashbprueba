@@ -14,6 +14,9 @@ type EmployeeForm = {
   workingDaysPerMonth: number;
   pin: string;
   role: "admin" | "employee";
+  canAccessCashlogy: boolean;
+  canAccessSupplierPayments: boolean;
+  canAccessProducts: boolean;
 };
 
 const emptyForm: EmployeeForm = {
@@ -24,6 +27,9 @@ const emptyForm: EmployeeForm = {
   workingDaysPerMonth: 22,
   pin: "",
   role: "employee",
+  canAccessCashlogy: false,
+  canAccessSupplierPayments: false,
+  canAccessProducts: false,
 };
 
 const PIN_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "CLR", "0", "DEL"];
@@ -88,6 +94,9 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
       workingDaysPerMonth: emp.workingDaysPerMonth,
       pin: "",
       role: emp.role === "admin" ? "admin" : "employee",
+      canAccessCashlogy: emp.canAccessCashlogy ?? emp.role === "admin",
+      canAccessSupplierPayments: emp.canAccessSupplierPayments ?? emp.role === "admin",
+      canAccessProducts: emp.canAccessProducts ?? emp.role === "admin",
     });
     setEditingId(emp.id);
     setShowForm(true);
@@ -212,12 +221,57 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
                   <label className="mb-1 block text-[12px] font-medium text-slate-500">Rol</label>
                   <select
                     value={form.role}
-                    onChange={(e) => setForm({ ...form, role: e.target.value === "admin" ? "admin" : "employee" })}
+                    onChange={(e) => {
+                      const role = e.target.value === "admin" ? "admin" : "employee";
+                      setForm({
+                        ...form,
+                        role,
+                        canAccessCashlogy: role === "admin" ? true : form.canAccessCashlogy,
+                        canAccessSupplierPayments: role === "admin" ? true : form.canAccessSupplierPayments,
+                        canAccessProducts: role === "admin" ? true : form.canAccessProducts,
+                      });
+                    }}
                     className="w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
                   >
                     <option value="employee">Empleado</option>
                     <option value="admin">Admin</option>
                   </select>
+                </div>
+              )}
+
+              {posMode && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="text-[12px] font-bold uppercase tracking-wide text-slate-500">
+                    Accessos al menu del POS
+                  </p>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                    <AccessToggle
+                      label="Cashlogy"
+                      description="Backoffice i estat"
+                      checked={form.canAccessCashlogy}
+                      disabled={form.role === "admin"}
+                      onChange={(checked) => setForm({ ...form, canAccessCashlogy: checked })}
+                    />
+                    <AccessToggle
+                      label="Pagaments"
+                      description="Pagaments proveidors"
+                      checked={form.canAccessSupplierPayments}
+                      disabled={form.role === "admin"}
+                      onChange={(checked) => setForm({ ...form, canAccessSupplierPayments: checked })}
+                    />
+                    <AccessToggle
+                      label="Productes"
+                      description="Editor local POS"
+                      checked={form.canAccessProducts}
+                      disabled={form.role === "admin"}
+                      onChange={(checked) => setForm({ ...form, canAccessProducts: checked })}
+                    />
+                  </div>
+                  {form.role === "admin" && (
+                    <p className="mt-3 text-[12px] font-medium text-emerald-700">
+                      Els admins tenen tots els accessos activats.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -301,6 +355,7 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
             <tr className="border-b border-[var(--line)] bg-slate-50/80 text-left text-[12px] font-medium uppercase tracking-wider text-slate-500">
               <th className="px-5 py-3">Nom</th>
               {posMode && <th className="px-5 py-3">Rol</th>}
+              {posMode && <th className="px-5 py-3">Accessos POS</th>}
               <th className="px-5 py-3 text-right">{posMode ? "PIN" : "Cost/hora"}</th>
               <th className="px-5 py-3 text-right">Estat</th>
               <th className="px-5 py-3 text-right">Accions</th>
@@ -309,7 +364,7 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
           <tbody>
             {employees.length === 0 && (
               <tr>
-                <td colSpan={posMode ? 5 : 4} className="px-5 py-8 text-center text-slate-400">
+                <td colSpan={posMode ? 6 : 4} className="px-5 py-8 text-center text-slate-400">
                   No hi ha empleats registrats.
                 </td>
               </tr>
@@ -331,6 +386,15 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700">
                       {emp.role === "admin" ? "Admin" : "Empleado"}
                     </span>
+                  </td>
+                )}
+                {posMode && (
+                  <td className="px-5 py-3 text-slate-600">
+                    <div className="flex flex-wrap gap-1.5">
+                      <AccessBadge label="Cashlogy" enabled={emp.role === "admin" || emp.canAccessCashlogy === true} />
+                      <AccessBadge label="Pagaments" enabled={emp.role === "admin" || emp.canAccessSupplierPayments === true} />
+                      <AccessBadge label="Productes" enabled={emp.role === "admin" || emp.canAccessProducts === true} />
+                    </div>
                   </td>
                 )}
                 <td className="px-5 py-3 text-right text-slate-600">
@@ -388,5 +452,53 @@ function MiniCard({ label, value }: { label: string; value: string }) {
       <p className="text-[13px] font-medium text-slate-500">{label}</p>
       <p className="mt-2 text-[26px] font-bold tracking-tight text-slate-900">{value}</p>
     </article>
+  );
+}
+
+function AccessToggle({
+  label,
+  description,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label
+      className={`flex cursor-pointer items-center justify-between gap-3 rounded-xl border px-3 py-3 transition ${
+        checked
+          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+          : "border-slate-200 bg-white text-slate-600"
+      } ${disabled ? "cursor-not-allowed opacity-70" : "hover:border-indigo-200"}`}
+    >
+      <span>
+        <span className="block text-sm font-black">{label}</span>
+        <span className="block text-[11px] font-medium text-slate-500">{description}</span>
+      </span>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+      />
+    </label>
+  );
+}
+
+function AccessBadge({ label, enabled }: { label: string; enabled: boolean }) {
+  return (
+    <span
+      className={`rounded-full px-2 py-1 text-[11px] font-bold ${
+        enabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-400"
+      }`}
+    >
+      {enabled ? label : `No ${label}`}
+    </span>
   );
 }

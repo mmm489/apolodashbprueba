@@ -24,6 +24,9 @@ export async function POST(request: Request) {
       hourlyCost: Number(body.hourlyCost ?? 0),
       pin: body.pin == null ? undefined : String(body.pin),
       role: body.role === "admin" ? "admin" : "employee",
+      canAccessCashlogy: body.canAccessCashlogy == null ? undefined : Boolean(body.canAccessCashlogy),
+      canAccessSupplierPayments: body.canAccessSupplierPayments == null ? undefined : Boolean(body.canAccessSupplierPayments),
+      canAccessProducts: body.canAccessProducts == null ? undefined : Boolean(body.canAccessProducts),
     });
 
     return NextResponse.json(employee, { status: 201 });
@@ -52,6 +55,9 @@ export async function PUT(request: Request) {
       hourlyCost: Number(body.hourlyCost ?? 0),
       pin: body.pin == null ? undefined : String(body.pin),
       role: body.role === "admin" ? "admin" : "employee",
+      canAccessCashlogy: body.canAccessCashlogy == null ? undefined : Boolean(body.canAccessCashlogy),
+      canAccessSupplierPayments: body.canAccessSupplierPayments == null ? undefined : Boolean(body.canAccessSupplierPayments),
+      canAccessProducts: body.canAccessProducts == null ? undefined : Boolean(body.canAccessProducts),
     });
 
     return NextResponse.json({ ok: true });

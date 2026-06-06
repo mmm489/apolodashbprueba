@@ -984,6 +984,7 @@ async function ensureCatalogChangeQueue() {
     CREATE INDEX IF NOT EXISTS idx_catalog_change_queue_status
     ON pos.catalog_change_queue(status, requested_at)
   `);
+  await ensurePosEmployeeAccessColumns();
 }
 
 async function ensurePosModifierTables() {
@@ -1026,6 +1027,31 @@ async function ensurePosModifierTables() {
   await sql.query(`
     CREATE INDEX IF NOT EXISTS idx_product_modifier_groups_group
     ON pos.product_modifier_groups(group_id)
+  `);
+}
+
+async function ensurePosEmployeeAccessColumns() {
+  if (!hasDatabase() || !isPosDataSource()) return;
+
+  const sql = getSql();
+  await sql.query(`
+    ALTER TABLE pos.employees
+    ADD COLUMN IF NOT EXISTS can_access_cashlogy BOOLEAN NOT NULL DEFAULT true
+  `);
+  await sql.query(`
+    ALTER TABLE pos.employees
+    ADD COLUMN IF NOT EXISTS can_access_supplier_payments BOOLEAN NOT NULL DEFAULT true
+  `);
+  await sql.query(`
+    ALTER TABLE pos.employees
+    ADD COLUMN IF NOT EXISTS can_access_products BOOLEAN NOT NULL DEFAULT false
+  `);
+  await sql.query(`
+    UPDATE pos.employees
+    SET can_access_products = true,
+        can_access_cashlogy = true,
+        can_access_supplier_payments = true
+    WHERE role = 'admin'
   `);
 }
 
@@ -1766,8 +1792,10 @@ export async function listEmployees() {
 
   const sql = getSql();
   if (isPosDataSource()) {
+    await ensurePosEmployeeAccessColumns();
     const rows = await sql`
-      SELECT id, name, role, active
+      SELECT id, name, role, active,
+             can_access_cashlogy, can_access_supplier_payments, can_access_products
       FROM pos.employees
       WHERE active = TRUE
       ORDER BY name ASC
@@ -1782,6 +1810,9 @@ export async function listEmployees() {
       isActive: Boolean(row.active),
       createdAt: "1970-01-01T00:00:00.000Z",
       role: String(row.role) === "admin" ? "admin" : "employee",
+      canAccessCashlogy: Boolean(row.can_access_cashlogy),
+      canAccessSupplierPayments: Boolean(row.can_access_supplier_payments),
+      canAccessProducts: Boolean(row.can_access_products),
     })) satisfies Employee[];
     return mergePendingEmployeeChanges(sql, employees);
   }
@@ -1819,6 +1850,7 @@ async function mergePendingEmployeeChanges(sql: ReturnType<typeof getSql>, emplo
     const entityId = change.entity_id == null ? null : String(change.entity_id);
     const name = typeof payload.name === "string" ? payload.name.trim() : "";
     const role = payload.role === "admin" ? "admin" : "employee";
+    const access = employeeAccessFromPayload(payload, role);
     const requestedAt = normalizeDateTime(change.requested_at);
 
     if (action === "create") {
@@ -1832,6 +1864,9 @@ async function mergePendingEmployeeChanges(sql: ReturnType<typeof getSql>, emplo
         isActive: true,
         createdAt: requestedAt,
         role,
+        canAccessCashlogy: access.canAccessCashlogy,
+        canAccessSupplierPayments: access.canAccessSupplierPayments,
+        canAccessProducts: access.canAccessProducts,
         syncStatus: "pending",
         pendingAction: "create",
       });
@@ -1841,11 +1876,15 @@ async function mergePendingEmployeeChanges(sql: ReturnType<typeof getSql>, emplo
     if (!entityId) continue;
     const current = byId.get(entityId);
     if (!current) continue;
+    const currentAccess = employeeAccessFromPayload(payload, role, current);
 
     byId.set(entityId, {
       ...current,
       name: name || current.name,
       role,
+      canAccessCashlogy: currentAccess.canAccessCashlogy,
+      canAccessSupplierPayments: currentAccess.canAccessSupplierPayments,
+      canAccessProducts: currentAccess.canAccessProducts,
       syncStatus: "pending",
       pendingAction: action,
     });
@@ -1858,6 +1897,44 @@ async function mergePendingEmployeeChanges(sql: ReturnType<typeof getSql>, emplo
   });
 }
 
+function employeeAccessFromPayload(
+  payload: Record<string, unknown>,
+  role: "admin" | "employee",
+  fallback?: Pick<Employee, "canAccessCashlogy" | "canAccessSupplierPayments" | "canAccessProducts">,
+) {
+  const isAdmin = role === "admin";
+  return {
+    canAccessCashlogy:
+      payload.can_access_cashlogy == null
+        ? fallback?.canAccessCashlogy ?? isAdmin
+        : Boolean(payload.can_access_cashlogy),
+    canAccessSupplierPayments:
+      payload.can_access_supplier_payments == null
+        ? fallback?.canAccessSupplierPayments ?? isAdmin
+        : Boolean(payload.can_access_supplier_payments),
+    canAccessProducts:
+      payload.can_access_products == null
+        ? fallback?.canAccessProducts ?? isAdmin
+        : Boolean(payload.can_access_products),
+  };
+}
+
+function employeeAccessFromInput(
+  input: {
+    canAccessCashlogy?: boolean;
+    canAccessSupplierPayments?: boolean;
+    canAccessProducts?: boolean;
+  },
+  role: "admin" | "employee",
+) {
+  const isAdmin = role === "admin";
+  return {
+    canAccessCashlogy: input.canAccessCashlogy ?? isAdmin,
+    canAccessSupplierPayments: input.canAccessSupplierPayments ?? isAdmin,
+    canAccessProducts: input.canAccessProducts ?? isAdmin,
+  };
+}
+
 export async function createEmployee(input: {
   name: string;
   shiftStart: string;
@@ -1866,6 +1943,9 @@ export async function createEmployee(input: {
   hourlyCost: number;
   pin?: string;
   role?: "admin" | "employee";
+  canAccessCashlogy?: boolean;
+  canAccessSupplierPayments?: boolean;
+  canAccessProducts?: boolean;
 }) {
   const id = randomUUID();
 
@@ -1877,13 +1957,18 @@ export async function createEmployee(input: {
     if (!name) throw new Error("Falta el nombre del empleado.");
     const pin = normalizeEmployeePin(input.pin);
     if (!pin) throw new Error("El PIN ha de tenir 4 numeros.");
+    const role = input.role === "admin" ? "admin" : "employee";
+    const access = employeeAccessFromInput(input, role);
     await enqueueCatalogChange({
       entityType: "employee",
       action: "create",
       payload: {
         name,
         pin,
-        role: input.role === "admin" ? "admin" : "employee",
+        role,
+        can_access_cashlogy: access.canAccessCashlogy,
+        can_access_supplier_payments: access.canAccessSupplierPayments,
+        can_access_products: access.canAccessProducts,
       },
       requestedBy: "dashboard-empleados",
     });
@@ -1896,7 +1981,10 @@ export async function createEmployee(input: {
       hourlyCost: 0,
       isActive: true,
       createdAt: new Date().toISOString(),
-      role: input.role === "admin" ? "admin" : "employee",
+      role,
+      canAccessCashlogy: access.canAccessCashlogy,
+      canAccessSupplierPayments: access.canAccessSupplierPayments,
+      canAccessProducts: access.canAccessProducts,
     } satisfies Employee;
   }
   assertLegacyWritable();
@@ -1920,6 +2008,9 @@ export async function updateEmployee(
     hourlyCost: number;
     pin?: string;
     role?: "admin" | "employee";
+    canAccessCashlogy?: boolean;
+    canAccessSupplierPayments?: boolean;
+    canAccessProducts?: boolean;
   },
 ) {
   if (!hasDatabase()) return;
@@ -1928,9 +2019,14 @@ export async function updateEmployee(
     const name = input.name.trim();
     if (!Number.isInteger(employeeId) || employeeId <= 0) throw new Error("Empleado POS no valido.");
     if (!name) throw new Error("Falta el nombre del empleado.");
+    const role = input.role === "admin" ? "admin" : "employee";
+    const access = employeeAccessFromInput(input, role);
     const payload: Record<string, unknown> = {
       name,
-      role: input.role === "admin" ? "admin" : "employee",
+      role,
+      can_access_cashlogy: access.canAccessCashlogy,
+      can_access_supplier_payments: access.canAccessSupplierPayments,
+      can_access_products: access.canAccessProducts,
     };
     const pin = normalizeEmployeePin(input.pin);
     if (input.pin && !pin) throw new Error("El PIN ha de tenir 4 numeros.");
