@@ -316,7 +316,16 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
             )}
             {employees.map((emp) => (
               <tr key={emp.id} className="border-b border-[var(--line)] transition hover:bg-slate-50/50">
-                <td className="px-5 py-3 font-medium text-slate-900">{emp.name}</td>
+                <td className="px-5 py-3 font-medium text-slate-900">
+                  <div className="flex flex-col gap-1">
+                    <span>{emp.name}</span>
+                    {emp.syncStatus === "pending" && (
+                      <span className="text-[11px] font-bold uppercase tracking-wide text-amber-600">
+                        Pendent de sync
+                      </span>
+                    )}
+                  </div>
+                </td>
                 {posMode && (
                   <td className="px-5 py-3 text-slate-600">
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700">
@@ -328,8 +337,18 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
                   {posMode ? "Ocult" : `${emp.hourlyCost.toFixed(2)} EUR/h`}
                 </td>
                 <td className="px-5 py-3 text-right text-slate-600">
-                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
-                    Actiu
+                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                    emp.syncStatus === "pending"
+                      ? "bg-amber-50 text-amber-700"
+                      : "bg-emerald-50 text-emerald-700"
+                  }`}>
+                    {emp.syncStatus === "pending"
+                      ? emp.pendingAction === "deactivate"
+                        ? "Pendent baixa"
+                        : emp.pendingAction === "update"
+                          ? "Pendent canvi"
+                          : "Pendent alta"
+                      : "Actiu"}
                   </span>
                 </td>
                 <td className="px-5 py-3 text-right">
@@ -337,7 +356,8 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
                     <button
                       type="button"
                       onClick={() => startEdit(emp)}
-                      className="rounded-lg p-1.5 text-slate-400 transition hover:bg-indigo-50 hover:text-indigo-600"
+                      disabled={emp.syncStatus === "pending"}
+                      className="rounded-lg p-1.5 text-slate-400 transition hover:bg-indigo-50 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-400"
                       title="Editar"
                     >
                       <Pencil className="size-4" />
@@ -345,7 +365,8 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
                     <button
                       type="button"
                       onClick={() => handleDelete(emp.id)}
-                      className="rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                      disabled={emp.syncStatus === "pending"}
+                      className="rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-400"
                       title={posMode ? "Desactivar" : "Eliminar"}
                     >
                       <Trash2 className="size-4" />

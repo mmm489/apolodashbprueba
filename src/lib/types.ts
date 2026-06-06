@@ -157,6 +157,8 @@ export interface Employee {
   isActive: boolean;
   createdAt: string;
   role?: "admin" | "employee";
+  syncStatus?: "synced" | "pending";
+  pendingAction?: CatalogChangeAction;
 }
 
 export interface EmployeeShift {

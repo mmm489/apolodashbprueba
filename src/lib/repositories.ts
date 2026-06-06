@@ -1772,7 +1772,7 @@ export async function listEmployees() {
       WHERE active = TRUE
       ORDER BY name ASC
     `;
-    return rows.map((row) => ({
+    const employees = rows.map((row) => ({
       id: String(row.id),
       name: String(row.name),
       shiftStart: "00:00",
@@ -1783,6 +1783,7 @@ export async function listEmployees() {
       createdAt: "1970-01-01T00:00:00.000Z",
       role: String(row.role) === "admin" ? "admin" : "employee",
     })) satisfies Employee[];
+    return mergePendingEmployeeChanges(sql, employees);
   }
 
   const rows = await sql`SELECT id, name, shift_start, shift_end, working_days_per_month, hourly_cost, is_active, created_at FROM employees WHERE is_active = TRUE ORDER BY name ASC`;
@@ -1796,6 +1797,65 @@ export async function listEmployees() {
     isActive: Boolean(row.is_active),
     createdAt: new Date(String(row.created_at)).toISOString(),
   })) satisfies Employee[];
+}
+
+async function mergePendingEmployeeChanges(sql: ReturnType<typeof getSql>, employees: Employee[]) {
+  await ensureCatalogChangeQueue();
+  const pending = await sql`
+    SELECT id, action, entity_id, payload, requested_at
+    FROM pos.catalog_change_queue
+    WHERE entity_type = 'employee'
+      AND status = 'pending'
+    ORDER BY requested_at ASC
+  `;
+  if (!pending.length) return employees;
+
+  const byId = new Map(employees.map((employee) => [employee.id, employee]));
+  const extraEmployees: Employee[] = [];
+
+  for (const change of pending) {
+    const payload = normalizeJsonObject(change.payload) ?? {};
+    const action = String(change.action) as CatalogChangeAction;
+    const entityId = change.entity_id == null ? null : String(change.entity_id);
+    const name = typeof payload.name === "string" ? payload.name.trim() : "";
+    const role = payload.role === "admin" ? "admin" : "employee";
+    const requestedAt = normalizeDateTime(change.requested_at);
+
+    if (action === "create") {
+      extraEmployees.push({
+        id: `pending:${String(change.id)}`,
+        name: name || "Nuevo empleado",
+        shiftStart: "00:00",
+        shiftEnd: "00:00",
+        workingDaysPerMonth: 0,
+        hourlyCost: 0,
+        isActive: true,
+        createdAt: requestedAt,
+        role,
+        syncStatus: "pending",
+        pendingAction: "create",
+      });
+      continue;
+    }
+
+    if (!entityId) continue;
+    const current = byId.get(entityId);
+    if (!current) continue;
+
+    byId.set(entityId, {
+      ...current,
+      name: name || current.name,
+      role,
+      syncStatus: "pending",
+      pendingAction: action,
+    });
+  }
+
+  return [...Array.from(byId.values()), ...extraEmployees].sort((a, b) => {
+    if (a.syncStatus === "pending" && b.syncStatus !== "pending") return -1;
+    if (a.syncStatus !== "pending" && b.syncStatus === "pending") return 1;
+    return a.name.localeCompare(b.name, "ca");
+  });
 }
 
 export async function createEmployee(input: {
