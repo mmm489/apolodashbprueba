@@ -1765,28 +1765,13 @@ export async function listEmployees() {
 
   const sql = getSql();
   if (isPosDataSource()) {
-    const employees: Employee[] = [];
-    if (await hasPublicTable(sql, "employees")) {
-      const legacyRows = await sql`SELECT id, name, shift_start, shift_end, working_days_per_month, hourly_cost, is_active, created_at FROM employees WHERE is_active = TRUE ORDER BY name ASC`;
-      employees.push(...legacyRows.map((row) => ({
-        id: String(row.id),
-        name: String(row.name),
-        shiftStart: String(row.shift_start),
-        shiftEnd: String(row.shift_end),
-        workingDaysPerMonth: Number(row.working_days_per_month),
-        hourlyCost: toNumber(row.hourly_cost),
-        isActive: Boolean(row.is_active),
-        createdAt: new Date(String(row.created_at)).toISOString(),
-      })));
-    }
-
     const rows = await sql`
       SELECT id, name, active
       FROM pos.employees
       WHERE active = TRUE
       ORDER BY name ASC
     `;
-    employees.push(...rows.map((row) => ({
+    return rows.map((row) => ({
       id: String(row.id),
       name: String(row.name),
       shiftStart: "00:00",
@@ -1795,8 +1780,7 @@ export async function listEmployees() {
       hourlyCost: 0,
       isActive: Boolean(row.active),
       createdAt: "1970-01-01T00:00:00.000Z",
-    })));
-    return employees satisfies Employee[];
+    })) satisfies Employee[];
   }
 
   const rows = await sql`SELECT id, name, shift_start, shift_end, working_days_per_month, hourly_cost, is_active, created_at FROM employees WHERE is_active = TRUE ORDER BY name ASC`;
