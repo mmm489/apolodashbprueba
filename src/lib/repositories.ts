@@ -966,14 +966,14 @@ async function ensureCatalogChangeQueue() {
       IF constraint_def IS NULL THEN
         ALTER TABLE pos.catalog_change_queue
         ADD CONSTRAINT catalog_change_queue_entity_type_check
-        CHECK (entity_type IN ('category', 'product', 'modifier_group'));
-      ELSIF constraint_def NOT LIKE '%modifier_group%' THEN
+        CHECK (entity_type IN ('category', 'product', 'modifier_group', 'employee'));
+      ELSIF constraint_def NOT LIKE '%modifier_group%' OR constraint_def NOT LIKE '%employee%' THEN
         ALTER TABLE pos.catalog_change_queue
         DROP CONSTRAINT catalog_change_queue_entity_type_check;
 
         ALTER TABLE pos.catalog_change_queue
         ADD CONSTRAINT catalog_change_queue_entity_type_check
-        CHECK (entity_type IN ('category', 'product', 'modifier_group'));
+        CHECK (entity_type IN ('category', 'product', 'modifier_group', 'employee'));
       END IF;
     EXCEPTION WHEN duplicate_object THEN
       NULL;
@@ -1104,6 +1104,7 @@ export async function listPosCatalog(): Promise<PosCatalog> {
     SELECT id, entity_type, action, entity_id, payload, status, requested_at,
            applied_at, applied_entity_id, error_message
     FROM pos.catalog_change_queue
+    WHERE entity_type IN ('category', 'product', 'modifier_group')
     ORDER BY requested_at DESC
     LIMIT 120
   `;
@@ -1766,7 +1767,7 @@ export async function listEmployees() {
   const sql = getSql();
   if (isPosDataSource()) {
     const rows = await sql`
-      SELECT id, name, active
+      SELECT id, name, role, active
       FROM pos.employees
       WHERE active = TRUE
       ORDER BY name ASC
@@ -1780,6 +1781,7 @@ export async function listEmployees() {
       hourlyCost: 0,
       isActive: Boolean(row.active),
       createdAt: "1970-01-01T00:00:00.000Z",
+      role: String(row.role) === "admin" ? "admin" : "employee",
     })) satisfies Employee[];
   }
 
@@ -1802,11 +1804,40 @@ export async function createEmployee(input: {
   shiftEnd: string;
   workingDaysPerMonth: number;
   hourlyCost: number;
+  pin?: string;
+  role?: "admin" | "employee";
 }) {
   const id = randomUUID();
 
   if (!hasDatabase()) {
     return { id, ...input, isActive: true, createdAt: new Date().toISOString() } satisfies Employee;
+  }
+  if (isPosDataSource()) {
+    const name = input.name.trim();
+    if (!name) throw new Error("Falta el nombre del empleado.");
+    const pin = normalizeEmployeePin(input.pin);
+    if (!pin) throw new Error("El PIN ha de tenir 4 numeros.");
+    await enqueueCatalogChange({
+      entityType: "employee",
+      action: "create",
+      payload: {
+        name,
+        pin,
+        role: input.role === "admin" ? "admin" : "employee",
+      },
+      requestedBy: "dashboard-empleados",
+    });
+    return {
+      id,
+      name,
+      shiftStart: "00:00",
+      shiftEnd: "00:00",
+      workingDaysPerMonth: 0,
+      hourlyCost: 0,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+      role: input.role === "admin" ? "admin" : "employee",
+    } satisfies Employee;
   }
   assertLegacyWritable();
 
@@ -1821,9 +1852,39 @@ export async function createEmployee(input: {
 
 export async function updateEmployee(
   id: string,
-  input: { name: string; shiftStart: string; shiftEnd: string; workingDaysPerMonth: number; hourlyCost: number },
+  input: {
+    name: string;
+    shiftStart: string;
+    shiftEnd: string;
+    workingDaysPerMonth: number;
+    hourlyCost: number;
+    pin?: string;
+    role?: "admin" | "employee";
+  },
 ) {
   if (!hasDatabase()) return;
+  if (isPosDataSource()) {
+    const employeeId = Number(id);
+    const name = input.name.trim();
+    if (!Number.isInteger(employeeId) || employeeId <= 0) throw new Error("Empleado POS no valido.");
+    if (!name) throw new Error("Falta el nombre del empleado.");
+    const payload: Record<string, unknown> = {
+      name,
+      role: input.role === "admin" ? "admin" : "employee",
+    };
+    const pin = normalizeEmployeePin(input.pin);
+    if (input.pin && !pin) throw new Error("El PIN ha de tenir 4 numeros.");
+    if (pin) payload.pin = pin;
+
+    await enqueueCatalogChange({
+      entityType: "employee",
+      action: "update",
+      entityId: employeeId,
+      payload,
+      requestedBy: "dashboard-empleados",
+    });
+    return;
+  }
   assertLegacyWritable();
 
   const sql = getSql();
@@ -1836,6 +1897,18 @@ export async function updateEmployee(
 
 export async function deleteEmployee(id: string) {
   if (!hasDatabase()) return;
+  if (isPosDataSource()) {
+    const employeeId = Number(id);
+    if (!Number.isInteger(employeeId) || employeeId <= 0) throw new Error("Empleado POS no valido.");
+    await enqueueCatalogChange({
+      entityType: "employee",
+      action: "deactivate",
+      entityId: employeeId,
+      payload: {},
+      requestedBy: "dashboard-empleados",
+    });
+    return;
+  }
   assertLegacyWritable();
 
   const sql = getSql();
@@ -1963,6 +2036,11 @@ export async function deleteEmployeeShift(employeeId: string, businessDate: stri
 
   const sql = getSql();
   await sql`DELETE FROM employee_shifts WHERE employee_id = ${employeeId} AND business_date = ${businessDate}`;
+}
+
+function normalizeEmployeePin(value: unknown) {
+  const pin = String(value ?? "").trim();
+  return /^\d{4}$/.test(pin) ? pin : null;
 }
 
 export async function findTelegramUser(telegramUserId: string) {

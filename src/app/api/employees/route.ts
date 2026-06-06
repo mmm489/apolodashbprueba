@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { isPosDataSource } from "@/lib/db";
 import { createEmployee, deleteEmployee, listEmployees, updateEmployee } from "@/lib/repositories";
 
 export async function GET() {
@@ -9,56 +8,62 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  if (isPosDataSource()) {
-    return NextResponse.json({ error: "Dashboard en modo solo lectura POS" }, { status: 405 });
-  }
-
   const body = await request.json();
   const { name, shiftStart, shiftEnd, workingDaysPerMonth } = body;
 
-  if (!name || !shiftStart || !shiftEnd || !workingDaysPerMonth) {
-    return NextResponse.json({ error: "Faltan campos obligatorios" }, { status: 400 });
+  if (!name) {
+    return NextResponse.json({ error: "Falta el nombre" }, { status: 400 });
   }
 
-  const employee = await createEmployee({
-    name: String(name),
-    shiftStart: String(shiftStart),
-    shiftEnd: String(shiftEnd),
-    workingDaysPerMonth: Number(workingDaysPerMonth),
-    hourlyCost: Number(body.hourlyCost ?? 0),
-  });
+  try {
+    const employee = await createEmployee({
+      name: String(name),
+      shiftStart: String(shiftStart ?? "00:00"),
+      shiftEnd: String(shiftEnd ?? "00:00"),
+      workingDaysPerMonth: Number(workingDaysPerMonth ?? 0),
+      hourlyCost: Number(body.hourlyCost ?? 0),
+      pin: body.pin == null ? undefined : String(body.pin),
+      role: body.role === "admin" ? "admin" : "employee",
+    });
 
-  return NextResponse.json(employee, { status: 201 });
+    return NextResponse.json(employee, { status: 201 });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error creando empleado" },
+      { status: 400 },
+    );
+  }
 }
 
 export async function PUT(request: Request) {
-  if (isPosDataSource()) {
-    return NextResponse.json({ error: "Dashboard en modo solo lectura POS" }, { status: 405 });
-  }
-
   const body = await request.json();
   const { id, name, shiftStart, shiftEnd, workingDaysPerMonth } = body;
 
-  if (!id || !name || !shiftStart || !shiftEnd || !workingDaysPerMonth) {
+  if (!id || !name) {
     return NextResponse.json({ error: "Faltan campos obligatorios" }, { status: 400 });
   }
 
-  await updateEmployee(String(id), {
-    name: String(name),
-    shiftStart: String(shiftStart),
-    shiftEnd: String(shiftEnd),
-    workingDaysPerMonth: Number(workingDaysPerMonth),
-    hourlyCost: Number(body.hourlyCost ?? 0),
-  });
+  try {
+    await updateEmployee(String(id), {
+      name: String(name),
+      shiftStart: String(shiftStart ?? "00:00"),
+      shiftEnd: String(shiftEnd ?? "00:00"),
+      workingDaysPerMonth: Number(workingDaysPerMonth ?? 0),
+      hourlyCost: Number(body.hourlyCost ?? 0),
+      pin: body.pin == null ? undefined : String(body.pin),
+      role: body.role === "admin" ? "admin" : "employee",
+    });
 
-  return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error actualizando empleado" },
+      { status: 400 },
+    );
+  }
 }
 
 export async function DELETE(request: Request) {
-  if (isPosDataSource()) {
-    return NextResponse.json({ error: "Dashboard en modo solo lectura POS" }, { status: 405 });
-  }
-
   const body = await request.json();
   const { id } = body;
 

@@ -156,6 +156,7 @@ export interface Employee {
   hourlyCost: number;
   isActive: boolean;
   createdAt: string;
+  role?: "admin" | "employee";
 }
 
 export interface EmployeeShift {
@@ -303,7 +304,7 @@ export interface PosModifierGroup {
   categoryNames: string[];
 }
 
-export type CatalogEntityType = "category" | "product" | "modifier_group";
+export type CatalogEntityType = "category" | "product" | "modifier_group" | "employee";
 export type CatalogChangeAction = "create" | "update" | "deactivate";
 export type CatalogChangeStatus = "pending" | "applied" | "error";
 
