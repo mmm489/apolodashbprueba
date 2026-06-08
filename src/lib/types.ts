@@ -98,6 +98,20 @@ export interface CookiesTransactionRecord {
   }[];
 }
 
+export interface SupplierPaymentRecord {
+  id: string;
+  supplierName: string;
+  amount: number;
+  reason: string | null;
+  status: string;
+  businessDate: string;
+  paymentTime: string;
+  createdAt: string;
+  dispensedAt: string | null;
+  employeeName: string | null;
+  errorMessage: string | null;
+}
+
 export interface ProductSaleRecord {
   id: string;
   salesReportId: string;

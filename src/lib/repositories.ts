@@ -39,6 +39,7 @@ import type {
   PosOrderLineRecord,
   ProductSaleRecord,
   SalesReport,
+  SupplierPaymentRecord,
   TelegramMessage,
   TelegramUser,
   TimeClockAuditRecord,
@@ -995,6 +996,69 @@ export async function listCookiesTransactions(from?: string, to?: string) {
   }
 
   return [...grouped.values()];
+}
+
+export async function listSupplierPayments(from?: string, to?: string) {
+  if (!hasDatabase() || !isPosDataSource()) {
+    return [] satisfies SupplierPaymentRecord[];
+  }
+
+  const sql = getSql();
+  if (!(await hasPosTable(sql, "supplier_payments"))) {
+    return [] satisfies SupplierPaymentRecord[];
+  }
+
+  const rows = from && to
+    ? await sql`
+        SELECT sp.id,
+               sp.supplier_name,
+               sp.amount,
+               sp.reason,
+               sp.status,
+               ((sp.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
+               to_char(sp.created_at AT TIME ZONE 'Europe/Madrid', 'HH24:MI') AS payment_time,
+               sp.created_at,
+               sp.dispensed_at,
+               e.name AS employee_name,
+               sp.error_message
+        FROM pos.supplier_payments sp
+        LEFT JOIN pos.employees e ON e.id = sp.employee_id
+        WHERE ((sp.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date >= ${from}::date
+          AND ((sp.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
+        ORDER BY sp.created_at DESC, sp.id DESC
+        LIMIT 10000
+      `
+    : await sql`
+        SELECT sp.id,
+               sp.supplier_name,
+               sp.amount,
+               sp.reason,
+               sp.status,
+               ((sp.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
+               to_char(sp.created_at AT TIME ZONE 'Europe/Madrid', 'HH24:MI') AS payment_time,
+               sp.created_at,
+               sp.dispensed_at,
+               e.name AS employee_name,
+               sp.error_message
+        FROM pos.supplier_payments sp
+        LEFT JOIN pos.employees e ON e.id = sp.employee_id
+        ORDER BY sp.created_at DESC, sp.id DESC
+        LIMIT 10000
+      `;
+
+  return rows.map((row) => ({
+    id: String(row.id),
+    supplierName: String(row.supplier_name),
+    amount: toNumber(row.amount),
+    reason: row.reason ? String(row.reason) : null,
+    status: String(row.status),
+    businessDate: normalizeDate(row.business_date),
+    paymentTime: String(row.payment_time),
+    createdAt: normalizeDateTime(row.created_at),
+    dispensedAt: row.dispensed_at == null ? null : normalizeDateTime(row.dispensed_at),
+    employeeName: row.employee_name ? String(row.employee_name) : null,
+    errorMessage: row.error_message ? String(row.error_message) : null,
+  })) satisfies SupplierPaymentRecord[];
 }
 
 export async function listPayrolls(from?: string, to?: string) {

@@ -33,6 +33,7 @@ const navItems = [
   { href: "/cookies", label: "Cookies", section: "General", icon: Cookie },
   { href: "/cierres", label: "Tancaments", section: "General", icon: ClipboardCheck },
   { href: "/gastos", label: "Despeses", section: "General", icon: Receipt },
+  { href: "/pagaments-proveidors", label: "Pagaments", section: "General", icon: Receipt },
   { href: "/empleados", label: "Empleats", section: "General", icon: Users },
   { href: "/control-horario", label: "Control horario", section: "General", icon: Clock },
   { href: "/productes", label: "Productes", section: "General", icon: Package },
