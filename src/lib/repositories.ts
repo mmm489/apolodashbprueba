@@ -20,6 +20,7 @@ import type {
   CatalogDraftChange,
   CatalogChangeRecord,
   CatalogEntityType,
+  CookiesTransactionRecord,
   DocumentRecord,
   Employee,
   EmployeeShift,
@@ -74,6 +75,22 @@ async function hasPublicTable(sql: DashboardSql, tableName: string) {
 async function hasPosTable(sql: DashboardSql, tableName: string) {
   const rows = await sql.query("SELECT to_regclass($1) AS table_name", [`pos.${tableName}`]);
   return Boolean(rows[0]?.table_name);
+}
+
+let posBusinessUnitColumnEnsured = false;
+
+async function ensurePosBusinessUnitColumn(sql: DashboardSql) {
+  if (posBusinessUnitColumnEnsured || !isPosDataSource()) return;
+  if (!(await hasPosTable(sql, "orders"))) return;
+  await sql.query(`
+    ALTER TABLE pos.orders
+    ADD COLUMN IF NOT EXISTS business_unit VARCHAR(20) NOT NULL DEFAULT 'hicream'
+  `);
+  await sql.query(`
+    CREATE INDEX IF NOT EXISTS idx_orders_business_unit
+    ON pos.orders(business_unit)
+  `);
+  posBusinessUnitColumnEnsured = true;
 }
 
 function normalizePaymentMix(value: unknown): Record<string, number> {
@@ -175,6 +192,7 @@ export async function listSalesReports(from?: string, to?: string) {
 
   const sql = getSql();
   if (isPosDataSource()) {
+    await ensurePosBusinessUnitColumn(sql);
     const rows = from && to
       ? await sql`
           SELECT ((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date, payment_method,
@@ -185,6 +203,7 @@ export async function listSalesReports(from?: string, to?: string) {
             AND ((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
             AND status <> 'cancelled'
             AND payment_method <> 'parked'
+            AND COALESCE(business_unit, 'hicream') = 'hicream'
           GROUP BY 1, payment_method
           ORDER BY business_date DESC
         `
@@ -195,6 +214,7 @@ export async function listSalesReports(from?: string, to?: string) {
           FROM pos.orders
           WHERE status <> 'cancelled'
             AND payment_method <> 'parked'
+            AND COALESCE(business_unit, 'hicream') = 'hicream'
           GROUP BY 1, payment_method
           ORDER BY business_date DESC
           LIMIT 1200
@@ -232,6 +252,7 @@ export async function listSalesReports(from?: string, to?: string) {
                 WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = sr.business_date
                   AND o.status <> 'cancelled'
                   AND o.payment_method <> 'parked'
+                  AND COALESCE(o.business_unit, 'hicream') = 'hicream'
               )
             ORDER BY sr.business_date DESC
           `
@@ -244,6 +265,7 @@ export async function listSalesReports(from?: string, to?: string) {
               WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = sr.business_date
                 AND o.status <> 'cancelled'
                 AND o.payment_method <> 'parked'
+                AND COALESCE(o.business_unit, 'hicream') = 'hicream'
             )
             ORDER BY sr.business_date DESC
             LIMIT 5000
@@ -288,6 +310,7 @@ export async function listHourlySales(from?: string, to?: string) {
 
   const sql = getSql();
   if (isPosDataSource()) {
+    await ensurePosBusinessUnitColumn(sql);
     const rows = from && to
       ? await sql`
           SELECT ((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
@@ -299,6 +322,7 @@ export async function listHourlySales(from?: string, to?: string) {
             AND ((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
             AND status <> 'cancelled'
             AND payment_method <> 'parked'
+            AND COALESCE(business_unit, 'hicream') = 'hicream'
           GROUP BY 1, 2
           ORDER BY business_date DESC, hour_num ASC
         `
@@ -310,6 +334,7 @@ export async function listHourlySales(from?: string, to?: string) {
           FROM pos.orders
           WHERE status <> 'cancelled'
             AND payment_method <> 'parked'
+            AND COALESCE(business_unit, 'hicream') = 'hicream'
           GROUP BY 1, 2
           ORDER BY business_date DESC, hour_num ASC
           LIMIT 10000
@@ -340,6 +365,7 @@ export async function listHourlySales(from?: string, to?: string) {
                 WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = hs.business_date
                   AND o.status <> 'cancelled'
                   AND o.payment_method <> 'parked'
+                  AND COALESCE(o.business_unit, 'hicream') = 'hicream'
               )
             ORDER BY hs.business_date DESC, hs.hour_label ASC
           `
@@ -352,6 +378,7 @@ export async function listHourlySales(from?: string, to?: string) {
               WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = hs.business_date
                 AND o.status <> 'cancelled'
                 AND o.payment_method <> 'parked'
+                AND COALESCE(o.business_unit, 'hicream') = 'hicream'
             )
             ORDER BY hs.business_date DESC, hs.hour_label ASC
             LIMIT 20000
@@ -386,6 +413,7 @@ export async function listHourlyProductSales(from?: string, to?: string) {
 
   const sql = getSql();
   if (isPosDataSource()) {
+    await ensurePosBusinessUnitColumn(sql);
     const rows = from && to
       ? await sql`
           SELECT ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
@@ -401,6 +429,7 @@ export async function listHourlyProductSales(from?: string, to?: string) {
             AND ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
             AND o.status <> 'cancelled'
             AND o.payment_method <> 'parked'
+            AND COALESCE(o.business_unit, 'hicream') = 'hicream'
           GROUP BY 1, 2, oi.product_id, p.name
           ORDER BY business_date DESC, hour_num ASC, amount DESC
         `
@@ -416,6 +445,7 @@ export async function listHourlyProductSales(from?: string, to?: string) {
           JOIN pos.products p ON p.id = oi.product_id
           WHERE o.status <> 'cancelled'
             AND o.payment_method <> 'parked'
+            AND COALESCE(o.business_unit, 'hicream') = 'hicream'
           GROUP BY 1, 2, oi.product_id, p.name
           ORDER BY business_date DESC, hour_num ASC, amount DESC
           LIMIT 50000
@@ -449,6 +479,7 @@ export async function listHourlyProductSales(from?: string, to?: string) {
                 WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = hps.business_date
                   AND o.status <> 'cancelled'
                   AND o.payment_method <> 'parked'
+                  AND COALESCE(o.business_unit, 'hicream') = 'hicream'
               )
             ORDER BY hps.business_date DESC, hps.hour_label ASC, hps.amount DESC
           `
@@ -461,6 +492,7 @@ export async function listHourlyProductSales(from?: string, to?: string) {
               WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = hps.business_date
                 AND o.status <> 'cancelled'
                 AND o.payment_method <> 'parked'
+                AND COALESCE(o.business_unit, 'hicream') = 'hicream'
             )
             ORDER BY hps.business_date DESC, hps.hour_label ASC, hps.amount DESC
             LIMIT 50000
@@ -546,6 +578,7 @@ export async function listProductSales(from?: string, to?: string) {
 
   const sql = getSql();
   if (isPosDataSource()) {
+    await ensurePosBusinessUnitColumn(sql);
     const rows = from && to
       ? await sql`
           SELECT ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
@@ -560,6 +593,7 @@ export async function listProductSales(from?: string, to?: string) {
             AND ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
             AND o.status <> 'cancelled'
             AND o.payment_method <> 'parked'
+            AND COALESCE(o.business_unit, 'hicream') = 'hicream'
           GROUP BY 1, oi.product_id, p.name
           ORDER BY business_date DESC, amount DESC
         `
@@ -574,6 +608,7 @@ export async function listProductSales(from?: string, to?: string) {
           JOIN pos.products p ON p.id = oi.product_id
           WHERE o.status <> 'cancelled'
             AND o.payment_method <> 'parked'
+            AND COALESCE(o.business_unit, 'hicream') = 'hicream'
           GROUP BY 1, oi.product_id, p.name
           ORDER BY business_date DESC, amount DESC
           LIMIT 20000
@@ -606,6 +641,7 @@ export async function listProductSales(from?: string, to?: string) {
                 WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = ps.business_date
                   AND o.status <> 'cancelled'
                   AND o.payment_method <> 'parked'
+                  AND COALESCE(o.business_unit, 'hicream') = 'hicream'
               )
             ORDER BY ps.business_date DESC, ps.amount DESC
           `
@@ -618,6 +654,7 @@ export async function listProductSales(from?: string, to?: string) {
               WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = ps.business_date
                 AND o.status <> 'cancelled'
                 AND o.payment_method <> 'parked'
+                AND COALESCE(o.business_unit, 'hicream') = 'hicream'
             )
             ORDER BY ps.business_date DESC, ps.amount DESC
             LIMIT 50000
@@ -657,6 +694,7 @@ export async function listCashClosings(from?: string, to?: string) {
   }
 
   const sql = getSql();
+  await ensurePosBusinessUnitColumn(sql);
   const rows = from && to
     ? await sql`
         SELECT c.id, c.z_number, c.z_label, c.opened_at, c.closed_at,
@@ -684,6 +722,7 @@ export async function listCashClosings(from?: string, to?: string) {
             AND o.created_at <= c.closed_at
             AND o.status NOT IN ('pending', 'cancelled')
             AND o.payment_method <> 'parked'
+            AND COALESCE(o.business_unit, 'hicream') = 'hicream'
         ) payment_totals ON TRUE
         WHERE ((c.closed_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date >= ${from}::date
           AND ((c.closed_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
@@ -715,6 +754,7 @@ export async function listCashClosings(from?: string, to?: string) {
             AND o.created_at <= c.closed_at
             AND o.status NOT IN ('pending', 'cancelled')
             AND o.payment_method <> 'parked'
+            AND COALESCE(o.business_unit, 'hicream') = 'hicream'
         ) payment_totals ON TRUE
         ORDER BY c.closed_at DESC
         LIMIT 200
@@ -746,6 +786,7 @@ export async function listPosOrderLines(from?: string, to?: string) {
   }
 
   const sql = getSql();
+  await ensurePosBusinessUnitColumn(sql);
   const rows = from && to
     ? await sql`
         SELECT oi.id,
@@ -780,6 +821,7 @@ export async function listPosOrderLines(from?: string, to?: string) {
         LEFT JOIN pos.employees e ON e.id = o.employee_id
         WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date >= ${from}::date
           AND ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
+          AND COALESCE(o.business_unit, 'hicream') = 'hicream'
         ORDER BY o.created_at DESC, oi.id ASC
         LIMIT 10000
       `
@@ -814,6 +856,7 @@ export async function listPosOrderLines(from?: string, to?: string) {
         JOIN pos.products p ON p.id = oi.product_id
         LEFT JOIN pos.categories c ON c.id = p.category_id
         LEFT JOIN pos.employees e ON e.id = o.employee_id
+        WHERE COALESCE(o.business_unit, 'hicream') = 'hicream'
         ORDER BY o.created_at DESC, oi.id ASC
         LIMIT 10000
       `;
@@ -845,6 +888,113 @@ export async function listPosOrderLines(from?: string, to?: string) {
     orderVat: toNumber(row.order_vat),
     notes: row.notes ? String(row.notes) : null,
   })) satisfies PosOrderLineRecord[];
+}
+
+export async function listCookiesTransactions(from?: string, to?: string) {
+  if (!hasDatabase() || !isPosDataSource()) {
+    return [] satisfies CookiesTransactionRecord[];
+  }
+
+  const sql = getSql();
+  await ensurePosBusinessUnitColumn(sql);
+  const rows = from && to
+    ? await sql`
+        SELECT oi.id,
+               o.id AS order_id,
+               o.order_number,
+               o.invoice_number,
+               o.status,
+               e.name AS employee_name,
+               ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
+               to_char(o.created_at AT TIME ZONE 'Europe/Madrid', 'HH24:MI') AS order_time,
+               o.created_at,
+               COALESCE(o.total, 0)::float AS order_total,
+               COALESCE(o.total_base, o.total, 0)::float AS order_base,
+               COALESCE(o.total_vat, 0)::float AS order_vat,
+               p.name AS product_name,
+               oi.qty,
+               oi.unit_price,
+               ROUND((oi.qty * oi.unit_price)::numeric, 2)::float AS line_total,
+               oi.notes
+        FROM pos.order_items oi
+        JOIN pos.orders o ON o.id = oi.order_id
+        JOIN pos.products p ON p.id = oi.product_id
+        LEFT JOIN pos.employees e ON e.id = o.employee_id
+        WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date >= ${from}::date
+          AND ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
+          AND COALESCE(o.business_unit, 'hicream') = 'cookies'
+          AND o.payment_method <> 'parked'
+        ORDER BY o.created_at DESC, oi.id ASC
+        LIMIT 10000
+      `
+    : await sql`
+        SELECT oi.id,
+               o.id AS order_id,
+               o.order_number,
+               o.invoice_number,
+               o.status,
+               e.name AS employee_name,
+               ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
+               to_char(o.created_at AT TIME ZONE 'Europe/Madrid', 'HH24:MI') AS order_time,
+               o.created_at,
+               COALESCE(o.total, 0)::float AS order_total,
+               COALESCE(o.total_base, o.total, 0)::float AS order_base,
+               COALESCE(o.total_vat, 0)::float AS order_vat,
+               p.name AS product_name,
+               oi.qty,
+               oi.unit_price,
+               ROUND((oi.qty * oi.unit_price)::numeric, 2)::float AS line_total,
+               oi.notes
+        FROM pos.order_items oi
+        JOIN pos.orders o ON o.id = oi.order_id
+        JOIN pos.products p ON p.id = oi.product_id
+        LEFT JOIN pos.employees e ON e.id = o.employee_id
+        WHERE COALESCE(o.business_unit, 'hicream') = 'cookies'
+          AND o.payment_method <> 'parked'
+        ORDER BY o.created_at DESC, oi.id ASC
+        LIMIT 10000
+      `;
+
+  const grouped = new Map<string, CookiesTransactionRecord>();
+  for (const row of rows) {
+    const orderId = String(row.order_id);
+    const existing = grouped.get(orderId);
+    const item = {
+      productName: String(row.product_name),
+      qty: toNumber(row.qty),
+      unitPrice: toNumber(row.unit_price),
+      lineTotal: toNumber(row.line_total),
+      notes: row.notes ? String(row.notes) : null,
+    };
+
+    if (!existing) {
+      grouped.set(orderId, {
+        id: orderId,
+        orderNumber: String(row.order_number),
+        invoiceNumber: row.invoice_number ? String(row.invoice_number) : null,
+        status: String(row.status),
+        businessDate: normalizeDate(row.business_date),
+        orderTime: String(row.order_time),
+        createdAt: new Date(String(row.created_at)).toISOString(),
+        employeeName: row.employee_name ? String(row.employee_name) : null,
+        total: toNumber(row.order_total),
+        totalBase: toNumber(row.order_base),
+        totalVat: toNumber(row.order_vat),
+        itemCount: item.qty,
+        summary: `${item.qty}x ${item.productName}`,
+        items: [item],
+      });
+    } else {
+      existing.itemCount += item.qty;
+      existing.items.push(item);
+      existing.summary = existing.items
+        .slice(0, 3)
+        .map((entry) => `${entry.qty}x ${entry.productName}`)
+        .join(", ");
+    }
+  }
+
+  return [...grouped.values()];
 }
 
 export async function listPayrolls(from?: string, to?: string) {
@@ -1312,11 +1462,13 @@ async function getFirstPosSaleDate() {
   try {
     const exists = await sql.query("SELECT to_regclass('pos.orders') AS table_name");
     if (!exists[0]?.table_name) return null;
+    await ensurePosBusinessUnitColumn(sql);
     const rows = await sql`
       SELECT MIN(((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date) AS first_date
       FROM pos.orders
       WHERE status <> 'cancelled'
         AND payment_method <> 'parked'
+        AND COALESCE(business_unit, 'hicream') = 'hicream'
     `;
     return rows[0]?.first_date ? normalizeDate(rows[0].first_date) : null;
   } catch {

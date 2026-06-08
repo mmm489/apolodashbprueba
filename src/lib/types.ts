@@ -75,6 +75,29 @@ export interface PosOrderLineRecord {
   notes: string | null;
 }
 
+export interface CookiesTransactionRecord {
+  id: string;
+  orderNumber: string;
+  invoiceNumber: string | null;
+  status: string;
+  businessDate: string;
+  orderTime: string;
+  createdAt: string;
+  employeeName: string | null;
+  total: number;
+  totalBase: number;
+  totalVat: number;
+  itemCount: number;
+  summary: string;
+  items: {
+    productName: string;
+    qty: number;
+    unitPrice: number;
+    lineTotal: number;
+    notes: string | null;
+  }[];
+}
+
 export interface ProductSaleRecord {
   id: string;
   salesReportId: string;
