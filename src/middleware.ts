@@ -7,6 +7,7 @@ import { getAuthCookieName, isAuthConfigured, verifyToken } from "@/lib/auth";
  *
  * Public exceptions (always allowed without auth):
  *  - /login              the login form
+ *  - /web, /web/*        the public marketing website (no auth)
  *  - /api/auth/*         the login/logout API itself
  *  - /api/telegram/*     Telegram servers POST here, no cookie possible
  *  - /api/ingest/microsoft-graph  external webhook with its own secret
@@ -18,6 +19,7 @@ import { getAuthCookieName, isAuthConfigured, verifyToken } from "@/lib/auth";
  */
 const PUBLIC_PATH_PREFIXES = [
   "/login",
+  "/web",
   "/api/auth",
   "/api/telegram",
   "/api/ingest/microsoft-graph",
