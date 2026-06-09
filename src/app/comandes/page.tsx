@@ -48,6 +48,13 @@ export default async function ComandesPage({
   const averageTicket = activeOrders.length > 0 ? totalBase / activeOrders.length : 0;
   const cancelledOrders = orders.filter((order) => order.status === "cancelled").length;
   const parkedOrders = orders.filter((order) => order.paymentMethod === "aparcat" && order.status !== "cancelled").length;
+  const exportHref = (format: "csv" | "xlsx") => {
+    const exportParams = new URLSearchParams();
+    exportParams.set("from", filter.from);
+    exportParams.set("to", filter.to);
+    exportParams.set("format", format);
+    return `/api/comandes/export?${exportParams.toString()}`;
+  };
 
   return (
     <AppFrame
@@ -55,6 +62,31 @@ export default async function ComandesPage({
       description="Consulta de comandas i línies sincronitzades des del POS de la gelateria."
     >
       <DateFilterBar preset={filter.preset} from={filter.from} to={filter.to} />
+
+      <section className="flex flex-col gap-4 rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h2 className="text-lg font-bold tracking-tight text-slate-950">
+            Exportar facturas simplificadas
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Descarga las lineas del periodo seleccionado para gestoria o AEAT. Incluye anuladas marcadas y excluye Cookies y aparcados.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <a
+            href={exportHref("xlsx")}
+            className="inline-flex items-center justify-center rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800"
+          >
+            Descargar Excel
+          </a>
+          <a
+            href={exportHref("csv")}
+            className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            Descargar CSV
+          </a>
+        </div>
+      </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Metric label="Comandes" value={fmtNum(activeOrders.length)} color="indigo" />
