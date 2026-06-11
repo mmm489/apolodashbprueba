@@ -76,11 +76,12 @@ Respons SEMPRE en català. Avui és ${TODAY_ISO()}.
 - Comparatives útils: vs ahir, vs mateix dia setmana passada (DOW), vs mateix dia any passat (52 setmanes enrere = mateix DOW).
 
 ## Eines disponibles
-Tens 4 eines:
+Tens 5 eines:
 1. **\`get_dashboard(preset)\`** — l'eina principal. Et dóna KPIs, comparatives YoY (DOW i per data), digest del dia més recent amb temps i context de calendari (setmana santa, festa) d'avui i dels dies comparats, previsió de demà ajustada per temperatura, famílies, top productes per import i marge, pattern horari, top proveïdors. **Usa-la sempre abans de res**.
 2. **\`get_calendar_context(dates)\`** — per cada data retorna si és festa/Setmana Santa i els dies des de Pasqua. Crítica per validar comparatives YoY.
 3. **\`get_historical_weather(from, to)\`** — temps real d'un rang de dates.
-4. **\`query_database(sql, description)\`** — només SELECT. Per casos que les anteriors no cobreixin.
+4. **\`get_cashlogy_state()\`** - ultim estat sincronitzat de Cashlogy: total dins la caixa, online/offline, errors i denominacions baixes/faltants. Usa-la SEMPRE per preguntes sobre caixa, canvi, monedes, bitllets o Cashlogy.
+5. **\`query_database(sql, description)\`** — només SELECT. Per casos que les anteriors no cobreixin.
 
 ## REGLES CRÍTIQUES per a comparatives YoY a Salou
 
@@ -113,6 +114,7 @@ Salou és turisme de platja altament estacional. **SEMPRE** fes aquestes comprov
 - \`employee_shifts(employee_id, business_date DATE, shift_start, shift_end)\`
 - \`product_costs(product_code, product_name, category, unit_cost)\`
 - \`payrolls(employee_name, pay_period TEXT, gross_amount, net_amount)\`
+- \`pos.cashlogy_state_snapshots(captured_at, ok, online, total, denominations, errors)\`
 
 ## Com respondre
 - Sigues concís però complet. Format markdown senzill per a Telegram (negretes amb \`*text*\`, NO usis \`**\`).
@@ -165,6 +167,16 @@ const tools: Tool[] = [
         to: { type: "string", description: "Data fi YYYY-MM-DD" },
       },
       required: ["from", "to"],
+    },
+  },
+  {
+    name: "get_cashlogy_state",
+    description:
+      "Retorna l'ultim estat sincronitzat de Cashlogy: total estimat dins la caixa, online/offline, antiguitat de la lectura, errors i denominacions baixes o faltants. Usa aquesta eina per preguntes sobre caixa, canvi, monedes, bitllets o Cashlogy.",
+    input_schema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
     },
   },
   {
@@ -355,6 +367,10 @@ async function executeTool(
     return Object.fromEntries(weatherMap.entries());
   }
 
+  if (block.name === "get_cashlogy_state") {
+    return getCashlogyStateSummary();
+  }
+
   if (block.name === "query_database") {
     const sql = String(input.sql ?? "");
     return executeReadOnlyQuery(sql);
@@ -529,6 +545,190 @@ function summarizeWorkspace(ws: FinancialWorkspace) {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
+}
+
+/* ---------- Cashlogy state tool ---------- */
+
+type JsonRecord = Record<string, unknown>;
+
+type CashlogyDenominationSummary = {
+  label: string;
+  type: string | null;
+  value: number | null;
+  amount: number | null;
+  quantity: number | null;
+  status: string | null;
+  warning: "ok" | "low" | "missing" | "error";
+};
+
+function isRecord(value: unknown): value is JsonRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function parseJsonish(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
+  }
+}
+
+function boolish(value: unknown): boolean {
+  return value === true || value === "true" || value === 1 || value === "1";
+}
+
+function firstString(record: JsonRecord, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  }
+  return null;
+}
+
+function firstNumber(record: JsonRecord, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string") {
+      const parsed = Number(value.replace(",", "."));
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return null;
+}
+
+function centsLabel(cents: number | null, fallback: string | null) {
+  if (fallback) return fallback;
+  if (cents == null) return "Denominacio desconeguda";
+  if (Math.abs(cents) >= 100) return `${round2(cents / 100).toFixed(2)} EUR`;
+  return `${cents} centims`;
+}
+
+function normalizeCashlogyDenominations(value: unknown): CashlogyDenominationSummary[] {
+  const parsed = parseJsonish(value);
+  const items = Array.isArray(parsed)
+    ? parsed
+    : isRecord(parsed) && Array.isArray(parsed.items)
+      ? parsed.items
+      : [];
+
+  return items.filter(isRecord).map((item) => {
+    const label = firstString(item, ["label", "name", "denomination", "valueText", "displayName"]);
+    const value = firstNumber(item, ["value", "denominationValue", "faceValue", "nominal", "cents"]);
+    const amount = firstNumber(item, ["amount", "total", "totalAmount", "balance"]);
+    const quantity = firstNumber(item, ["quantity", "count", "units", "pieces", "level", "current"]);
+    const type = firstString(item, ["type", "kind", "cashType"]);
+    const status = firstString(item, ["status", "state", "availability"]);
+    const statusText = String(status ?? "").toUpperCase();
+
+    let warning: CashlogyDenominationSummary["warning"] = "ok";
+    if (statusText.includes("ERROR") || statusText.includes("JAM") || statusText.includes("FAIL")) {
+      warning = "error";
+    } else if (statusText.includes("EMPTY") || statusText.includes("MISSING") || quantity === 0) {
+      warning = "missing";
+    } else if (statusText.includes("LOW") || (quantity != null && quantity > 0 && quantity <= 2)) {
+      warning = "low";
+    }
+
+    return {
+      label: centsLabel(value, label),
+      type,
+      value,
+      amount,
+      quantity,
+      status,
+      warning,
+    };
+  });
+}
+
+function summarizeCashlogyErrors(status: unknown, errors: unknown) {
+  const messages = new Set<string>();
+  for (const source of [parseJsonish(status), parseJsonish(errors)]) {
+    if (isRecord(source) && typeof source.error === "string" && source.error.trim()) {
+      messages.add(source.error.trim());
+    }
+    if (Array.isArray(source)) {
+      for (const item of source) {
+        if (isRecord(item)) {
+          const message = firstString(item, ["message", "description", "error", "code"]);
+          if (message) messages.add(message);
+        } else if (typeof item === "string" && item.trim()) {
+          messages.add(item.trim());
+        }
+      }
+    }
+  }
+  return [...messages].slice(0, 8);
+}
+
+async function getCashlogyStateSummary() {
+  if (!hasDatabase()) {
+    return { configured: false, error: "Base de dades no configurada." };
+  }
+
+  try {
+    const sql = getSql();
+    const exists = await sql.query("SELECT to_regclass('pos.cashlogy_state_snapshots') AS table_name");
+    if (!exists[0]?.table_name) {
+      return {
+        configured: false,
+        error: "Encara no existeix la taula pos.cashlogy_state_snapshots. Cal que el POS sincronitzi el primer estat.",
+      };
+    }
+
+    const rows = await sql.query(`
+      SELECT id, captured_at, ok, online, total_amount, total,
+             status, peripherals, model, accounting, errors, denominations, error_message
+      FROM pos.cashlogy_state_snapshots
+      ORDER BY captured_at DESC
+      LIMIT 1
+    `);
+    const row = rows[0];
+    if (!row) {
+      return {
+        configured: true,
+        hasState: false,
+        error: "Encara no hi ha cap lectura sincronitzada de Cashlogy.",
+      };
+    }
+
+    const capturedDate = new Date(row.captured_at as string | number | Date);
+    const capturedAt = Number.isNaN(capturedDate.getTime())
+      ? String(row.captured_at ?? "")
+      : capturedDate.toISOString();
+    const ageMinutes = Number.isNaN(capturedDate.getTime())
+      ? null
+      : Math.round((Date.now() - capturedDate.getTime()) / 60_000);
+    const denominations = normalizeCashlogyDenominations(row.denominations);
+    const lowOrMissing = denominations.filter((item) => item.warning !== "ok");
+    const errors = summarizeCashlogyErrors(row.status, row.errors);
+    if (typeof row.error_message === "string" && row.error_message.trim()) {
+      errors.unshift(row.error_message.trim());
+    }
+
+    return {
+      configured: true,
+      hasState: true,
+      capturedAt,
+      ageMinutes,
+      isStale: ageMinutes == null || ageMinutes > 15,
+      ok: boolish(row.ok),
+      online: boolish(row.online),
+      total: round2(Number(row.total ?? 0)),
+      totalAmountCents: Number(row.total_amount ?? 0),
+      canReportDenominations: denominations.length > 0,
+      denominations,
+      lowOrMissing,
+      errors: [...new Set(errors)].slice(0, 8),
+      rawAccountingAvailable: Boolean(row.accounting),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { configured: false, error: message };
+  }
 }
 
 /* ---------- SQL escape hatch ---------- */
