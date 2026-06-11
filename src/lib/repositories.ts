@@ -23,6 +23,7 @@ import type {
   CookiesTransactionRecord,
   DocumentRecord,
   Employee,
+  EmployeeScheduleShift,
   EmployeeShift,
   ExtractionResult,
   HourlyProductSale,
@@ -2305,6 +2306,145 @@ export async function listEmployeeShifts(from?: string, to?: string) {
     shiftStart: String(row.shift_start),
     shiftEnd: String(row.shift_end),
   })) satisfies EmployeeShift[];
+}
+
+/* ---------- Employee Schedule Planning ---------- */
+
+let employeeScheduleTablesEnsured = false;
+
+async function ensureEmployeeScheduleTables() {
+  if (employeeScheduleTablesEnsured || !hasDatabase()) return;
+  const sql = getSql();
+  await sql.query(`
+    CREATE TABLE IF NOT EXISTS employee_schedule_shifts (
+      id TEXT PRIMARY KEY,
+      employee_id TEXT NOT NULL,
+      business_date DATE NOT NULL,
+      shift_start TEXT NOT NULL,
+      shift_end TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(employee_id, business_date)
+    )
+  `);
+  await sql.query(`
+    CREATE INDEX IF NOT EXISTS idx_employee_schedule_shifts_business_date
+      ON employee_schedule_shifts(business_date DESC)
+  `);
+  employeeScheduleTablesEnsured = true;
+}
+
+export async function listEmployeeScheduleShifts(from?: string, to?: string) {
+  if (!hasDatabase()) return [] satisfies EmployeeScheduleShift[];
+
+  await ensureEmployeeScheduleTables();
+  const sql = getSql();
+  const canJoinPosEmployees = isPosDataSource() && await hasPosTable(sql, "employees");
+  const canJoinLegacyEmployees = !isPosDataSource() && await hasPublicTable(sql, "employees");
+
+  const employeeNameSelect = canJoinPosEmployees || canJoinLegacyEmployees
+    ? "COALESCE(e.name, s.employee_id)"
+    : "s.employee_id";
+  const employeeJoin = canJoinPosEmployees
+    ? "LEFT JOIN pos.employees e ON e.id::text = s.employee_id"
+    : canJoinLegacyEmployees
+      ? "LEFT JOIN employees e ON e.id = s.employee_id"
+      : "";
+  const where = from && to ? "WHERE s.business_date >= $1::date AND s.business_date <= $2::date" : "";
+  const params = from && to ? [from, to] : [];
+
+  const rows = await sql.query(
+    `
+      SELECT s.id, s.employee_id, ${employeeNameSelect} AS employee_name,
+             s.business_date, s.shift_start, s.shift_end, s.created_at, s.updated_at
+      FROM employee_schedule_shifts s
+      ${employeeJoin}
+      ${where}
+      ORDER BY s.business_date ASC, employee_name ASC
+    `,
+    params,
+  );
+
+  return rows.map(mapEmployeeScheduleShift);
+}
+
+export async function upsertEmployeeScheduleShift(input: {
+  employeeId: string;
+  businessDate: string;
+  shiftStart: string;
+  shiftEnd: string;
+}) {
+  if (!hasDatabase()) return;
+  validateScheduleShiftInput(input);
+  await ensureEmployeeScheduleTables();
+
+  const sql = getSql();
+  const id = randomUUID();
+  await sql`
+    INSERT INTO employee_schedule_shifts (id, employee_id, business_date, shift_start, shift_end)
+    VALUES (${id}, ${input.employeeId}, ${input.businessDate}, ${input.shiftStart}, ${input.shiftEnd})
+    ON CONFLICT (employee_id, business_date)
+    DO UPDATE SET
+      shift_start = EXCLUDED.shift_start,
+      shift_end = EXCLUDED.shift_end,
+      updated_at = NOW()
+  `;
+}
+
+export async function deleteEmployeeScheduleShift(employeeId: string, businessDate: string) {
+  if (!hasDatabase()) return;
+  await ensureEmployeeScheduleTables();
+
+  const sql = getSql();
+  await sql`
+    DELETE FROM employee_schedule_shifts
+    WHERE employee_id = ${employeeId}
+      AND business_date = ${businessDate}
+  `;
+}
+
+function mapEmployeeScheduleShift(row: Record<string, unknown>) {
+  return {
+    id: String(row.id),
+    employeeId: String(row.employee_id),
+    employeeName: String(row.employee_name),
+    businessDate: normalizeDate(row.business_date),
+    shiftStart: String(row.shift_start),
+    shiftEnd: String(row.shift_end),
+    createdAt: normalizeDateTime(row.created_at),
+    updatedAt: normalizeDateTime(row.updated_at),
+  } satisfies EmployeeScheduleShift;
+}
+
+function validateScheduleShiftInput(input: {
+  employeeId: string;
+  businessDate: string;
+  shiftStart: string;
+  shiftEnd: string;
+}) {
+  if (!input.employeeId || !input.businessDate || !input.shiftStart || !input.shiftEnd) {
+    throw new Error("Faltan campos obligatorios.");
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.businessDate)) {
+    throw new Error("Fecha no valida.");
+  }
+  const start = parseTimeMinutes(input.shiftStart);
+  const end = parseTimeMinutes(input.shiftEnd);
+  if (start == null || end == null) {
+    throw new Error("Hora no valida.");
+  }
+  if (end <= start) {
+    throw new Error("La hora fin debe ser posterior a la hora inicio.");
+  }
+}
+
+function parseTimeMinutes(value: string) {
+  const match = value.match(/^(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
+  return hours * 60 + minutes;
 }
 
 /* ---------- Time Clock ---------- */

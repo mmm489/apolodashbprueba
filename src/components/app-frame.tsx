@@ -12,6 +12,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   Cookie,
+  CalendarDays,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -36,6 +37,7 @@ const navItems = [
   { href: "/pagaments-proveidors", label: "Pagaments", section: "General", icon: Receipt },
   { href: "/empleados", label: "Empleats", section: "General", icon: Users },
   { href: "/control-horario", label: "Control horario", section: "General", icon: Clock },
+  { href: "/planificacion", label: "Planificació", section: "General", icon: CalendarDays },
   { href: "/productes", label: "Productes", section: "General", icon: Package },
   { href: "/coste-productos", label: "Coste productos", section: "General", icon: Calculator },
 ];

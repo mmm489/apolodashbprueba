@@ -173,4 +173,18 @@ CREATE INDEX IF NOT EXISTS idx_invoice_lines_invoice_id ON invoice_lines(invoice
 CREATE INDEX IF NOT EXISTS idx_payrolls_pay_period ON payrolls(pay_period DESC);
 CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_employee_shifts_business_date ON employee_shifts(business_date DESC);
+
+CREATE TABLE IF NOT EXISTS employee_schedule_shifts (
+  id TEXT PRIMARY KEY,
+  employee_id TEXT NOT NULL,
+  business_date DATE NOT NULL,
+  shift_start TEXT NOT NULL,
+  shift_end TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(employee_id, business_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_employee_schedule_shifts_business_date
+  ON employee_schedule_shifts(business_date DESC);
 `;

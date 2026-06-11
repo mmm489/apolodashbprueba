@@ -210,6 +210,17 @@ export interface EmployeeShift {
   shiftEnd: string;
 }
 
+export interface EmployeeScheduleShift {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  businessDate: string;
+  shiftStart: string;
+  shiftEnd: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface TimeClockSessionRecord {
   id: string;
   employeeId: string;
