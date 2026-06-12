@@ -43,15 +43,19 @@ export async function handleTelegramUpdate(update: Record<string, unknown>) {
     await sendChatAction(chatId, "typing");
     const answer = await processWithClaude(message.text, String(chatId));
 
-    await storeTelegramMessage({
-      telegramUserId: String(message.from?.id ?? chatId),
-      chatId: String(chatId),
-      username: "admin",
-      question: message.text,
-      answer,
-    });
-
     await sendTelegramMessage(chatId, answer);
+    try {
+      await storeTelegramMessage({
+        telegramUserId: String(message.from?.id ?? chatId),
+        chatId: String(chatId),
+        username: "admin",
+        question: message.text,
+        answer,
+      });
+    } catch (storeError) {
+      const storeMsg = storeError instanceof Error ? storeError.message : String(storeError);
+      console.warn("[telegram] Could not store message history:", storeMsg);
+    }
     return { ok: true };
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);

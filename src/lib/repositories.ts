@@ -2577,7 +2577,9 @@ export async function setSyncState(syncKey: string, syncValue: string) {
   if (!hasDatabase()) {
     return;
   }
-  assertLegacyWritable();
+  if (isPosDataSource()) {
+    return;
+  }
 
   const sql = getSql();
   await sql`
