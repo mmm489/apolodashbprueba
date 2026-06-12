@@ -20,7 +20,8 @@ import {
 import { formatDashboardDate } from "@/lib/timezone";
 import type { Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleShare, EmployeeScheduleShift, TimeClockSessionRecord } from "@/lib/types";
 
-const HORARI_PUBLIC_BASE_URL = process.env.NEXT_PUBLIC_HORARI_BASE_URL?.replace(/\/+$/, "");
+const DEFAULT_HORARI_PUBLIC_BASE_URL = "https://horari-brown.vercel.app";
+const HORARI_PUBLIC_BASE_URL = (process.env.NEXT_PUBLIC_HORARI_BASE_URL || DEFAULT_HORARI_PUBLIC_BASE_URL).replace(/\/+$/, "");
 
 type EditorState = {
   id?: string;
