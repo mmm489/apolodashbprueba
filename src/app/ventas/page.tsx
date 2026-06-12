@@ -20,7 +20,7 @@ export default async function VentasPage({
   });
   const readOnly = isPosDataSource();
 
-  const { dayStatuses, productSales, hourlySales, hourlyProductSales, productCosts, employeeShifts, employees, topProducts, totals, filter } = workspace;
+  const { dayStatuses, productSales, hourlySales, hourlyProductSales, productCosts, plannedLabor, topProducts, totals, filter } = workspace;
 
   return (
     <AppFrame
@@ -34,6 +34,10 @@ export default async function VentasPage({
         <Metric label="Total vendes s/IVA" value={euro(totals.totalSales)} color="emerald" />
         <Metric label="Total comandes" value={fmtNum(totals.totalOrders)} color="indigo" />
         <Metric label="Tiquet mitja s/IVA" value={euro(totals.averageTicket)} color="amber" />
+        <Metric label="Cost personal planificat" value={euro(totals.plannedLaborCost)} color="rose" />
+        <Metric label="% personal / vendes" value={`${(totals.laborCostRatio * 100).toFixed(1)}%`} color="slate" />
+        <Metric label="Vendes per hora planificada" value={euro(totals.salesPerPlannedHour)} color="emerald" />
+        <Metric label="Hores planificades" value={`${totals.plannedLaborHours.toFixed(1)} h`} color="indigo" />
         <Metric label="Dies amb dades" value={String(totals.daysWithData)} color="slate" />
       </section>
 
@@ -49,8 +53,7 @@ export default async function VentasPage({
         hourlySales={hourlySales}
         hourlyProductSales={hourlyProductSales}
         productCosts={productCosts}
-        employeeShifts={employeeShifts}
-        employees={employees}
+        plannedLabor={plannedLabor}
         readOnly={readOnly}
       />
     </AppFrame>

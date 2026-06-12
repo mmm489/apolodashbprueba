@@ -201,6 +201,17 @@ export interface Employee {
   pendingAction?: CatalogChangeAction;
 }
 
+export interface EmployeeHourlyCostHistoryEntry {
+  id: string;
+  employeeId: string;
+  employeeNameSnapshot: string;
+  hourlyCost: number;
+  validFrom: string;
+  validUntil: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface EmployeeShift {
   id: string;
   employeeId: string;
@@ -225,6 +236,19 @@ export interface EmployeeScheduleShare {
   employeeId: string;
   token: string;
   createdAt: string;
+}
+
+export interface PlannedLaborRecord {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  businessDate: string;
+  shiftStart: string;
+  shiftEnd: string;
+  hours: number;
+  hourlyCost: number;
+  totalCost: number;
+  costMissing: boolean;
 }
 
 export interface TimeClockSessionRecord {
@@ -416,6 +440,10 @@ export interface KpiSnapshot {
   activeSuppliers: number;
   totalHoursWorked: number;
   productivityPerHour: number;
+  plannedLaborHours: number;
+  plannedLaborCost: number;
+  laborCostRatio: number;
+  salesPerPlannedHour: number;
   /** Share (0–1) of the period's sold € that has a positive product cost
    * registered. Below ~0.8 means the food cost KPI is unreliable. */
   productCostCoverage: number;
@@ -567,6 +595,7 @@ export interface FinancialWorkspace {
   hourlySales: HourlySalesEntry[];
   invoices: InvoiceRecord[];
   payrolls: PayrollRecord[];
+  plannedLabor: PlannedLaborRecord[];
   totalsByCategory: Array<{ label: string; amount: number }>;
   productSales: ProductSaleRecord[];
   topProducts: Array<{ productName: string; units: number; amount: number }>;

@@ -77,7 +77,7 @@ export default async function HomePage({
       />
 
       {/* KPI cards */}
-      <section className="stagger-children grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <section className="stagger-children grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
         <MiniStatCard
           icon={<TrendingUp className="size-4" />}
           label="Vendes s/IVA"
@@ -95,10 +95,17 @@ export default async function HomePage({
         />
         <MiniStatCard
           icon={<Users className="size-4" />}
-          label="Cost empleats"
+          label="Cost personal planificat"
           value={euro(kpis.totalEmployeeCost)}
-          delta="Torns registrats"
+          delta={`${kpis.plannedLaborHours.toFixed(1)} h planificades`}
           color="indigo"
+        />
+        <MiniStatCard
+          icon={<Clock className="size-4" />}
+          label="Vendes / hora planificada"
+          value={euro(kpis.salesPerPlannedHour)}
+          delta="Planificacio"
+          color="emerald"
         />
         <MiniStatCard
           icon={<Percent className="size-4" />}
@@ -131,7 +138,7 @@ export default async function HomePage({
             <PLRow label="Cost productes" value={-kpis.totalProductCost} indent negative />
             <PLDivider />
             <PLRow label="Marge brut" value={grossMargin} bold highlight={grossMargin >= 0 ? "green" : "red"} pct={grossMarginPct} />
-            <PLRow label="Cost empleats" value={-kpis.totalEmployeeCost} indent negative />
+            <PLRow label="Cost personal planificat" value={-kpis.totalEmployeeCost} indent negative />
             <PLDivider />
             <PLRow label="Marge operatiu" value={operatingMargin} bold highlight={operatingMargin >= 0 ? "green" : "red"} pct={operatingMarginPct} />
           </div>

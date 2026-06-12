@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { KeyRound, Pencil, Plus, Trash2 } from "lucide-react";
 
-import type { Employee } from "@/lib/types";
+import type { Employee, EmployeeHourlyCostHistoryEntry } from "@/lib/types";
 
 type EmployeeForm = {
   name: string;
@@ -12,6 +12,7 @@ type EmployeeForm = {
   shiftStart: string;
   shiftEnd: string;
   workingDaysPerMonth: number;
+  costValidFrom: string;
   pin: string;
   role: "admin" | "employee";
   canAccessCashlogy: boolean;
@@ -25,6 +26,7 @@ const emptyForm: EmployeeForm = {
   shiftStart: "09:00",
   shiftEnd: "17:00",
   workingDaysPerMonth: 22,
+  costValidFrom: todayIso(),
   pin: "",
   role: "employee",
   canAccessCashlogy: false,
@@ -32,15 +34,20 @@ const emptyForm: EmployeeForm = {
   canAccessProducts: false,
 };
 
+function freshEmptyForm(): EmployeeForm {
+  return { ...emptyForm, costValidFrom: todayIso() };
+}
+
 const PIN_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "CLR", "0", "DEL"];
 
 export function EmpleadosPanel({ employees, readOnly = false }: { employees: Employee[]; readOnly?: boolean }) {
   const router = useRouter();
-  const [form, setForm] = useState<EmployeeForm>(emptyForm);
+  const [form, setForm] = useState<EmployeeForm>(() => freshEmptyForm());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [costHistory, setCostHistory] = useState<EmployeeHourlyCostHistoryEntry[]>([]);
 
   const totalEmployees = employees.length;
   const posMode = readOnly;
@@ -77,21 +84,49 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
       return;
     }
 
-    setForm(emptyForm);
+    const costEmployeeId = editingId || (!posMode ? String(data.id ?? "") : "");
+    if (costEmployeeId && Number.isFinite(form.hourlyCost) && form.hourlyCost >= 0) {
+      const costRes = await fetch("/api/employee-costs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employeeId: costEmployeeId,
+          employeeName: form.name,
+          hourlyCost: form.hourlyCost,
+          validFrom: form.costValidFrom || todayIso(),
+        }),
+      });
+      const costData = await costRes.json().catch(() => ({}));
+      if (!costRes.ok) {
+        setMessage(costData.error || "Empleado guardado, pero no se ha podido guardar el coste/hora.");
+        setLoading(false);
+        return;
+      }
+    }
+
+    setForm(freshEmptyForm());
     setEditingId(null);
     setShowForm(false);
-    setMessage(posMode ? "Canvi enviat al POS. S'aplicara amb el sync de la heladeria." : "Empleat guardat.");
+    setCostHistory([]);
+    setMessage(
+      posMode && !editingId
+        ? "Canvi enviat al POS. Quan el sync crei l'empleat, podras editar-lo i afegir el cost/hora."
+        : posMode
+          ? "Canvi enviat al POS i cost/hora guardat al dashboard."
+          : "Empleat guardat.",
+    );
     router.refresh();
     setLoading(false);
   }
 
-  function startEdit(emp: Employee) {
+  async function startEdit(emp: Employee) {
     setForm({
       name: emp.name,
       hourlyCost: emp.hourlyCost,
       shiftStart: emp.shiftStart,
       shiftEnd: emp.shiftEnd,
       workingDaysPerMonth: emp.workingDaysPerMonth,
+      costValidFrom: todayIso(),
       pin: "",
       role: emp.role === "admin" ? "admin" : "employee",
       canAccessCashlogy: emp.canAccessCashlogy ?? emp.role === "admin",
@@ -101,6 +136,13 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
     setEditingId(emp.id);
     setShowForm(true);
     setMessage(null);
+    try {
+      const rows = await fetch(`/api/employee-costs?employeeId=${encodeURIComponent(emp.id)}`, { cache: "no-store" })
+        .then((res) => res.ok ? res.json() : []);
+      setCostHistory(Array.isArray(rows) ? rows : []);
+    } catch {
+      setCostHistory([]);
+    }
   }
 
   async function handleDelete(id: string) {
@@ -142,8 +184,8 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
       <section className="grid gap-4 sm:grid-cols-2">
         <MiniCard label="Empleats actius" value={String(totalEmployees)} />
         <MiniCard
-          label={posMode ? "Origen" : "Cost mitja/hora"}
-          value={posMode ? "POS + sync" : totalEmployees > 0 ? `${(employees.reduce((s, e) => s + e.hourlyCost, 0) / totalEmployees).toFixed(2)} EUR/h` : "--"}
+          label="Cost mitja/hora"
+          value={totalEmployees > 0 ? `${(employees.reduce((s, e) => s + e.hourlyCost, 0) / totalEmployees).toFixed(2)} EUR/h` : "--"}
         />
       </section>
 
@@ -161,8 +203,9 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
         <button
           type="button"
           onClick={() => {
-            setForm(emptyForm);
+            setForm(freshEmptyForm());
             setEditingId(null);
+            setCostHistory([]);
             setShowForm(!showForm);
             setMessage(null);
           }}
@@ -275,9 +318,10 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
                 </div>
               )}
 
-              {!posMode && (
-                <div>
-                  <label className="mb-1 block text-[12px] font-medium text-slate-500">Cost/hora (EUR)</label>
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4">
+                <div className="grid gap-3 sm:grid-cols-[1fr_160px]">
+                  <label className="block">
+                    <span className="mb-1 block text-[12px] font-medium text-slate-600">Cost empresa/hora (EUR)</span>
                   <input
                     type="number"
                     required
@@ -287,9 +331,45 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
                     onChange={(e) => setForm({ ...form, hourlyCost: Number(e.target.value) })}
                     className="w-full rounded-lg border border-[var(--line)] px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
                     placeholder="0.00"
+                    disabled={posMode && !editingId}
                   />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-[12px] font-medium text-slate-600">Vigent des de</span>
+                    <input
+                      type="date"
+                      value={form.costValidFrom}
+                      onChange={(e) => setForm({ ...form, costValidFrom: e.target.value })}
+                      className="w-full rounded-lg border border-[var(--line)] px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
+                      disabled={posMode && !editingId}
+                    />
+                  </label>
                 </div>
-              )}
+                {posMode && !editingId ? (
+                  <p className="mt-2 text-[12px] font-medium text-amber-700">
+                    Crea primero el empleado en el POS. Cuando el sync lo devuelva con id real, podrás añadir su coste/hora.
+                  </p>
+                ) : (
+                  <p className="mt-2 text-[12px] font-medium text-emerald-700">
+                    Este coste no se envia al POS; solo calcula planificacion, ventas y margen en dashboard.
+                  </p>
+                )}
+                {editingId && costHistory.length > 0 && (
+                  <div className="mt-3 rounded-xl border border-emerald-100 bg-white p-3">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Historial reciente</p>
+                    <div className="mt-2 space-y-1">
+                      {costHistory.slice(0, 4).map((entry) => (
+                        <div key={entry.id} className="flex items-center justify-between gap-3 text-[12px]">
+                          <span className="font-semibold text-slate-600">
+                            {entry.validFrom}{entry.validUntil ? ` - ${entry.validUntil}` : " - actual"}
+                          </span>
+                          <span className="font-black text-slate-950">{entry.hourlyCost.toFixed(2)} EUR/h</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {posMode && (
@@ -356,7 +436,7 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
               <th className="px-5 py-3">Nom</th>
               {posMode && <th className="px-5 py-3">Rol</th>}
               {posMode && <th className="px-5 py-3">Accessos POS</th>}
-              <th className="px-5 py-3 text-right">{posMode ? "PIN" : "Cost/hora"}</th>
+              <th className="px-5 py-3 text-right">Cost/hora</th>
               <th className="px-5 py-3 text-right">Estat</th>
               <th className="px-5 py-3 text-right">Accions</th>
             </tr>
@@ -398,7 +478,7 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
                   </td>
                 )}
                 <td className="px-5 py-3 text-right text-slate-600">
-                  {posMode ? "Ocult" : `${emp.hourlyCost.toFixed(2)} EUR/h`}
+                  {emp.hourlyCost > 0 ? `${emp.hourlyCost.toFixed(2)} EUR/h` : <span className="text-amber-600">Sense cost</span>}
                 </td>
                 <td className="px-5 py-3 text-right text-slate-600">
                   <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
@@ -489,6 +569,11 @@ function AccessToggle({
       />
     </label>
   );
+}
+
+function todayIso() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 function AccessBadge({ label, enabled }: { label: string; enabled: boolean }) {

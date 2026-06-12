@@ -18,7 +18,7 @@ import {
   X,
 } from "lucide-react";
 
-import type { Employee, EmployeeScheduleShare, EmployeeScheduleShift, TimeClockSessionRecord } from "@/lib/types";
+import type { Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleShare, EmployeeScheduleShift, TimeClockSessionRecord } from "@/lib/types";
 
 type EditorState = {
   employeeId: string;
@@ -34,6 +34,7 @@ export function PlanificacionPanel({
   initialShifts,
   scheduleShares,
   timeClockSessions,
+  employeeCostHistory,
   weekStart,
   weekEnd,
 }: {
@@ -41,6 +42,7 @@ export function PlanificacionPanel({
   initialShifts: EmployeeScheduleShift[];
   scheduleShares: EmployeeScheduleShare[];
   timeClockSessions: TimeClockSessionRecord[];
+  employeeCostHistory: EmployeeHourlyCostHistoryEntry[];
   weekStart: string;
   weekEnd: string;
 }) {
@@ -65,6 +67,7 @@ export function PlanificacionPanel({
     return map;
   }, [shifts]);
   const employeeMap = useMemo(() => new Map(employees.map((employee) => [employee.id, employee])), [employees]);
+  const costHistoryByEmployee = useMemo(() => buildCostHistoryByEmployee(employeeCostHistory), [employeeCostHistory]);
   const shareMap = useMemo(
     () => new Map(scheduleShares.map((share) => [share.employeeId, share])),
     [scheduleShares],
@@ -82,8 +85,13 @@ export function PlanificacionPanel({
     const realMinutes = timeClockSessions.reduce((sum, session) => sum + (session.durationMinutes ?? 0), 0);
     const plannedCost = shifts.reduce((sum, shift) => {
       const employee = employeeMap.get(shift.employeeId);
-      return sum + (shiftMinutes(shift.shiftStart, shift.shiftEnd) / 60) * (employee?.hourlyCost ?? 0);
+      const hourlyCost = resolveEmployeeCostForDate(costHistoryByEmployee, shift.employeeId, shift.businessDate, employee?.hourlyCost ?? 0);
+      return sum + (shiftMinutes(shift.shiftStart, shift.shiftEnd) / 60) * hourlyCost;
     }, 0);
+    const missingCosts = shifts.filter((shift) => {
+      const employee = employeeMap.get(shift.employeeId);
+      return resolveEmployeeCostForDate(costHistoryByEmployee, shift.employeeId, shift.businessDate, employee?.hourlyCost ?? 0) <= 0;
+    }).length;
 
     return {
       employees: employees.length,
@@ -91,9 +99,10 @@ export function PlanificacionPanel({
       plannedMinutes,
       realMinutes,
       plannedCost,
+      missingCosts,
       openSessions: timeClockSessions.filter((session) => session.status === "open").length,
     };
-  }, [employeeMap, employees.length, shifts, timeClockSessions]);
+  }, [costHistoryByEmployee, employeeMap, employees.length, shifts, timeClockSessions]);
 
   const previousWeek = addDaysIso(weekStart, -7);
   const previousWeekEnd = addDaysIso(weekEnd, -7);
@@ -382,6 +391,12 @@ export function PlanificacionPanel({
         </div>
       )}
 
+      {stats.missingCosts > 0 && (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-800">
+          Hay {stats.missingCosts} turno{stats.missingCosts === 1 ? "" : "s"} sin coste/hora configurado. No contaran en el coste previsto hasta que lo asignes en Empleats.
+        </section>
+      )}
+
       <section className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-sm">
         <div className="border-b border-[var(--line)] px-5 py-4">
           <h2 className="text-lg font-black tracking-tight text-slate-950">Parrilla semanal</h2>
@@ -415,6 +430,12 @@ export function PlanificacionPanel({
                     const shift = shiftMap.get(shiftKey(employee.id, day));
                     return sum + (shift ? shiftMinutes(shift.shiftStart, shift.shiftEnd) : 0);
                   }, 0);
+                  const plannedCost = days.reduce((sum, day) => {
+                    const shift = shiftMap.get(shiftKey(employee.id, day));
+                    if (!shift) return sum;
+                    const hourlyCost = resolveEmployeeCostForDate(costHistoryByEmployee, employee.id, day, employee.hourlyCost);
+                    return sum + (shiftMinutes(shift.shiftStart, shift.shiftEnd) / 60) * hourlyCost;
+                  }, 0);
                   const real = realMinutesByEmployee.get(employee.id) ?? 0;
                   const diff = real - planned;
 
@@ -427,6 +448,9 @@ export function PlanificacionPanel({
                         <p className="truncate text-sm font-black text-slate-950">{employee.name}</p>
                         <p className="mt-1 text-xs font-bold text-slate-400">
                           {formatDuration(planned)} previstos
+                        </p>
+                        <p className={`mt-1 text-xs font-bold ${plannedCost > 0 ? "text-emerald-600" : "text-amber-600"}`}>
+                          {plannedCost > 0 ? formatMoney(plannedCost) : "Sin coste/hora"}
                         </p>
                         <div className="mt-3 flex flex-wrap gap-1.5">
                           <button
@@ -450,6 +474,7 @@ export function PlanificacionPanel({
 
                       {days.map((day) => {
                         const shift = shiftMap.get(shiftKey(employee.id, day));
+                        const hourlyCost = resolveEmployeeCostForDate(costHistoryByEmployee, employee.id, day, employee.hourlyCost);
                         return (
                           <button
                             key={`${employee.id}-${day}`}
@@ -468,6 +493,9 @@ export function PlanificacionPanel({
                                 </p>
                                 <p className="mt-2 text-xs font-bold text-indigo-500">
                                   {formatDuration(shiftMinutes(shift.shiftStart, shift.shiftEnd))}
+                                </p>
+                                <p className={`mt-1 text-[11px] font-black ${hourlyCost > 0 ? "text-emerald-600" : "text-amber-600"}`}>
+                                  {hourlyCost > 0 ? `${hourlyCost.toFixed(2)} EUR/h` : "Sin coste"}
                                 </p>
                               </>
                             ) : (
@@ -624,6 +652,36 @@ function parseTime(value: string) {
   const minutes = Number(match[2]);
   if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
   return hours * 60 + minutes;
+}
+
+function buildCostHistoryByEmployee(entries: EmployeeHourlyCostHistoryEntry[]) {
+  const map = new Map<string, EmployeeHourlyCostHistoryEntry[]>();
+  for (const entry of entries) {
+    const list = map.get(entry.employeeId) ?? [];
+    list.push(entry);
+    map.set(entry.employeeId, list);
+  }
+  for (const list of map.values()) {
+    list.sort((a, b) => b.validFrom.localeCompare(a.validFrom));
+  }
+  return map;
+}
+
+function resolveEmployeeCostForDate(
+  historyByEmployee: Map<string, EmployeeHourlyCostHistoryEntry[]>,
+  employeeId: string,
+  businessDate: string,
+  fallback: number,
+) {
+  const list = historyByEmployee.get(employeeId) ?? [];
+  const match = list.find((entry) =>
+    entry.validFrom <= businessDate && (!entry.validUntil || entry.validUntil > businessDate)
+  );
+  return match ? entryCost(match) : fallback;
+}
+
+function entryCost(entry: EmployeeHourlyCostHistoryEntry) {
+  return Number.isFinite(entry.hourlyCost) ? entry.hourlyCost : 0;
 }
 
 function addDaysIso(value: string, days: number) {

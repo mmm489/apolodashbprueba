@@ -1,8 +1,8 @@
 import { AppFrame } from "@/components/app-frame";
 import { DateFilterBar } from "@/components/date-filter-bar";
 import { resolveDateFilter } from "@/lib/analytics";
-import { listTimeClockSessions } from "@/lib/repositories";
-import type { TimeClockSessionRecord } from "@/lib/types";
+import { listEmployeeScheduleShifts, listTimeClockSessions } from "@/lib/repositories";
+import type { EmployeeScheduleShift, TimeClockSessionRecord } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -17,9 +17,13 @@ export default async function ControlHorarioPage({
     from: firstValue(params?.from),
     to: firstValue(params?.to),
   });
-  const sessions = await listTimeClockSessions(filter.from, filter.to);
-  const stats = buildStats(sessions);
-  const byEmployee = groupByEmployee(sessions);
+  const [sessions, plannedShifts] = await Promise.all([
+    listTimeClockSessions(filter.from, filter.to),
+    listEmployeeScheduleShifts(filter.from, filter.to),
+  ]);
+  const plannedByEmployee = buildPlannedByEmployee(plannedShifts);
+  const stats = buildStats(sessions, plannedShifts);
+  const byEmployee = groupByEmployee(sessions, plannedByEmployee);
   const exportParams = new URLSearchParams({
     from: filter.from,
     to: filter.to,
@@ -32,10 +36,12 @@ export default async function ControlHorarioPage({
     >
       <DateFilterBar preset={filter.preset} from={filter.from} to={filter.to} />
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
         <Metric label="Jornadas" value={fmtNum(stats.sessions)} color="indigo" />
         <Metric label="Trabajando ahora" value={fmtNum(stats.open)} color="emerald" />
         <Metric label="Horas periodo" value={formatDuration(stats.totalMinutes)} color="amber" />
+        <Metric label="Horas previstas" value={formatDuration(stats.plannedMinutes)} color="indigo" />
+        <Metric label="Diferencia" value={formatSignedDuration(stats.totalMinutes - stats.plannedMinutes)} color={stats.totalMinutes >= stats.plannedMinutes ? "emerald" : "rose"} />
         <Metric label="Empleados" value={fmtNum(byEmployee.length)} color="slate" />
         <Metric label="Incidencias" value={fmtNum(stats.incidents)} color={stats.incidents ? "rose" : "emerald"} />
       </section>
@@ -81,12 +87,15 @@ export default async function ControlHorarioPage({
                   <div>
                     <h3 className="text-lg font-black text-slate-950">{employee.employeeName}</h3>
                     <p className="text-sm font-semibold text-slate-500">
-                      {employee.sessions} jornada{employee.sessions === 1 ? "" : "s"}
+                      {employee.sessions} jornada{employee.sessions === 1 ? "" : "s"} · previsto {formatDuration(employee.plannedMinutes)}
                     </p>
                   </div>
                   <div className="text-right">
                     <p className="text-2xl font-black tabular-nums text-slate-950">
                       {formatDuration(employee.minutes)}
+                    </p>
+                    <p className={`mt-1 text-xs font-bold uppercase tracking-wide ${employee.minutes >= employee.plannedMinutes ? "text-emerald-600" : "text-rose-600"}`}>
+                      {formatSignedDuration(employee.minutes - employee.plannedMinutes)}
                     </p>
                     {employee.open > 0 && (
                       <p className="mt-1 text-xs font-bold uppercase tracking-wide text-emerald-600">
@@ -153,25 +162,28 @@ export default async function ControlHorarioPage({
   );
 }
 
-function buildStats(sessions: TimeClockSessionRecord[]) {
+function buildStats(sessions: TimeClockSessionRecord[], plannedShifts: EmployeeScheduleShift[]) {
   const open = sessions.filter((session) => session.status === "open").length;
   const longOpen = sessions.filter((session) => (session.durationMinutes ?? 0) > 12 * 60).length;
   return {
     sessions: sessions.length,
     open,
     totalMinutes: sessions.reduce((sum, session) => sum + (session.durationMinutes ?? 0), 0),
+    plannedMinutes: plannedShifts.reduce((sum, shift) => sum + shiftMinutes(shift.shiftStart, shift.shiftEnd), 0),
     incidents: open + longOpen,
   };
 }
 
-function groupByEmployee(sessions: TimeClockSessionRecord[]) {
-  const byEmployee = new Map<string, { employeeId: string; employeeName: string; sessions: number; minutes: number; open: number }>();
+function groupByEmployee(sessions: TimeClockSessionRecord[], plannedByEmployee: Map<string, { employeeName: string; minutes: number }>) {
+  const byEmployee = new Map<string, { employeeId: string; employeeName: string; sessions: number; minutes: number; plannedMinutes: number; open: number }>();
   for (const session of sessions) {
+    const planned = plannedByEmployee.get(session.employeeId);
     const row = byEmployee.get(session.employeeId) ?? {
       employeeId: session.employeeId,
       employeeName: session.employeeName,
       sessions: 0,
       minutes: 0,
+      plannedMinutes: planned?.minutes ?? 0,
       open: 0,
     };
     row.sessions += 1;
@@ -179,7 +191,29 @@ function groupByEmployee(sessions: TimeClockSessionRecord[]) {
     if (session.status === "open") row.open += 1;
     byEmployee.set(session.employeeId, row);
   }
+  for (const [employeeId, planned] of plannedByEmployee) {
+    if (!byEmployee.has(employeeId)) {
+      byEmployee.set(employeeId, {
+        employeeId,
+        employeeName: planned.employeeName,
+        sessions: 0,
+        minutes: 0,
+        plannedMinutes: planned.minutes,
+        open: 0,
+      });
+    }
+  }
   return [...byEmployee.values()].sort((a, b) => b.minutes - a.minutes);
+}
+
+function buildPlannedByEmployee(shifts: EmployeeScheduleShift[]) {
+  const map = new Map<string, { employeeName: string; minutes: number }>();
+  for (const shift of shifts) {
+    const current = map.get(shift.employeeId) ?? { employeeName: shift.employeeName, minutes: 0 };
+    current.minutes += shiftMinutes(shift.shiftStart, shift.shiftEnd);
+    map.set(shift.employeeId, current);
+  }
+  return map;
 }
 
 const metricColors: Record<string, string> = {
@@ -227,6 +261,21 @@ function formatDuration(minutes: number) {
   const hours = Math.floor(safe / 60);
   const rest = safe % 60;
   return `${hours} h ${String(rest).padStart(2, "0")} min`;
+}
+
+function formatSignedDuration(minutes: number) {
+  const sign = minutes > 0 ? "+" : minutes < 0 ? "-" : "";
+  return `${sign}${formatDuration(Math.abs(minutes))}`;
+}
+
+function shiftMinutes(start: string, end: string) {
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  if ([sh, sm, eh, em].some((n) => Number.isNaN(n))) return 0;
+  const startMinutes = sh * 60 + sm;
+  let endMinutes = eh * 60 + em;
+  if (endMinutes < startMinutes) endMinutes += 24 * 60;
+  return endMinutes - startMinutes;
 }
 
 function formatTime(value: string) {

@@ -6,7 +6,7 @@ import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Clock, FileUp, Lo
 
 import type { DayStatus } from "@/lib/analytics";
 import { classifyFamily } from "@/lib/product-families";
-import type { Employee, EmployeeShift, HourlyProductSale, HourlySalesEntry, ProductCost, ProductSaleRecord } from "@/lib/types";
+import type { Employee, EmployeeShift, HourlyProductSale, HourlySalesEntry, PlannedLaborRecord, ProductCost, ProductSaleRecord } from "@/lib/types";
 
 interface FamilyGroup {
   name: string;
@@ -40,8 +40,7 @@ export function VendesDayList({
   hourlySales,
   hourlyProductSales,
   productCosts,
-  employeeShifts,
-  employees,
+  plannedLabor,
   readOnly = false,
 }: {
   dayStatuses: DayStatus[];
@@ -49,25 +48,13 @@ export function VendesDayList({
   hourlySales: HourlySalesEntry[];
   hourlyProductSales: HourlyProductSale[];
   productCosts: ProductCost[];
-  employeeShifts: EmployeeShift[];
-  employees: Employee[];
+  plannedLabor: PlannedLaborRecord[];
   readOnly?: boolean;
 }) {
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
-  const [shiftsModalDate, setShiftsModalDate] = useState<string | null>(null);
 
   return (
     <>
-    {/* Shifts modal */}
-    {shiftsModalDate && !readOnly && (
-      <ShiftsModal
-        date={shiftsModalDate}
-        shifts={employeeShifts.filter((s) => s.businessDate === shiftsModalDate)}
-        employees={employees}
-        onClose={() => setShiftsModalDate(null)}
-      />
-    )}
-
     <div className="rounded-2xl border border-[var(--line)] bg-white shadow-sm overflow-hidden">
       <table className="w-full text-sm">
         <thead>
@@ -79,6 +66,7 @@ export function VendesDayList({
             <th className="px-5 py-3 text-right">Comandes</th>
             <th className="px-5 py-3 text-center">Articles</th>
             <th className="px-5 py-3 text-center">Hores</th>
+            <th className="px-5 py-3 text-right">Personal</th>
             <th className="px-5 py-3 text-right">Accions</th>
           </tr>
         </thead>
@@ -88,7 +76,7 @@ export function VendesDayList({
             const dayProducts = productSales.filter((p) => p.businessDate === day.date);
             const dayHourly = hourlySales.filter((h) => h.businessDate === day.date);
             const dayHourlyProducts = hourlyProductSales.filter((hp) => hp.businessDate === day.date);
-            const dayShifts = employeeShifts.filter((s) => s.businessDate === day.date);
+            const dayLabor = plannedLabor.filter((s) => s.businessDate === day.date);
 
             return (
               <DayRow
@@ -96,20 +84,18 @@ export function VendesDayList({
                 day={day}
                 isExpanded={isExpanded}
                 onToggle={() => setExpandedDate(isExpanded ? null : day.date)}
-                onOpenShifts={() => setShiftsModalDate(day.date)}
                 dayProducts={dayProducts}
                 dayHourly={dayHourly}
                 dayHourlyProducts={dayHourlyProducts}
                 productCosts={productCosts}
-                dayShifts={dayShifts}
-                employees={employees}
+                dayLabor={dayLabor}
                 readOnly={readOnly}
               />
             );
           })}
           {dayStatuses.length === 0 && (
             <tr>
-              <td colSpan={8} className="px-5 py-8 text-center text-slate-400">
+              <td colSpan={9} className="px-5 py-8 text-center text-slate-400">
                 No hi ha dies en aquest periode.
               </td>
             </tr>
@@ -127,29 +113,28 @@ function DayRow({
   day,
   isExpanded,
   onToggle,
-  onOpenShifts,
   dayProducts,
   dayHourly,
   dayHourlyProducts,
   productCosts,
-  dayShifts,
-  employees,
+  dayLabor,
   readOnly,
 }: {
   day: DayStatus;
   isExpanded: boolean;
   onToggle: () => void;
-  onOpenShifts: () => void;
   dayProducts: ProductSaleRecord[];
   dayHourly: HourlySalesEntry[];
   dayHourlyProducts: HourlyProductSale[];
   productCosts: ProductCost[];
-  dayShifts: EmployeeShift[];
-  employees: Employee[];
+  dayLabor: PlannedLaborRecord[];
   readOnly: boolean;
 }) {
   const costMap = new Map<string, number>();
   for (const pc of productCosts) costMap.set(pc.productCode, pc.unitCost);
+  const laborCost = dayLabor.reduce((sum, row) => sum + row.totalCost, 0);
+  const laborHours = dayLabor.reduce((sum, row) => sum + row.hours, 0);
+  const missingLaborCost = dayLabor.some((row) => row.costMissing);
   return (
     <>
       <tr
@@ -185,6 +170,18 @@ function DayRow({
         <td className="px-5 py-3 text-center">
           <StatusBadge ok={day.hasHourly} />
         </td>
+        <td className="px-5 py-3 text-right">
+          {dayLabor.length > 0 ? (
+            <div>
+              <p className={`font-bold ${missingLaborCost ? "text-amber-600" : "text-violet-700"}`}>
+                {euro(laborCost)}
+              </p>
+              <p className="text-[11px] font-semibold text-slate-400">{laborHours.toFixed(1)} h</p>
+            </div>
+          ) : (
+            <span className="text-slate-300">--</span>
+          )}
+        </td>
         <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
           {readOnly ? (
             <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
@@ -194,18 +191,6 @@ function DayRow({
             <div className="flex items-center justify-end gap-1">
               <UploadButton label="Articles" date={day.date} expectedType="articles" alreadyUploaded={day.hasArticles} />
               <UploadButton label="Hores" date={day.date} expectedType="hores" alreadyUploaded={day.hasHourly} />
-              <button
-                type="button"
-                onClick={onOpenShifts}
-                className={`inline-flex items-center gap-1 rounded-lg px-2.5 py-1 text-[11px] font-medium transition ${
-                  dayShifts.length > 0
-                    ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-                    : "bg-violet-50 text-violet-700 hover:bg-violet-100"
-                }`}
-              >
-                <Users className="size-3" />
-                {dayShifts.length > 0 ? `${dayShifts.length} empleats` : "Empleats"}
-              </button>
             </div>
           )}
         </td>
@@ -214,7 +199,7 @@ function DayRow({
       {/* Expanded detail */}
       {isExpanded && (
         <tr>
-          <td colSpan={8} className="border-b border-[var(--line)] bg-slate-50/30 px-5 py-4">
+          <td colSpan={9} className="border-b border-[var(--line)] bg-slate-50/30 px-5 py-4">
             <div className="grid gap-4 xl:grid-cols-2">
               {/* Products */}
               {day.hasArticles && dayProducts.length > 0 && (
@@ -223,7 +208,10 @@ function DayRow({
 
               {/* Hourly with product detail */}
               {day.hasHourly && dayHourly.length > 0 && (
-                <HourlyDetail hourly={dayHourly} hourlyProducts={dayHourlyProducts} costMap={costMap} shifts={dayShifts} employees={employees} />
+                <HourlyDetail hourly={dayHourly} hourlyProducts={dayHourlyProducts} costMap={costMap} labor={dayLabor} />
+              )}
+              {dayLabor.length > 0 && (
+                <PlannedLaborDetail labor={dayLabor} />
               )}
             </div>
 
@@ -406,14 +394,12 @@ function HourlyDetail({
   hourly,
   hourlyProducts,
   costMap,
-  shifts,
-  employees,
+  labor,
 }: {
   hourly: HourlySalesEntry[];
   hourlyProducts: HourlyProductSale[];
   costMap: Map<string, number>;
-  shifts: EmployeeShift[];
-  employees: Employee[];
+  labor: PlannedLaborRecord[];
 }) {
   const [openHour, setOpenHour] = useState<string | null>(null);
   const sorted = [...hourly].sort((a, b) => a.hour.localeCompare(b.hour));
@@ -423,13 +409,11 @@ function HourlyDetail({
   function getEmployeeCostForHour(hourLabel: string): number {
     const hourNum = Number.parseInt(hourLabel.split(":")[0], 10);
     let cost = 0;
-    for (const shift of shifts) {
-      const emp = employees.find((e) => e.id === shift.employeeId);
-      if (!emp) continue;
+    for (const shift of labor) {
       const startH = Number.parseInt(shift.shiftStart.split(":")[0], 10);
       const endH = Number.parseInt(shift.shiftEnd.split(":")[0], 10);
       if (hourNum >= startH && hourNum < endH) {
-        cost += emp.hourlyCost;
+        cost += shift.hourlyCost;
       }
     }
     return cost;
@@ -437,7 +421,7 @@ function HourlyDetail({
 
   const totalSales = hourly.reduce((s, h) => s + h.sales, 0);
   const totalProductCost = hourlyProducts.reduce((s, p) => s + (costMap.get(p.productCode) ?? 0) * p.units, 0);
-  const totalEmployeeCost = sorted.reduce((s, h) => s + getEmployeeCostForHour(h.hour), 0);
+  const totalEmployeeCost = labor.reduce((s, row) => s + row.totalCost, 0);
 
   return (
     <div>
@@ -517,6 +501,53 @@ function HourlyDetail({
             </span>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function PlannedLaborDetail({ labor }: { labor: PlannedLaborRecord[] }) {
+  const totalHours = labor.reduce((sum, row) => sum + row.hours, 0);
+  const totalCost = labor.reduce((sum, row) => sum + row.totalCost, 0);
+  return (
+    <div>
+      <p className="mb-3 text-[12px] font-semibold uppercase tracking-wider text-slate-500">Personal planificat</p>
+      <div className="overflow-hidden rounded-lg border border-[var(--line)] bg-white">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-[var(--line)] bg-slate-50 text-[11px] font-medium uppercase tracking-wider text-slate-400">
+              <th className="px-3 py-2 text-left">Empleado</th>
+              <th className="px-3 py-2 text-center">Turno</th>
+              <th className="px-3 py-2 text-right">Horas</th>
+              <th className="px-3 py-2 text-right">EUR/h</th>
+              <th className="px-3 py-2 text-right">Coste</th>
+            </tr>
+          </thead>
+          <tbody>
+            {labor.map((row) => (
+              <tr key={row.id} className="border-b border-[var(--line)]/40">
+                <td className="px-3 py-2 text-[12px] font-bold text-slate-800">{row.employeeName}</td>
+                <td className="px-3 py-2 text-center text-[12px] text-slate-500">{row.shiftStart} - {row.shiftEnd}</td>
+                <td className="px-3 py-2 text-right text-[12px] text-slate-600">{row.hours.toFixed(1)} h</td>
+                <td className={`px-3 py-2 text-right text-[12px] font-semibold ${row.costMissing ? "text-amber-600" : "text-violet-700"}`}>
+                  {row.costMissing ? "Sin coste" : `${row.hourlyCost.toFixed(2)} EUR`}
+                </td>
+                <td className={`px-3 py-2 text-right text-[12px] font-black ${row.costMissing ? "text-amber-600" : "text-slate-950"}`}>
+                  {row.costMissing ? "--" : euro(row.totalCost)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="bg-slate-50 font-black text-slate-950">
+              <td className="px-3 py-2 text-[12px]">Total</td>
+              <td />
+              <td className="px-3 py-2 text-right text-[12px]">{totalHours.toFixed(1)} h</td>
+              <td />
+              <td className="px-3 py-2 text-right text-[12px]">{euro(totalCost)}</td>
+            </tr>
+          </tfoot>
+        </table>
       </div>
     </div>
   );

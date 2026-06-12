@@ -2,9 +2,10 @@ import { addDays, differenceInCalendarDays, endOfDay, formatISO, parseISO, start
 
 import {
   listAlerts,
+  listAllEmployeeHourlyCostHistory,
   listAllProductCostHistory,
   listDocuments,
-  listEmployeeShifts,
+  listEmployeeScheduleShifts,
   listEmployees,
   listHourlySales,
   listHourlyProductSales,
@@ -19,7 +20,7 @@ import {
 } from "@/lib/repositories";
 import { describeCalendarContext, getCalendarContext } from "@/lib/calendar";
 import { classifyFamily } from "@/lib/product-families";
-import type { ChatAnswer, DailyCalendarNote, DailyDigest as DailyDigestType, DateFilter, DatePreset, Employee, EmployeeShift, FamilyMovement, FinancialWorkspace, HistoricalWeather, HourlyProductSale, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, ProductCost, ProductCostHistoryEntry, ProductSaleRecord, SalesReport } from "@/lib/types";
+import type { ChatAnswer, DailyCalendarNote, DailyDigest as DailyDigestType, DateFilter, DatePreset, Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleShift, FamilyMovement, FinancialWorkspace, HistoricalWeather, HourlyProductSale, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, PlannedLaborRecord, ProductCost, ProductCostHistoryEntry, ProductSaleRecord, SalesReport } from "@/lib/types";
 
 const BUSINESS_DAY_START_HOUR = 4;
 
@@ -76,7 +77,7 @@ export async function getFinancialWorkspace(input?: {
   // Extend the sales query to cover the previous period and the same period
   // 52 weeks earlier (DOW-aligned year-over-year) for comparison metrics.
   const comparisonRange = buildComparisonRange(filter);
-  const [documents, salesReports, extendedSales, hourlySales, invoices, payrolls, productSales, previousProductSales, alerts, telegramUsers, telegramMessages, employees, productCosts, productCostHistory, employeeShifts] =
+  const [documents, salesReports, extendedSales, hourlySales, invoices, payrolls, productSales, previousProductSales, alerts, telegramUsers, telegramMessages, employees, productCosts, productCostHistory, employeeScheduleShifts, employeeCostHistory] =
     await Promise.all([
       listDocuments(filter.from, filter.to),
       listSalesReports(filter.from, filter.to),
@@ -92,7 +93,8 @@ export async function getFinancialWorkspace(input?: {
       listEmployees(),
       listProductCosts(),
       listAllProductCostHistory(),
-      listEmployeeShifts(filter.from, filter.to),
+      listEmployeeScheduleShifts(filter.from, filter.to),
+      listAllEmployeeHourlyCostHistory(),
     ]);
 
   const fromDate = startOfDaySafe(filter.from);
@@ -137,14 +139,17 @@ export async function getFinancialWorkspace(input?: {
     .sort((a, b) => b.sales - a.sales);
 
   const bestHour = hourlyPerformance[0] ?? { hour: "--", sales: 0 };
-  const estimatedMargin = totalSales - totalExpenses - totalPayroll;
+  const plannedLabor = buildPlannedLaborRecords(employeeScheduleShifts, employeeCostHistory, employees);
+  const plannedLaborHours = plannedLabor.reduce((sum, row) => sum + row.hours, 0);
+  const plannedLaborCost = plannedLabor.reduce((sum, row) => sum + row.totalCost, 0);
+  const laborCostRatio = totalSales > 0 ? plannedLaborCost / totalSales : 0;
+  const salesPerPlannedHour = plannedLaborHours > 0 ? totalSales / plannedLaborHours : 0;
+  const estimatedMargin = totalSales - totalExpenses - plannedLaborCost;
 
-  // Total hours worked in the period (from real shifts, not theoretical monthly hours)
-  const totalHoursWorked = employeeShifts.reduce(
-    (sum, shift) => sum + computeShiftHours(shift.shiftStart, shift.shiftEnd),
-    0,
-  );
-  const productivityPerHour = totalHoursWorked > 0 ? totalSales / totalHoursWorked : 0;
+  // The new dashboard labor cost uses planned hours. Real fichajes stay in
+  // Control horario for comparison and compliance.
+  const totalHoursWorked = plannedLaborHours;
+  const productivityPerHour = salesPerPlannedHour;
 
   // Product cost per sale uses the cost that was valid ON THE DAY the sale
   // happened (product_cost_history), NOT the current unit_cost. That way a
@@ -177,14 +182,7 @@ export async function getFinancialWorkspace(input?: {
   }
   const productCostCoverage = salesAmountTotal > 0 ? salesAmountWithCost / salesAmountTotal : 0;
 
-  // Employee cost: sum(hours * hourly_cost) for shifts in the period (uses real shifts)
-  const employeeById = new Map(employees.map((e) => [e.id, e] as const));
-  const totalEmployeeCost = employeeShifts.reduce((sum, shift) => {
-    const emp = employeeById.get(shift.employeeId);
-    if (!emp) return sum;
-    const hours = computeShiftHours(shift.shiftStart, shift.shiftEnd);
-    return sum + hours * emp.hourlyCost;
-  }, 0);
+  const totalEmployeeCost = plannedLaborCost;
 
   const totalsByCategory = Object.entries(
     scopedInvoices.reduce<Record<string, number>>((acc, invoice) => {
@@ -225,6 +223,10 @@ export async function getFinancialWorkspace(input?: {
         activeSuppliers: new Set(scopedInvoices.map((item) => item.supplierName)).size,
         totalHoursWorked,
         productivityPerHour,
+        plannedLaborHours,
+        plannedLaborCost,
+        laborCostRatio,
+        salesPerPlannedHour,
         totalProductCost,
         totalEmployeeCost,
         productCostCoverage,
@@ -246,6 +248,7 @@ export async function getFinancialWorkspace(input?: {
     hourlySales: scopedHourly,
     invoices: scopedInvoices,
     payrolls: scopedPayrolls,
+    plannedLabor,
     productSales: scopedProductSales,
     topProducts,
     totalsByCategory,
@@ -285,8 +288,8 @@ export async function answerBusinessQuestion(question: string): Promise<ChatAnsw
 
   if (normalizedQuestion.includes("nomina") || normalizedQuestion.includes("nomin")) {
     return {
-      answer: `El cost laboral acumulat es ${formatCurrency(snapshot.kpis.totalPayroll)} en el periode analitzat.`,
-      sources: ["payrolls"],
+      answer: `El cost laboral planificat es ${formatCurrency(snapshot.kpis.totalEmployeeCost)} en el periode analitzat, amb ${snapshot.kpis.plannedLaborHours.toFixed(1)} hores planificades.`,
+      sources: ["employee_schedule_shifts", "employee_hourly_cost_history"],
     };
   }
 
@@ -329,7 +332,8 @@ export interface SalesWorkspace {
   hourlySales: HourlySalesEntry[];
   hourlyProductSales: HourlyProductSale[];
   productCosts: ProductCost[];
-  employeeShifts: EmployeeShift[];
+  plannedLabor: PlannedLaborRecord[];
+  employeeCostHistory: EmployeeHourlyCostHistoryEntry[];
   employees: Employee[];
   dayStatuses: DayStatus[];
   topProducts: Array<{ productName: string; units: number; amount: number }>;
@@ -338,6 +342,10 @@ export interface SalesWorkspace {
     totalOrders: number;
     averageTicket: number;
     daysWithData: number;
+    plannedLaborHours: number;
+    plannedLaborCost: number;
+    laborCostRatio: number;
+    salesPerPlannedHour: number;
   };
 }
 
@@ -347,13 +355,14 @@ export async function getSalesWorkspace(input?: {
   to?: string;
 }): Promise<SalesWorkspace> {
   const filter = resolveDateFilter(input);
-  const [salesReports, productSales, hourlySales, hourlyProductSales, employees, employeeShifts, productCosts] = await Promise.all([
+  const [salesReports, productSales, hourlySales, hourlyProductSales, employees, employeeScheduleShifts, employeeCostHistory, productCosts] = await Promise.all([
     listSalesReports(filter.from, filter.to),
     listProductSales(filter.from, filter.to),
     listHourlySales(filter.from, filter.to),
     listHourlyProductSales(filter.from, filter.to),
     listEmployees(),
-    listEmployeeShifts(filter.from, filter.to),
+    listEmployeeScheduleShifts(filter.from, filter.to),
+    listAllEmployeeHourlyCostHistory(),
     listProductCosts(),
   ]);
 
@@ -368,6 +377,9 @@ export async function getSalesWorkspace(input?: {
   const totalSales = scopedSales.reduce((sum, item) => sum + item.totalSales, 0);
   const totalOrders = scopedSales.reduce((sum, item) => sum + item.orderCount, 0);
   const averageTicket = totalOrders > 0 ? totalSales / totalOrders : 0;
+  const plannedLabor = buildPlannedLaborRecords(employeeScheduleShifts, employeeCostHistory, employees);
+  const plannedLaborHours = plannedLabor.reduce((sum, row) => sum + row.hours, 0);
+  const plannedLaborCost = plannedLabor.reduce((sum, row) => sum + row.totalCost, 0);
 
   const topProducts = Object.values(
     scopedProducts.reduce<Record<string, { productName: string; units: number; amount: number }>>((acc, item) => {
@@ -419,7 +431,8 @@ export async function getSalesWorkspace(input?: {
     hourlySales: scopedHourly,
     hourlyProductSales: scopedHourlyProducts,
     productCosts,
-    employeeShifts,
+    plannedLabor,
+    employeeCostHistory,
     employees,
     dayStatuses,
     topProducts,
@@ -428,6 +441,10 @@ export async function getSalesWorkspace(input?: {
       totalOrders,
       averageTicket,
       daysWithData: scopedSales.length,
+      plannedLaborHours,
+      plannedLaborCost,
+      laborCostRatio: totalSales > 0 ? plannedLaborCost / totalSales : 0,
+      salesPerPlannedHour: plannedLaborHours > 0 ? totalSales / plannedLaborHours : 0,
     },
   };
 }
@@ -1133,6 +1150,59 @@ async function fetchWeatherForDigest(reports: SalesReport[]): Promise<Map<string
 
 /** Computes hours between two "HH:MM" times. If end < start, assumes the shift
  * crosses midnight (e.g. 22:00–02:00 = 4 h), adding 24 h to the end. */
+function buildPlannedLaborRecords(
+  shifts: EmployeeScheduleShift[],
+  costHistory: EmployeeHourlyCostHistoryEntry[],
+  employees: Employee[],
+) {
+  const employeeById = new Map(employees.map((employee) => [employee.id, employee] as const));
+  const historyByEmployee = new Map<string, EmployeeHourlyCostHistoryEntry[]>();
+  for (const entry of costHistory) {
+    const list = historyByEmployee.get(entry.employeeId) ?? [];
+    list.push(entry);
+    historyByEmployee.set(entry.employeeId, list);
+  }
+  for (const list of historyByEmployee.values()) {
+    list.sort((a, b) => b.validFrom.localeCompare(a.validFrom));
+  }
+
+  return shifts.map((shift) => {
+    const employee = employeeById.get(shift.employeeId);
+    const hours = computeShiftHours(shift.shiftStart, shift.shiftEnd);
+    const hourlyCost = resolveEmployeeCostForDate(
+      historyByEmployee,
+      shift.employeeId,
+      shift.businessDate,
+      employee?.hourlyCost ?? 0,
+    );
+    return {
+      id: shift.id,
+      employeeId: shift.employeeId,
+      employeeName: shift.employeeName,
+      businessDate: shift.businessDate,
+      shiftStart: shift.shiftStart,
+      shiftEnd: shift.shiftEnd,
+      hours,
+      hourlyCost,
+      totalCost: hours * hourlyCost,
+      costMissing: hourlyCost <= 0,
+    } satisfies PlannedLaborRecord;
+  });
+}
+
+function resolveEmployeeCostForDate(
+  historyByEmployee: Map<string, EmployeeHourlyCostHistoryEntry[]>,
+  employeeId: string,
+  businessDate: string,
+  fallback: number,
+) {
+  const list = historyByEmployee.get(employeeId) ?? [];
+  const match = list.find((entry) =>
+    entry.validFrom <= businessDate && (!entry.validUntil || entry.validUntil > businessDate)
+  );
+  return match ? match.hourlyCost : fallback;
+}
+
 function computeShiftHours(start: string, end: string): number {
   const [sh, sm] = start.split(":").map(Number);
   const [eh, em] = end.split(":").map(Number);

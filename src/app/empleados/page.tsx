@@ -12,7 +12,7 @@ export default async function EmpleadosPage() {
   return (
     <AppFrame
       title="Empleats"
-      description={readOnly ? "Gestiona els empleats i els PINs del POS des del dashboard. Els canvis s'apliquen amb el sync de la heladeria." : "Gestiona els empleats, els seus horaris i dies de treball per calcular la productivitat."}
+      description={readOnly ? "Gestiona empleats, PINs, accessos del POS i cost empresa/hora del dashboard." : "Gestiona empleats, cost/hora i dades laborals per calcular productivitat."}
     >
       <EmpleadosPanel employees={employees} readOnly={readOnly} />
     </AppFrame>

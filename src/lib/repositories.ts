@@ -23,6 +23,7 @@ import type {
   CookiesTransactionRecord,
   DocumentRecord,
   Employee,
+  EmployeeHourlyCostHistoryEntry,
   EmployeeScheduleShare,
   EmployeeScheduleShift,
   EmployeeShift,
@@ -1985,6 +1986,146 @@ function todayIsoLocal() {
 
 /* ---------- Employees ---------- */
 
+let employeeCostTablesEnsured = false;
+
+async function ensureEmployeeCostTables() {
+  if (employeeCostTablesEnsured || !hasDatabase()) return;
+  const sql = getSql();
+  await sql.query(`
+    CREATE TABLE IF NOT EXISTS employee_hourly_cost_history (
+      id TEXT PRIMARY KEY,
+      employee_id TEXT NOT NULL,
+      employee_name_snapshot TEXT NOT NULL,
+      hourly_cost NUMERIC(10,2) NOT NULL DEFAULT 0,
+      valid_from DATE NOT NULL,
+      valid_until DATE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(employee_id, valid_from)
+    )
+  `);
+  await sql.query(`
+    CREATE INDEX IF NOT EXISTS idx_employee_hourly_cost_history_employee_date
+      ON employee_hourly_cost_history(employee_id, valid_from DESC)
+  `);
+  employeeCostTablesEnsured = true;
+}
+
+async function listEmployeeCurrentCostMap(atDate = todayIsoLocal()) {
+  if (!hasDatabase()) return new Map<string, number>();
+  await ensureEmployeeCostTables();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT DISTINCT ON (employee_id) employee_id, hourly_cost
+    FROM employee_hourly_cost_history
+    WHERE valid_from <= ${atDate}::date
+      AND (valid_until IS NULL OR valid_until > ${atDate}::date)
+    ORDER BY employee_id, valid_from DESC
+  `;
+  return new Map(rows.map((row) => [String(row.employee_id), toNumber(row.hourly_cost)]));
+}
+
+export async function listEmployeeHourlyCostHistory(employeeId?: string) {
+  if (!hasDatabase()) return [] satisfies EmployeeHourlyCostHistoryEntry[];
+  await ensureEmployeeCostTables();
+  const sql = getSql();
+  const rows = employeeId
+    ? await sql`
+        SELECT id, employee_id, employee_name_snapshot, hourly_cost,
+               valid_from, valid_until, created_at, updated_at
+        FROM employee_hourly_cost_history
+        WHERE employee_id = ${employeeId}
+        ORDER BY valid_from DESC, created_at DESC
+      `
+    : await sql`
+        SELECT id, employee_id, employee_name_snapshot, hourly_cost,
+               valid_from, valid_until, created_at, updated_at
+        FROM employee_hourly_cost_history
+        ORDER BY employee_id ASC, valid_from DESC
+      `;
+  return rows.map(mapEmployeeHourlyCostHistoryEntry);
+}
+
+export async function listAllEmployeeHourlyCostHistory() {
+  return listEmployeeHourlyCostHistory();
+}
+
+export async function upsertEmployeeHourlyCost(input: {
+  employeeId: string;
+  hourlyCost: number;
+  validFrom: string;
+  employeeName?: string;
+}) {
+  if (!hasDatabase()) return;
+  await ensureEmployeeCostTables();
+
+  const employeeId = String(input.employeeId ?? "").trim();
+  const hourlyCost = Number(input.hourlyCost);
+  const validFrom = String(input.validFrom ?? "").trim();
+  if (!employeeId) throw new Error("Falta el empleado.");
+  if (!Number.isFinite(hourlyCost) || hourlyCost < 0) throw new Error("Coste/hora no valido.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(validFrom)) throw new Error("Fecha de vigencia no valida.");
+
+  const sql = getSql();
+  const employeeName = input.employeeName?.trim() || await resolveEmployeeNameSnapshot(sql, employeeId);
+  const nextRows = await sql`
+    SELECT valid_from
+    FROM employee_hourly_cost_history
+    WHERE employee_id = ${employeeId}
+      AND valid_from > ${validFrom}::date
+    ORDER BY valid_from ASC
+    LIMIT 1
+  `;
+  const nextValidUntil = nextRows[0]?.valid_from ? normalizeDate(nextRows[0].valid_from) : null;
+
+  await sql`
+    UPDATE employee_hourly_cost_history
+    SET valid_until = ${validFrom}::date,
+        updated_at = NOW()
+    WHERE employee_id = ${employeeId}
+      AND valid_from < ${validFrom}::date
+      AND (valid_until IS NULL OR valid_until > ${validFrom}::date)
+  `;
+
+  await sql`
+    INSERT INTO employee_hourly_cost_history
+      (id, employee_id, employee_name_snapshot, hourly_cost, valid_from, valid_until)
+    VALUES
+      (${randomUUID()}, ${employeeId}, ${employeeName}, ${hourlyCost}, ${validFrom}, ${nextValidUntil})
+    ON CONFLICT (employee_id, valid_from)
+    DO UPDATE SET
+      employee_name_snapshot = EXCLUDED.employee_name_snapshot,
+      hourly_cost = EXCLUDED.hourly_cost,
+      valid_until = EXCLUDED.valid_until,
+      updated_at = NOW()
+  `;
+}
+
+async function resolveEmployeeNameSnapshot(sql: DashboardSql, employeeId: string) {
+  if (isPosDataSource() && await hasPosTable(sql, "employees")) {
+    const rows = await sql`SELECT name FROM pos.employees WHERE id::text = ${employeeId} LIMIT 1`;
+    if (rows[0]?.name) return String(rows[0].name);
+  }
+  if (await hasPublicTable(sql, "employees")) {
+    const rows = await sql`SELECT name FROM employees WHERE id = ${employeeId} LIMIT 1`;
+    if (rows[0]?.name) return String(rows[0].name);
+  }
+  return employeeId;
+}
+
+function mapEmployeeHourlyCostHistoryEntry(row: Record<string, unknown>) {
+  return {
+    id: String(row.id),
+    employeeId: String(row.employee_id),
+    employeeNameSnapshot: String(row.employee_name_snapshot),
+    hourlyCost: toNumber(row.hourly_cost),
+    validFrom: normalizeDate(row.valid_from),
+    validUntil: row.valid_until ? normalizeDate(row.valid_until) : null,
+    createdAt: normalizeDateTime(row.created_at),
+    updatedAt: normalizeDateTime(row.updated_at),
+  } satisfies EmployeeHourlyCostHistoryEntry;
+}
+
 export async function listEmployees() {
   if (!hasDatabase()) {
     return mockEmployees;
@@ -1993,6 +2134,7 @@ export async function listEmployees() {
   const sql = getSql();
   if (isPosDataSource()) {
     await ensurePosEmployeeAccessColumns();
+    const currentCostMap = await listEmployeeCurrentCostMap();
     const rows = await sql`
       SELECT id, name, role, active,
              can_access_cashlogy, can_access_supplier_payments, can_access_products
@@ -2006,7 +2148,7 @@ export async function listEmployees() {
       shiftStart: "00:00",
       shiftEnd: "00:00",
       workingDaysPerMonth: 0,
-      hourlyCost: 0,
+      hourlyCost: currentCostMap.get(String(row.id)) ?? 0,
       isActive: Boolean(row.active),
       createdAt: "1970-01-01T00:00:00.000Z",
       role: String(row.role) === "admin" ? "admin" : "employee",
@@ -2017,6 +2159,7 @@ export async function listEmployees() {
     return mergePendingEmployeeChanges(sql, employees);
   }
 
+  const currentCostMap = await listEmployeeCurrentCostMap();
   const rows = await sql`SELECT id, name, shift_start, shift_end, working_days_per_month, hourly_cost, is_active, created_at FROM employees WHERE is_active = TRUE ORDER BY name ASC`;
   return rows.map((row) => ({
     id: String(row.id),
@@ -2024,7 +2167,7 @@ export async function listEmployees() {
     shiftStart: String(row.shift_start),
     shiftEnd: String(row.shift_end),
     workingDaysPerMonth: Number(row.working_days_per_month),
-    hourlyCost: toNumber(row.hourly_cost),
+    hourlyCost: currentCostMap.get(String(row.id)) ?? toNumber(row.hourly_cost),
     isActive: Boolean(row.is_active),
     createdAt: new Date(String(row.created_at)).toISOString(),
   })) satisfies Employee[];
