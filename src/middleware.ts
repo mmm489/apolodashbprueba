@@ -10,6 +10,8 @@ import { getAuthCookieName, isAuthConfigured, verifyToken } from "@/lib/auth";
  *  - /api/auth/*         the login/logout API itself
  *  - /api/telegram/*     Telegram servers POST here, no cookie possible
  *  - /api/ingest/microsoft-graph  external webhook with its own secret
+ *  - /mi-horario/*       employee schedule view, protected by private token
+ *  - /horario/*          legacy redirect to /mi-horario/*
  *  - /icon.svg, /favicon.ico, /_next/* assets
  *
  * If AUTH_PASSWORD or AUTH_SECRET is unset the middleware does nothing —
@@ -21,6 +23,8 @@ const PUBLIC_PATH_PREFIXES = [
   "/api/auth",
   "/api/telegram",
   "/api/ingest/microsoft-graph",
+  "/mi-horario",
+  "/horario",
 ];
 
 const PUBLIC_FILES = new Set(["/icon.svg", "/favicon.ico"]);
