@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { CalendarDays, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 
 import { getEmployeeScheduleByToken } from "@/lib/repositories";
+import { formatDashboardDate } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -29,7 +30,12 @@ export default async function EmployeeSchedulePage({
 
   if (!data) notFound();
 
-  const shiftMap = new Map(data.shifts.map((shift) => [shift.businessDate, shift]));
+  const shiftGroups = new Map<string, typeof data.shifts>();
+  for (const shift of data.shifts) {
+    const group = shiftGroups.get(shift.businessDate) ?? [];
+    group.push(shift);
+    shiftGroups.set(shift.businessDate, group);
+  }
   const days = Array.from({ length: 7 }, (_, index) => formatIsoDate(addDays(weekStart, index)));
   const plannedMinutes = data.shifts.reduce((sum, shift) => sum + shiftMinutes(shift.shiftStart, shift.shiftEnd), 0);
   const previousWeek = formatIsoDate(addDays(weekStart, -7));
@@ -87,21 +93,25 @@ export default async function EmployeeSchedulePage({
           </div>
           <div className="divide-y divide-[#eee6dc]">
             {days.map((day) => {
-              const shift = shiftMap.get(day);
+              const shifts = shiftGroups.get(day) ?? [];
               return (
                 <div key={day} className="flex items-center justify-between gap-4 px-5 py-4">
                   <div>
                     <p className="text-base font-black capitalize">{formatWeekday(day)}</p>
                     <p className="mt-1 text-sm font-bold text-slate-400">{formatDate(day)}</p>
                   </div>
-                  {shift ? (
-                    <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-right">
-                      <p className="text-lg font-black tabular-nums text-emerald-800">
-                        {shift.shiftStart} - {shift.shiftEnd}
-                      </p>
-                      <p className="mt-1 text-xs font-black text-emerald-500">
-                        {formatDuration(shiftMinutes(shift.shiftStart, shift.shiftEnd))}
-                      </p>
+                  {shifts.length > 0 ? (
+                    <div className="flex flex-col gap-2 text-right">
+                      {shifts.map((shift) => (
+                        <div key={shift.id} className="rounded-2xl bg-emerald-50 px-4 py-3">
+                          <p className="text-lg font-black tabular-nums text-emerald-800">
+                            {shift.shiftStart} - {shift.shiftEnd}
+                          </p>
+                          <p className="mt-1 text-xs font-black text-emerald-500">
+                            {formatDuration(shiftMinutes(shift.shiftStart, shift.shiftEnd))}
+                          </p>
+                        </div>
+                      ))}
                     </div>
                   ) : (
                     <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm font-black text-slate-400">
@@ -194,13 +204,13 @@ function formatDuration(minutes: number) {
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("ca-ES", {
+  return formatDashboardDate(value, "ca-ES", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
-  }).format(new Date(`${value}T12:00:00`));
+  });
 }
 
 function formatWeekday(value: string) {
-  return new Intl.DateTimeFormat("ca-ES", { weekday: "long" }).format(new Date(`${value}T12:00:00`));
+  return formatDashboardDate(value, "ca-ES", { weekday: "long" });
 }

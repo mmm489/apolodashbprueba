@@ -2,6 +2,7 @@ import { AppFrame } from "@/components/app-frame";
 import { DateFilterBar } from "@/components/date-filter-bar";
 import { resolveDateFilter } from "@/lib/analytics";
 import { listEmployeeScheduleShifts, listTimeClockSessions } from "@/lib/repositories";
+import { formatDashboardDate, formatDashboardTime } from "@/lib/timezone";
 import type { EmployeeScheduleShift, TimeClockSessionRecord } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -279,18 +280,15 @@ function shiftMinutes(start: string, end: string) {
 }
 
 function formatTime(value: string) {
-  return new Intl.DateTimeFormat("es-ES", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
+  return formatDashboardTime(value, "es-ES");
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("es-ES", {
+  return formatDashboardDate(value, "es-ES", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
-  }).format(new Date(`${value}T12:00:00`));
+  });
 }
 
 function fmtNum(value: number) {

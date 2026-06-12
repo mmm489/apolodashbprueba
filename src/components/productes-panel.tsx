@@ -19,6 +19,7 @@ import {
   Tags,
 } from "lucide-react";
 
+import { formatDashboardDateTime } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import type {
   CatalogChangeRecord,
@@ -473,7 +474,7 @@ function CatalogStudioHeader({
           <Clock3 className="size-4 shrink-0" />
           <span className="truncate">
             Ultim sync:{" "}
-            {syncStatus?.lastSyncedAt ? new Date(syncStatus.lastSyncedAt).toLocaleString("ca-ES") : "pendent de registrar"}
+            {syncStatus?.lastSyncedAt ? formatDashboardDateTime(syncStatus.lastSyncedAt, "ca-ES") : "pendent de registrar"}
             {syncStatus?.message ? ` · ${syncStatus.message}` : ""}
           </span>
         </div>
@@ -1223,7 +1224,7 @@ function DraftQueue({ changes, pending }: { changes: CatalogDraftChange[]; pendi
                   {change.action} {labelEntity(change.entityType)}
                 </p>
                 <p className="truncate text-xs text-slate-500">
-                  {change.errorMessage || new Date(change.requestedAt).toLocaleString("ca-ES")}
+                  {change.errorMessage || formatDashboardDateTime(change.requestedAt, "ca-ES")}
                 </p>
               </div>
             </div>

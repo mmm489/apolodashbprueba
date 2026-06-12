@@ -20,6 +20,7 @@ import {
 } from "@/lib/repositories";
 import { describeCalendarContext, getCalendarContext } from "@/lib/calendar";
 import { classifyFamily } from "@/lib/product-families";
+import { toDashboardDateOnly } from "@/lib/timezone";
 import type { ChatAnswer, DailyCalendarNote, DailyDigest as DailyDigestType, DateFilter, DatePreset, Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleShift, FamilyMovement, FinancialWorkspace, HistoricalWeather, HourlyProductSale, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, PlannedLaborRecord, ProductCost, ProductCostHistoryEntry, ProductSaleRecord, SalesReport } from "@/lib/types";
 
 const BUSINESS_DAY_START_HOUR = 4;
@@ -29,7 +30,7 @@ export function resolveDateFilter(input?: {
   from?: string;
   to?: string;
 }): DateFilter {
-  const now = subHours(new Date(), BUSINESS_DAY_START_HOUR);
+  const now = parseISO(toDashboardDateOnly(subHours(new Date(), BUSINESS_DAY_START_HOUR)));
   const preset = normalizePreset(input?.preset);
 
   if (preset === "custom" && input?.from && input?.to) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 
 import { listTimeClockSessions } from "@/lib/repositories";
+import { formatDashboardDateTime } from "@/lib/timezone";
 import type { TimeClockSessionRecord } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -67,10 +68,10 @@ function csvCell(value: unknown) {
 }
 
 function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("es-ES", {
+  return formatDashboardDateTime(value, "es-ES", {
     dateStyle: "short",
     timeStyle: "short",
-  }).format(new Date(value));
+  });
 }
 
 function formatDuration(minutes: number) {

@@ -6,6 +6,7 @@ import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Clock, FileUp, Lo
 
 import type { DayStatus } from "@/lib/analytics";
 import { classifyFamily } from "@/lib/product-families";
+import { formatDashboardDate } from "@/lib/timezone";
 import type { Employee, EmployeeShift, HourlyProductSale, HourlySalesEntry, PlannedLaborRecord, ProductCost, ProductSaleRecord } from "@/lib/types";
 
 interface FamilyGroup {
@@ -244,7 +245,7 @@ function ShiftsModal({
   const assignedIds = new Set(shifts.map((s) => s.employeeId));
   const availableEmployees = employees.filter((e) => !assignedIds.has(e.id));
 
-  const dateLabel = new Date(date).toLocaleDateString("ca-ES", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const dateLabel = formatDashboardDate(date, "ca-ES", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
   function addShift() {
     if (!selectedEmployee) return;
@@ -796,6 +797,5 @@ function parseHours(start: string, end: string) {
 }
 
 function formatDate(dateStr: string) {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("ca-ES", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
+  return formatDashboardDate(dateStr, "ca-ES", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
 }

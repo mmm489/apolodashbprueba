@@ -4,6 +4,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Calendar, ChevronRight } from "lucide-react";
 
+import { formatDashboardDate } from "@/lib/timezone";
+
 const presets = [
   { value: "today", label: "Avui" },
   { value: "yesterday", label: "Ahir" },
@@ -130,6 +132,5 @@ export function DateFilterBar({
 }
 
 function formatDateLabel(dateStr: string) {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("ca-ES", { day: "numeric", month: "short", year: "numeric" });
+  return formatDashboardDate(dateStr, "ca-ES", { day: "numeric", month: "short", year: "numeric" });
 }

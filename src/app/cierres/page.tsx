@@ -2,6 +2,7 @@ import { AppFrame } from "@/components/app-frame";
 import { DateFilterBar } from "@/components/date-filter-bar";
 import { resolveDateFilter } from "@/lib/analytics";
 import { listCashClosings } from "@/lib/repositories";
+import { formatDashboardDateTime } from "@/lib/timezone";
 import type { CashClosingRecord } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -143,11 +144,5 @@ function euro(value: number) {
 }
 
 function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat("ca-ES", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
+  return formatDashboardDateTime(value, "ca-ES");
 }

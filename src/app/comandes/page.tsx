@@ -2,6 +2,7 @@ import { AppFrame } from "@/components/app-frame";
 import { DateFilterBar } from "@/components/date-filter-bar";
 import { resolveDateFilter } from "@/lib/analytics";
 import { listPosOrderLines } from "@/lib/repositories";
+import { formatDashboardDate } from "@/lib/timezone";
 import type { PosOrderLineRecord } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -464,7 +465,7 @@ function paymentLabel(method: string) {
 }
 
 function formatDate(date: string) {
-  return new Date(`${date}T00:00:00`).toLocaleDateString("ca-ES", {
+  return formatDashboardDate(date, "ca-ES", {
     day: "2-digit",
     month: "short",
   });

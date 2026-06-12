@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { CalendarDays, ChevronDown, ChevronRight, ShoppingBag } from "lucide-react";
 import { classifyFamily } from "@/lib/product-families";
+import { formatDashboardDate } from "@/lib/timezone";
 import type { ProductSaleRecord, SalesReport } from "@/lib/types";
 
 type Tab = "resumen" | "detalle";
@@ -325,6 +326,5 @@ function fmtNum(value: number) {
 }
 
 function formatDate(dateStr: string) {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("ca-ES", { day: "2-digit", month: "short", year: "numeric" });
+  return formatDashboardDate(dateStr, "ca-ES", { day: "2-digit", month: "short", year: "numeric" });
 }

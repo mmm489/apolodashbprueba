@@ -2,6 +2,7 @@ import { AppFrame } from "@/components/app-frame";
 import { DateFilterBar } from "@/components/date-filter-bar";
 import { resolveDateFilter } from "@/lib/analytics";
 import { listCookiesTransactions } from "@/lib/repositories";
+import { formatDashboardDate } from "@/lib/timezone";
 import type { CookiesTransactionRecord } from "@/lib/types";
 import type { ReactNode } from "react";
 
@@ -187,7 +188,7 @@ function fmtNum(value: number) {
 }
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("ca-ES", { day: "2-digit", month: "short" });
+  return formatDashboardDate(value, "ca-ES", { day: "2-digit", month: "short" });
 }
 
 function firstValue(value: string | string[] | undefined) {

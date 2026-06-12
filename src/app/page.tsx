@@ -5,6 +5,7 @@ import { DateFilterBar } from "@/components/date-filter-bar";
 import { DonutBreakdown } from "@/components/donut-breakdown";
 import { SalesBars } from "@/components/sales-bars";
 import { getFinancialWorkspace } from "@/lib/analytics";
+import { formatDashboardDate } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
 
@@ -327,7 +328,7 @@ function pctDelta(current: number, baseline: number): number {
 /* ---------- "Què vigilar avui" widget ---------- */
 
 function TodayDigest({ digest }: { digest: import("@/lib/types").DailyDigest }) {
-  const date = new Date(digest.date).toLocaleDateString("ca-ES", { weekday: "long", day: "2-digit", month: "long" });
+  const date = formatDashboardDate(digest.date, "ca-ES", { weekday: "long", day: "2-digit", month: "long" });
   // Tiquet mitjà delta — apples to apples: today's avg ticket vs last week's
   // avg ticket (computed on their own sales/orders). Fixes the old bug where
   // we divided last-week sales by today's orders.
@@ -725,8 +726,7 @@ function weatherEmoji(code: number): string {
 }
 
 function formatShortDate(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleDateString("ca-ES", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
+  return formatDashboardDate(iso, "ca-ES", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
 }
 
 function FamilyMovements({ movements }: { movements: import("@/lib/types").FamilyMovement[] }) {

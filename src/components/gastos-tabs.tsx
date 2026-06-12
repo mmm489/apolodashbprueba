@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Package, FileText, List } from "lucide-react";
 import type { ExpenseRow, InvoiceSummary, ProductSpend } from "@/lib/analytics";
+import { formatDashboardDate } from "@/lib/timezone";
 
 type Tab = "lineas" | "facturas" | "productos";
 
@@ -244,6 +245,5 @@ function fmtNum(value: number) {
 }
 
 function formatDate(dateStr: string) {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("ca-ES", { day: "2-digit", month: "short", year: "numeric" });
+  return formatDashboardDate(dateStr, "ca-ES", { day: "2-digit", month: "short", year: "numeric" });
 }

@@ -11,13 +11,13 @@ import {
   Copy,
   Euro,
   Link2,
-  MessageCircle,
   Save,
   Trash2,
   Users,
   X,
 } from "lucide-react";
 
+import { formatDashboardDate } from "@/lib/timezone";
 import type { Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleShare, EmployeeScheduleShift, TimeClockSessionRecord } from "@/lib/types";
 
 type EditorState = {
@@ -275,33 +275,8 @@ export function PlanificacionPanel({
       setMessage(`Enlace copiado para ${share.employeeName}.`);
       setError(null);
     } catch {
-      setError("No se ha podido copiar el enlace. Usa el boton WhatsApp o vuelve a intentarlo.");
+      setError("No se ha podido copiar el enlace. Vuelve a intentarlo.");
     }
-  }
-
-  async function openWhatsappSchedule(employee: Employee) {
-    const share = await resolveScheduleShare(employee);
-    const url = share?.url;
-    if (!url) {
-      setError("No hay enlace de horario para este empleado.");
-      return;
-    }
-
-    const employeeShifts = days
-      .flatMap((day) => shiftGroups.get(shiftKey(employee.id, day)) ?? []);
-    const lines = employeeShifts.length
-      ? employeeShifts.map((shift) => `${formatWeekday(shift.businessDate)} ${formatShortDate(shift.businessDate)}: ${shift.shiftStart}-${shift.shiftEnd}`)
-      : ["Aquesta setmana encara no tens torns assignats."];
-
-    const message = [
-      `Hola ${share.employeeName},`,
-      `aqui tens el teu horari de la setmana ${formatDate(weekStart)} - ${formatDate(weekEnd)}:`,
-      ...lines,
-      "",
-      `Pots consultar-lo sempre en aquest enllac: ${url}`,
-    ].join("\n");
-
-    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
   }
 
   async function resolveScheduleShare(employee: Employee) {
@@ -473,14 +448,6 @@ export function PlanificacionPanel({
                           <p className="mt-1 text-xs font-bold text-slate-400">Sin horas semanales</p>
                         )}
                         <div className="mt-3 flex flex-wrap gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => openWhatsappSchedule(employee)}
-                            className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-black text-emerald-700 transition hover:bg-emerald-100"
-                          >
-                            <MessageCircle className="size-3.5" />
-                            WhatsApp
-                          </button>
                           <button
                             type="button"
                             onClick={() => copyScheduleLink(employee)}
@@ -759,31 +726,29 @@ function fmtNum(value: number) {
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("es-ES", {
+  return formatDashboardDate(value, "es-ES", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
-  }).format(new Date(`${value}T12:00:00`));
+  });
 }
 
 function formatShortDate(value: string) {
-  return new Intl.DateTimeFormat("es-ES", {
+  return formatDashboardDate(value, "es-ES", {
     day: "2-digit",
     month: "2-digit",
-  }).format(new Date(`${value}T12:00:00`));
+  });
 }
 
 function formatFullDate(value: string) {
-  return new Intl.DateTimeFormat("es-ES", {
+  return formatDashboardDate(value, "es-ES", {
     weekday: "long",
     day: "2-digit",
     month: "long",
     year: "numeric",
-  }).format(new Date(`${value}T12:00:00`));
+  });
 }
 
 function formatWeekday(value: string) {
-  return new Intl.DateTimeFormat("ca-ES", { weekday: "short" })
-    .format(new Date(`${value}T12:00:00`))
-    .replace(".", "");
+  return formatDashboardDate(value, "ca-ES", { weekday: "short" }).replace(".", "");
 }
