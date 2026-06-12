@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   deleteEmployeeScheduleShift,
+  deleteEmployeeScheduleShiftsInRange,
   listEmployeeScheduleShifts,
   replaceEmployeeScheduleShiftsForDays,
   upsertEmployeeScheduleShift,
@@ -57,9 +58,23 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   const body = await request.json();
+  const from = String(body.from ?? "");
+  const to = String(body.to ?? "");
   const id = String(body.id ?? body.shiftId ?? "");
   const employeeId = String(body.employeeId ?? "");
   const businessDate = String(body.businessDate ?? "");
+
+  if (from && to) {
+    try {
+      const deleted = await deleteEmployeeScheduleShiftsInRange(from, to);
+      return NextResponse.json({ ok: true, deleted });
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "No se ha podido limpiar la semana." },
+        { status: 400 },
+      );
+    }
+  }
 
   if (!id && (!employeeId || !businessDate)) {
     return NextResponse.json({ error: "Faltan campos obligatorios." }, { status: 400 });

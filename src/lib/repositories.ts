@@ -2720,6 +2720,26 @@ export async function deleteEmployeeScheduleShift(input: { id?: string; employee
   }
 }
 
+export async function deleteEmployeeScheduleShiftsInRange(from: string, to: string) {
+  if (!hasDatabase()) return 0;
+  if (!isValidDateOnly(from) || !isValidDateOnly(to)) {
+    throw new Error("Rango de fechas no valido.");
+  }
+
+  await ensureEmployeeScheduleTables();
+  const sql = getSql();
+  const rows = await sql.query(
+    `
+      DELETE FROM employee_schedule_shifts
+      WHERE business_date >= $1::date
+        AND business_date <= $2::date
+      RETURNING id
+    `,
+    [from, to],
+  );
+  return rows.length;
+}
+
 function mapEmployeeScheduleShift(row: Record<string, unknown>) {
   return {
     id: String(row.id),
@@ -2761,6 +2781,10 @@ function validateScheduleShiftInput(input: {
   if (duration > 18 * 60) {
     throw new Error("El turno no puede superar 18 horas.");
   }
+}
+
+function isValidDateOnly(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
 function parseTimeMinutes(value: string) {

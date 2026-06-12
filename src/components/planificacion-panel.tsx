@@ -262,6 +262,39 @@ export function PlanificacionPanel({
     });
   }
 
+  async function clearCurrentWeek() {
+    setMessage(null);
+    setError(null);
+
+    if (shifts.length === 0) {
+      setMessage("Esta semana no tiene turnos para limpiar.");
+      return;
+    }
+
+    const confirmed = confirm(
+      `Vas a borrar ${shifts.length} turno${shifts.length === 1 ? "" : "s"} de la semana ${formatDate(weekStart)} - ${formatDate(weekEnd)}. Esta accion no se puede deshacer.`
+    );
+    if (!confirmed) return;
+
+    startTransition(async () => {
+      const res = await fetch("/api/scheduling", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from: weekStart, to: weekEnd }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "No se ha podido limpiar la semana.");
+        return;
+      }
+
+      const deleted = typeof data.deleted === "number" ? data.deleted : shifts.length;
+      setShifts((current) => current.filter((shift) => shift.businessDate < weekStart || shift.businessDate > weekEnd));
+      setMessage(`Semana limpiada: ${deleted} turno${deleted === 1 ? "" : "s"} eliminado${deleted === 1 ? "" : "s"}.`);
+      router.refresh();
+    });
+  }
+
   async function copyScheduleLink(employee: Employee) {
     const share = await resolveScheduleShare(employee);
     const url = share?.url;
@@ -348,6 +381,15 @@ export function PlanificacionPanel({
             >
               <Copy className="size-4" />
               Copiar semana anterior
+            </button>
+            <button
+              type="button"
+              onClick={clearCurrentWeek}
+              disabled={isPending || shifts.length === 0}
+              className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700 shadow-sm transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <Trash2 className="size-4" />
+              Limpiar semana
             </button>
           </div>
         </div>
