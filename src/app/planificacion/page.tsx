@@ -1,6 +1,7 @@
 import { AppFrame } from "@/components/app-frame";
 import { PlanificacionPanel } from "@/components/planificacion-panel";
 import {
+  ensureEmployeeScheduleLinks,
   listEmployees,
   listEmployeeScheduleShifts,
   listTimeClockSessions,
@@ -24,6 +25,8 @@ export default async function PlanificacionPage({
     listEmployeeScheduleShifts(from, to),
     listTimeClockSessions(from, to),
   ]);
+  const activeEmployees = employees.filter((employee) => employee.isActive);
+  const scheduleShares = await ensureEmployeeScheduleLinks(activeEmployees.map((employee) => employee.id));
 
   return (
     <AppFrame
@@ -31,8 +34,9 @@ export default async function PlanificacionPage({
       description="Planifica els torns setmanals i compara les hores previstes amb els fitxatges reals del POS."
     >
       <PlanificacionPanel
-        employees={employees.filter((employee) => employee.isActive)}
+        employees={activeEmployees}
         initialShifts={shifts}
+        scheduleShares={scheduleShares}
         timeClockSessions={timeClockSessions}
         weekStart={from}
         weekEnd={to}

@@ -10,13 +10,15 @@ import {
   Clock,
   Copy,
   Euro,
+  Link2,
+  MessageCircle,
   Save,
   Trash2,
   Users,
   X,
 } from "lucide-react";
 
-import type { Employee, EmployeeScheduleShift, TimeClockSessionRecord } from "@/lib/types";
+import type { Employee, EmployeeScheduleShare, EmployeeScheduleShift, TimeClockSessionRecord } from "@/lib/types";
 
 type EditorState = {
   employeeId: string;
@@ -30,12 +32,14 @@ type EditorState = {
 export function PlanificacionPanel({
   employees,
   initialShifts,
+  scheduleShares,
   timeClockSessions,
   weekStart,
   weekEnd,
 }: {
   employees: Employee[];
   initialShifts: EmployeeScheduleShift[];
+  scheduleShares: EmployeeScheduleShare[];
   timeClockSessions: TimeClockSessionRecord[];
   weekStart: string;
   weekEnd: string;
@@ -61,6 +65,10 @@ export function PlanificacionPanel({
     return map;
   }, [shifts]);
   const employeeMap = useMemo(() => new Map(employees.map((employee) => [employee.id, employee])), [employees]);
+  const shareMap = useMemo(
+    () => new Map(scheduleShares.map((share) => [share.employeeId, share])),
+    [scheduleShares],
+  );
   const realMinutesByEmployee = useMemo(() => {
     const map = new Map<string, number>();
     for (const session of timeClockSessions) {
@@ -237,6 +245,53 @@ export function PlanificacionPanel({
     });
   }
 
+  async function copyScheduleLink(employee: Employee) {
+    const url = getScheduleUrl(employee.id);
+    if (!url) {
+      setError("No hay enlace de horario para este empleado.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(url);
+      setMessage(`Enlace copiado para ${employee.name}.`);
+      setError(null);
+    } catch {
+      setError("No se ha podido copiar el enlace. Usa el boton WhatsApp o vuelve a intentarlo.");
+    }
+  }
+
+  function openWhatsappSchedule(employee: Employee) {
+    const url = getScheduleUrl(employee.id);
+    if (!url) {
+      setError("No hay enlace de horario para este empleado.");
+      return;
+    }
+
+    const employeeShifts = days
+      .map((day) => shiftMap.get(shiftKey(employee.id, day)))
+      .filter((shift): shift is EmployeeScheduleShift => Boolean(shift));
+    const lines = employeeShifts.length
+      ? employeeShifts.map((shift) => `${formatWeekday(shift.businessDate)} ${formatShortDate(shift.businessDate)}: ${shift.shiftStart}-${shift.shiftEnd}`)
+      : ["Aquesta setmana encara no tens torns assignats."];
+
+    const message = [
+      `Hola ${employee.name},`,
+      `aqui tens el teu horari de la setmana ${formatDate(weekStart)} - ${formatDate(weekEnd)}:`,
+      ...lines,
+      "",
+      `Pots consultar-lo sempre en aquest enllac: ${url}`,
+    ].join("\n");
+
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+  }
+
+  function getScheduleUrl(employeeId: string) {
+    const token = shareMap.get(employeeId)?.token;
+    if (!token || typeof window === "undefined") return null;
+    return new URL(`/horario/${token}?week=${weekStart}`, window.location.origin).toString();
+  }
+
   return (
     <div className="space-y-5">
       <section className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
@@ -322,7 +377,7 @@ export function PlanificacionPanel({
         ) : (
           <div className="overflow-x-auto">
             <div className="min-w-[1180px]">
-              <div className="grid grid-cols-[220px_repeat(7,minmax(120px,1fr))_130px] border-b border-[var(--line)] bg-slate-50 text-xs font-black uppercase tracking-wider text-slate-500">
+              <div className="grid grid-cols-[260px_repeat(7,minmax(120px,1fr))_130px] border-b border-[var(--line)] bg-slate-50 text-xs font-black uppercase tracking-wider text-slate-500">
                 <div className="px-4 py-3">Empleado</div>
                 {days.map((day) => (
                   <div key={day} className="px-3 py-3 text-center">
@@ -345,13 +400,31 @@ export function PlanificacionPanel({
                   return (
                     <div
                       key={employee.id}
-                      className="grid grid-cols-[220px_repeat(7,minmax(120px,1fr))_130px] items-stretch"
+                      className="grid grid-cols-[260px_repeat(7,minmax(120px,1fr))_130px] items-stretch"
                     >
                       <div className="flex flex-col justify-center px-4 py-3">
                         <p className="truncate text-sm font-black text-slate-950">{employee.name}</p>
                         <p className="mt-1 text-xs font-bold text-slate-400">
                           {formatDuration(planned)} previstos
                         </p>
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => openWhatsappSchedule(employee)}
+                            className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 text-[11px] font-black text-emerald-700 transition hover:bg-emerald-100"
+                          >
+                            <MessageCircle className="size-3.5" />
+                            WhatsApp
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => copyScheduleLink(employee)}
+                            className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-black text-slate-600 transition hover:bg-slate-200"
+                          >
+                            <Link2 className="size-3.5" />
+                            Copiar
+                          </button>
+                        </div>
                       </div>
 
                       {days.map((day) => {

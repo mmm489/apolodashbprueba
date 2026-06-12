@@ -221,6 +221,12 @@ export interface EmployeeScheduleShift {
   updatedAt: string;
 }
 
+export interface EmployeeScheduleShare {
+  employeeId: string;
+  token: string;
+  createdAt: string;
+}
+
 export interface TimeClockSessionRecord {
   id: string;
   employeeId: string;

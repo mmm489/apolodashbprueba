@@ -23,6 +23,7 @@ import type {
   CookiesTransactionRecord,
   DocumentRecord,
   Employee,
+  EmployeeScheduleShare,
   EmployeeScheduleShift,
   EmployeeShift,
   ExtractionResult,
@@ -2331,6 +2332,13 @@ async function ensureEmployeeScheduleTables() {
     CREATE INDEX IF NOT EXISTS idx_employee_schedule_shifts_business_date
       ON employee_schedule_shifts(business_date DESC)
   `);
+  await sql.query(`
+    CREATE TABLE IF NOT EXISTS employee_schedule_links (
+      employee_id TEXT PRIMARY KEY,
+      token TEXT NOT NULL UNIQUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
   employeeScheduleTablesEnsured = true;
 }
 
@@ -2366,6 +2374,71 @@ export async function listEmployeeScheduleShifts(from?: string, to?: string) {
   );
 
   return rows.map(mapEmployeeScheduleShift);
+}
+
+export async function ensureEmployeeScheduleLinks(employeeIds: string[]) {
+  if (!hasDatabase()) return [] satisfies EmployeeScheduleShare[];
+  const uniqueIds = [...new Set(employeeIds.filter(Boolean).map(String))];
+  if (uniqueIds.length === 0) return [] satisfies EmployeeScheduleShare[];
+
+  await ensureEmployeeScheduleTables();
+  const sql = getSql();
+
+  for (const employeeId of uniqueIds) {
+    await sql`
+      INSERT INTO employee_schedule_links (employee_id, token)
+      VALUES (${employeeId}, ${createScheduleToken()})
+      ON CONFLICT (employee_id) DO NOTHING
+    `;
+  }
+
+  const rows = await sql.query(
+    `
+    SELECT employee_id, token, created_at
+    FROM employee_schedule_links
+    WHERE employee_id = ANY($1::text[])
+  `,
+    [uniqueIds],
+  );
+
+  return rows.map((row) => ({
+    employeeId: String(row.employee_id),
+    token: String(row.token),
+    createdAt: normalizeDateTime(row.created_at),
+  })) satisfies EmployeeScheduleShare[];
+}
+
+export async function getEmployeeScheduleByToken(token: string, from: string, to: string) {
+  if (!hasDatabase() || !token || !/^[a-zA-Z0-9_-]{20,80}$/.test(token)) return null;
+
+  await ensureEmployeeScheduleTables();
+  const sql = getSql();
+  const linkRows = await sql`
+    SELECT employee_id, token, created_at
+    FROM employee_schedule_links
+    WHERE token = ${token}
+    LIMIT 1
+  `;
+  const link = linkRows[0];
+  if (!link) return null;
+
+  const employeeId = String(link.employee_id);
+  const employees = await listEmployees();
+  const employee = employees.find((item) => item.id === employeeId);
+  if (!employee) return null;
+
+  const shifts = (await listEmployeeScheduleShifts(from, to))
+    .filter((shift) => shift.employeeId === employeeId);
+
+  return {
+    employee,
+    share: {
+      employeeId,
+      token: String(link.token),
+      createdAt: normalizeDateTime(link.created_at),
+    } satisfies EmployeeScheduleShare,
+    shifts,
+  };
 }
 
 export async function upsertEmployeeScheduleShift(input: {
@@ -2414,6 +2487,10 @@ function mapEmployeeScheduleShift(row: Record<string, unknown>) {
     createdAt: normalizeDateTime(row.created_at),
     updatedAt: normalizeDateTime(row.updated_at),
   } satisfies EmployeeScheduleShift;
+}
+
+function createScheduleToken() {
+  return randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "").slice(0, 12);
 }
 
 function validateScheduleShiftInput(input: {

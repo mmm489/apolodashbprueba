@@ -187,4 +187,10 @@ CREATE TABLE IF NOT EXISTS employee_schedule_shifts (
 
 CREATE INDEX IF NOT EXISTS idx_employee_schedule_shifts_business_date
   ON employee_schedule_shifts(business_date DESC);
+
+CREATE TABLE IF NOT EXISTS employee_schedule_links (
+  employee_id TEXT PRIMARY KEY,
+  token TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 `;
