@@ -246,7 +246,8 @@ export function PlanificacionPanel({
   }
 
   async function copyScheduleLink(employee: Employee) {
-    const url = getScheduleUrl(employee.id);
+    const share = await resolveScheduleShare(employee);
+    const url = share?.url;
     if (!url) {
       setError("No hay enlace de horario para este empleado.");
       return;
@@ -254,15 +255,16 @@ export function PlanificacionPanel({
 
     try {
       await navigator.clipboard.writeText(url);
-      setMessage(`Enlace copiado para ${employee.name}.`);
+      setMessage(`Enlace copiado para ${share.employeeName}.`);
       setError(null);
     } catch {
       setError("No se ha podido copiar el enlace. Usa el boton WhatsApp o vuelve a intentarlo.");
     }
   }
 
-  function openWhatsappSchedule(employee: Employee) {
-    const url = getScheduleUrl(employee.id);
+  async function openWhatsappSchedule(employee: Employee) {
+    const share = await resolveScheduleShare(employee);
+    const url = share?.url;
     if (!url) {
       setError("No hay enlace de horario para este empleado.");
       return;
@@ -276,7 +278,7 @@ export function PlanificacionPanel({
       : ["Aquesta setmana encara no tens torns assignats."];
 
     const message = [
-      `Hola ${employee.name},`,
+      `Hola ${share.employeeName},`,
       `aqui tens el teu horari de la setmana ${formatDate(weekStart)} - ${formatDate(weekEnd)}:`,
       ...lines,
       "",
@@ -286,8 +288,27 @@ export function PlanificacionPanel({
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
   }
 
-  function getScheduleUrl(employeeId: string) {
-    const token = shareMap.get(employeeId)?.token;
+  async function resolveScheduleShare(employee: Employee) {
+    try {
+      const response = await fetch(`/api/scheduling/share?employeeId=${encodeURIComponent(employee.id)}`, {
+        cache: "no-store",
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok && data.token) {
+        return {
+          employeeName: String(data.employeeName ?? employee.name),
+          url: buildScheduleUrl(String(data.token)),
+        };
+      }
+    } catch {
+      // Fall back to the server-provided initial links if the endpoint cannot be reached.
+    }
+
+    const token = shareMap.get(employee.id)?.token;
+    return token ? { employeeName: employee.name, url: buildScheduleUrl(token) } : null;
+  }
+
+  function buildScheduleUrl(token: string) {
     if (!token || typeof window === "undefined") return null;
     return new URL(`/mi-horario/${token}?week=${weekStart}`, window.location.origin).toString();
   }
