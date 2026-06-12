@@ -185,7 +185,7 @@ export function ProductCostsPanel({ initialWorkspace }: { initialWorkspace: Prod
                   <th className="px-4 py-3">Producte POS</th>
                   <th className="px-4 py-3">Categoria</th>
                   <th className="px-4 py-3 text-right">Venda s/IVA</th>
-                  <th className="px-4 py-3 text-right">Cost</th>
+                  <th className="px-4 py-3 text-right">Cost i vigencia</th>
                   <th className="px-4 py-3 text-right">Marge</th>
                   <th className="px-4 py-3">Estat</th>
                 </tr>
@@ -239,10 +239,12 @@ function ProductCostRow({
   onSaveManual: (product: ProductCostReconcileRow, unitCost: number, effectiveFrom?: string) => void;
 }) {
   const [costValue, setCostValue] = useState(formatCostInput(product.unitCost));
+  const [effectiveFrom, setEffectiveFrom] = useState(defaultEffectiveFrom);
 
   useEffect(() => {
     setCostValue(formatCostInput(product.unitCost));
-  }, [product.posProductId, product.unitCost]);
+    setEffectiveFrom(defaultEffectiveFrom);
+  }, [defaultEffectiveFrom, product.posProductId, product.unitCost]);
 
   const parsedCost = parseMoney(costValue);
   const costChanged = parsedCost != null && (product.unitCost == null || Math.abs(parsedCost - product.unitCost) > 0.00005);
@@ -271,22 +273,37 @@ function ProductCostRow({
           className="flex items-center justify-end gap-2"
           onClick={(event) => event.stopPropagation()}
         >
-          <input
-            value={costValue}
-            onChange={(event) => setCostValue(event.target.value)}
-            onFocus={(event) => event.currentTarget.select()}
-            inputMode="decimal"
-            aria-label={`Coste de ${product.posProductName}`}
-            className={cn(
-              "w-24 rounded-xl border bg-white px-3 py-2 text-right text-sm font-black outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10",
-              parsedCost == null ? "border-rose-200 text-rose-600" : "border-[var(--line)] text-rose-600",
-            )}
-          />
+          <div className="flex items-center gap-2 rounded-2xl bg-slate-50 p-1.5">
+            <div>
+              <p className="mb-1 text-right text-[10px] font-black uppercase tracking-wide text-slate-400">Cost</p>
+              <input
+                value={costValue}
+                onChange={(event) => setCostValue(event.target.value)}
+                onFocus={(event) => event.currentTarget.select()}
+                inputMode="decimal"
+                aria-label={`Coste de ${product.posProductName}`}
+                className={cn(
+                  "w-24 rounded-xl border bg-white px-3 py-2 text-right text-sm font-black outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10",
+                  parsedCost == null ? "border-rose-200 text-rose-600" : "border-[var(--line)] text-rose-600",
+                )}
+              />
+            </div>
+            <div>
+              <p className="mb-1 text-right text-[10px] font-black uppercase tracking-wide text-slate-400">Desde</p>
+              <input
+                type="date"
+                value={effectiveFrom}
+                onChange={(event) => setEffectiveFrom(event.target.value)}
+                aria-label={`Fecha desde ${product.posProductName}`}
+                className="w-36 rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm font-bold text-slate-700 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
+              />
+            </div>
+          </div>
           <button
             type="button"
             disabled={isPending || !canSave}
             onClick={() => {
-              if (parsedCost != null) onSaveManual(product, parsedCost, defaultEffectiveFrom);
+              if (parsedCost != null) onSaveManual(product, parsedCost, effectiveFrom || defaultEffectiveFrom);
             }}
             title="Guardar coste"
             className="inline-flex size-9 items-center justify-center rounded-xl bg-slate-950 text-white transition hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400"
