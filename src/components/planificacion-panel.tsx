@@ -20,6 +20,8 @@ import {
 import { formatDashboardDate } from "@/lib/timezone";
 import type { Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleShare, EmployeeScheduleShift, TimeClockSessionRecord } from "@/lib/types";
 
+const HORARI_PUBLIC_BASE_URL = process.env.NEXT_PUBLIC_HORARI_BASE_URL?.replace(/\/+$/, "");
+
 type EditorState = {
   id?: string;
   employeeId: string;
@@ -334,6 +336,9 @@ export function PlanificacionPanel({
 
   function buildScheduleUrl(token: string) {
     if (!token || typeof window === "undefined") return null;
+    if (HORARI_PUBLIC_BASE_URL) {
+      return `${HORARI_PUBLIC_BASE_URL}/${token}?week=${weekStart}`;
+    }
     return new URL(`/mi-horario/${token}?week=${weekStart}`, window.location.origin).toString();
   }
 
