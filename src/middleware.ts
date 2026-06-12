@@ -9,6 +9,7 @@ import { getAuthCookieName, isAuthConfigured, verifyToken } from "@/lib/auth";
  *  - /login              the login form
  *  - /api/auth/*         the login/logout API itself
  *  - /api/telegram/*     Telegram servers POST here, no cookie possible
+ *  - /api/public-schedule/* employee schedule JSON, protected by private token
  *  - /api/ingest/microsoft-graph  external webhook with its own secret
  *  - /mi-horario/*       employee schedule view, protected by private token
  *  - /horario/*          legacy redirect to /mi-horario/*
@@ -22,6 +23,7 @@ const PUBLIC_PATH_PREFIXES = [
   "/login",
   "/api/auth",
   "/api/telegram",
+  "/api/public-schedule",
   "/api/ingest/microsoft-graph",
   "/mi-horario",
   "/horario",
