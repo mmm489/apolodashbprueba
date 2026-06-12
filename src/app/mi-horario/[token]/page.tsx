@@ -171,8 +171,10 @@ function formatIsoDate(date: Date) {
 function shiftMinutes(start: string, end: string) {
   const startMinutes = parseTime(start);
   const endMinutes = parseTime(end);
-  if (startMinutes == null || endMinutes == null || endMinutes <= startMinutes) return 0;
-  return endMinutes - startMinutes;
+  if (startMinutes == null || endMinutes == null) return 0;
+  let effectiveEnd = endMinutes;
+  if (effectiveEnd <= startMinutes) effectiveEnd += 24 * 60;
+  return effectiveEnd - startMinutes;
 }
 
 function parseTime(value: string) {

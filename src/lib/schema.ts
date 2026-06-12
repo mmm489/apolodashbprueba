@@ -181,8 +181,7 @@ CREATE TABLE IF NOT EXISTS employee_schedule_shifts (
   shift_start TEXT NOT NULL,
   shift_end TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE(employee_id, business_date)
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_employee_schedule_shifts_business_date

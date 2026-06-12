@@ -21,6 +21,7 @@ import {
 import type { Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleShare, EmployeeScheduleShift, TimeClockSessionRecord } from "@/lib/types";
 
 type EditorState = {
+  id?: string;
   employeeId: string;
   employeeName: string;
   businessDate: string;
@@ -61,9 +62,17 @@ export function PlanificacionPanel({
     () => Array.from({ length: 7 }, (_, index) => addDaysIso(weekStart, index)),
     [weekStart],
   );
-  const shiftMap = useMemo(() => {
-    const map = new Map<string, EmployeeScheduleShift>();
-    for (const shift of shifts) map.set(shiftKey(shift.employeeId, shift.businessDate), shift);
+  const shiftGroups = useMemo(() => {
+    const map = new Map<string, EmployeeScheduleShift[]>();
+    for (const shift of shifts) {
+      const key = shiftKey(shift.employeeId, shift.businessDate);
+      const group = map.get(key) ?? [];
+      group.push(shift);
+      map.set(key, group);
+    }
+    for (const group of map.values()) {
+      group.sort((a, b) => a.shiftStart.localeCompare(b.shiftStart) || a.shiftEnd.localeCompare(b.shiftEnd));
+    }
     return map;
   }, [shifts]);
   const employeeMap = useMemo(() => new Map(employees.map((employee) => [employee.id, employee])), [employees]);
@@ -110,17 +119,17 @@ export function PlanificacionPanel({
   const previousWeekEnd = addDaysIso(weekEnd, -7);
   const nextWeek = addDaysIso(weekStart, 7);
 
-  function openEditor(employee: Employee, businessDate: string) {
-    const current = shiftMap.get(shiftKey(employee.id, businessDate));
+  function openEditor(employee: Employee, businessDate: string, shift?: EmployeeScheduleShift) {
     setMessage(null);
     setError(null);
     setEditor({
+      id: shift?.id,
       employeeId: employee.id,
       employeeName: employee.name,
       businessDate,
-      shiftStart: current?.shiftStart ?? defaultStart(employee),
-      shiftEnd: current?.shiftEnd ?? defaultEnd(employee),
-      existing: Boolean(current),
+      shiftStart: shift?.shiftStart ?? defaultStart(employee),
+      shiftEnd: shift?.shiftEnd ?? defaultEnd(employee),
+      existing: Boolean(shift),
     });
   }
 
@@ -147,8 +156,9 @@ export function PlanificacionPanel({
       }
 
       const now = new Date().toISOString();
+      const savedShift = Array.isArray(data.shifts) ? data.shifts[0] as EmployeeScheduleShift | undefined : undefined;
       const nextShift: EmployeeScheduleShift = {
-        id: shiftMap.get(shiftKey(editor.employeeId, editor.businessDate))?.id ?? `${editor.employeeId}-${editor.businessDate}`,
+        id: savedShift?.id ?? editor.id ?? `${editor.employeeId}-${editor.businessDate}-${editor.shiftStart}-${editor.shiftEnd}`,
         employeeId: editor.employeeId,
         employeeName: editor.employeeName,
         businessDate: editor.businessDate,
@@ -174,7 +184,7 @@ export function PlanificacionPanel({
       const res = await fetch("/api/scheduling", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ employeeId: editor.employeeId, businessDate: editor.businessDate }),
+        body: JSON.stringify({ id: editor.id, employeeId: editor.employeeId, businessDate: editor.businessDate }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -182,7 +192,9 @@ export function PlanificacionPanel({
         return;
       }
 
-      setShifts((current) => current.filter((shift) => shiftKey(shift.employeeId, shift.businessDate) !== shiftKey(editor.employeeId, editor.businessDate)));
+      setShifts((current) => editor.id
+        ? current.filter((shift) => shift.id !== editor.id)
+        : current.filter((shift) => shiftKey(shift.employeeId, shift.businessDate) !== shiftKey(editor.employeeId, editor.businessDate)));
       setEditor(null);
       setMessage("Turno eliminado.");
       router.refresh();
@@ -226,7 +238,7 @@ export function PlanificacionPanel({
       const post = await fetch("/api/scheduling", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: copied }),
+        body: JSON.stringify({ items: copied, replaceExisting: true }),
       });
       const data = await post.json().catch(() => ({}));
       if (!post.ok) {
@@ -234,23 +246,17 @@ export function PlanificacionPanel({
         return;
       }
 
-      const now = new Date().toISOString();
-      const copiedShifts: EmployeeScheduleShift[] = copied.map((shift) => ({
-        id: `${shift.employeeId}-${shift.businessDate}`,
+      const savedShifts = Array.isArray(data.shifts) ? data.shifts as EmployeeScheduleShift[] : [];
+      setShifts((current) => replaceLocalShiftsForDays(current, savedShifts.length ? savedShifts : copied.map((shift, index) => ({
+        id: `${shift.employeeId}-${shift.businessDate}-${shift.shiftStart}-${index}`,
         employeeId: shift.employeeId,
         employeeName: employeeMap.get(shift.employeeId)?.name ?? shift.employeeId,
         businessDate: shift.businessDate,
         shiftStart: shift.shiftStart,
         shiftEnd: shift.shiftEnd,
-        createdAt: now,
-        updatedAt: now,
-      }));
-
-      setShifts((current) => {
-        let next = current;
-        for (const shift of copiedShifts) next = upsertLocalShift(next, shift);
-        return next;
-      });
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }))));
       setMessage(`Semana anterior copiada: ${copied.length} turno${copied.length === 1 ? "" : "s"}.`);
       router.refresh();
     });
@@ -282,8 +288,7 @@ export function PlanificacionPanel({
     }
 
     const employeeShifts = days
-      .map((day) => shiftMap.get(shiftKey(employee.id, day)))
-      .filter((shift): shift is EmployeeScheduleShift => Boolean(shift));
+      .flatMap((day) => shiftGroups.get(shiftKey(employee.id, day)) ?? []);
     const lines = employeeShifts.length
       ? employeeShifts.map((shift) => `${formatWeekday(shift.businessDate)} ${formatShortDate(shift.businessDate)}: ${shift.shiftStart}-${shift.shiftEnd}`)
       : ["Aquesta setmana encara no tens torns assignats."];
@@ -404,7 +409,7 @@ export function PlanificacionPanel({
         <div className="border-b border-[var(--line)] px-5 py-4">
           <h2 className="text-lg font-black tracking-tight text-slate-950">Parrilla semanal</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Toca una celda para crear o editar el turno. La columna real compara con los fichajes sincronizados.
+            Cada celda puede tener varios turnos partidos. Toca un turno para editarlo o + Turno para aÃ±adir otro.
           </p>
         </div>
 
@@ -430,14 +435,13 @@ export function PlanificacionPanel({
               <div className="divide-y divide-slate-100">
                 {employees.map((employee) => {
                   const planned = days.reduce((sum, day) => {
-                    const shift = shiftMap.get(shiftKey(employee.id, day));
-                    return sum + (shift ? shiftMinutes(shift.shiftStart, shift.shiftEnd) : 0);
+                    const dayShifts = shiftGroups.get(shiftKey(employee.id, day)) ?? [];
+                    return sum + dayShifts.reduce((daySum, shift) => daySum + shiftMinutes(shift.shiftStart, shift.shiftEnd), 0);
                   }, 0);
                   const plannedCost = days.reduce((sum, day) => {
-                    const shift = shiftMap.get(shiftKey(employee.id, day));
-                    if (!shift) return sum;
                     const hourlyCost = resolveEmployeeCostForDate(costHistoryByEmployee, employee.id, day, employee.hourlyCost);
-                    return sum + (shiftMinutes(shift.shiftStart, shift.shiftEnd) / 60) * hourlyCost;
+                    const dayShifts = shiftGroups.get(shiftKey(employee.id, day)) ?? [];
+                    return sum + dayShifts.reduce((daySum, shift) => daySum + (shiftMinutes(shift.shiftStart, shift.shiftEnd) / 60) * hourlyCost, 0);
                   }, 0);
                   const real = realMinutesByEmployee.get(employee.id) ?? 0;
                   const diff = real - planned;
@@ -489,37 +493,45 @@ export function PlanificacionPanel({
                       </div>
 
                       {days.map((day) => {
-                        const shift = shiftMap.get(shiftKey(employee.id, day));
+                        const dayShifts = shiftGroups.get(shiftKey(employee.id, day)) ?? [];
                         const hourlyCost = resolveEmployeeCostForDate(costHistoryByEmployee, employee.id, day, employee.hourlyCost);
                         return (
-                          <button
+                          <div
                             key={`${employee.id}-${day}`}
-                            type="button"
-                            onClick={() => openEditor(employee, day)}
-                            className={`m-1 min-h-[76px] rounded-xl border px-3 py-2 text-left transition hover:-translate-y-0.5 hover:shadow-md ${
-                              shift
-                                ? "border-indigo-200 bg-indigo-50 text-indigo-950"
-                                : "border-dashed border-slate-200 bg-white text-slate-400 hover:border-slate-300"
+                            className={`m-1 min-h-[92px] rounded-xl border px-2 py-2 ${
+                              dayShifts.length
+                                ? "border-indigo-100 bg-indigo-50/60"
+                                : "border-dashed border-slate-200 bg-white"
                             }`}
                           >
-                            {shift ? (
-                              <>
-                                <p className="text-sm font-black tabular-nums">
-                                  {shift.shiftStart} - {shift.shiftEnd}
-                                </p>
-                                <p className="mt-2 text-xs font-bold text-indigo-500">
-                                  {formatDuration(shiftMinutes(shift.shiftStart, shift.shiftEnd))}
-                                </p>
-                                <p className={`mt-1 text-[11px] font-black ${hourlyCost > 0 ? "text-emerald-600" : "text-amber-600"}`}>
-                                  {hourlyCost > 0 ? `${hourlyCost.toFixed(2)} EUR/h` : "Sin coste"}
-                                </p>
-                              </>
-                            ) : (
-                              <span className="flex h-full items-center justify-center text-xs font-bold">
+                            <div className="space-y-1.5">
+                              {dayShifts.map((shift) => (
+                                <button
+                                  key={shift.id}
+                                  type="button"
+                                  onClick={() => openEditor(employee, day, shift)}
+                                  className="w-full rounded-lg border border-indigo-200 bg-white px-2 py-1.5 text-left text-indigo-950 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                                >
+                                  <p className="text-xs font-black tabular-nums">
+                                    {shift.shiftStart} - {shift.shiftEnd}
+                                  </p>
+                                  <p className="mt-0.5 text-[11px] font-bold text-indigo-500">
+                                    {formatDuration(shiftMinutes(shift.shiftStart, shift.shiftEnd))}
+                                  </p>
+                                  <p className={`mt-0.5 text-[10px] font-black ${hourlyCost > 0 ? "text-emerald-600" : "text-amber-600"}`}>
+                                    {hourlyCost > 0 ? `${hourlyCost.toFixed(2)} EUR/h` : "Sin coste"}
+                                  </p>
+                                </button>
+                              ))}
+                              <button
+                                type="button"
+                                onClick={() => openEditor(employee, day)}
+                                className="flex min-h-8 w-full items-center justify-center rounded-lg border border-dashed border-slate-200 bg-white/80 px-2 py-1 text-[11px] font-black text-slate-400 transition hover:border-slate-300 hover:text-slate-600"
+                              >
                                 + Turno
-                              </span>
-                            )}
-                          </button>
+                              </button>
+                            </div>
+                          </div>
                         );
                       })}
 
@@ -636,10 +648,21 @@ function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; 
 }
 
 function upsertLocalShift(items: EmployeeScheduleShift[], nextShift: EmployeeScheduleShift) {
-  const key = shiftKey(nextShift.employeeId, nextShift.businessDate);
-  const map = new Map(items.map((item) => [shiftKey(item.employeeId, item.businessDate), item]));
-  map.set(key, nextShift);
+  const map = new Map(items.map((item) => [item.id, item]));
+  map.set(nextShift.id, nextShift);
   return [...map.values()].sort((a, b) => a.businessDate.localeCompare(b.businessDate) || a.employeeName.localeCompare(b.employeeName, "ca"));
+}
+
+function replaceLocalShiftsForDays(items: EmployeeScheduleShift[], nextShifts: EmployeeScheduleShift[]) {
+  const replacedDays = new Set(nextShifts.map((shift) => shiftKey(shift.employeeId, shift.businessDate)));
+  return [
+    ...items.filter((shift) => !replacedDays.has(shiftKey(shift.employeeId, shift.businessDate))),
+    ...nextShifts,
+  ].sort((a, b) =>
+    a.businessDate.localeCompare(b.businessDate) ||
+    a.employeeName.localeCompare(b.employeeName, "ca") ||
+    a.shiftStart.localeCompare(b.shiftStart)
+  );
 }
 
 function shiftKey(employeeId: string, businessDate: string) {
@@ -657,8 +680,10 @@ function defaultEnd(employee: Employee) {
 function shiftMinutes(start: string, end: string) {
   const startMinutes = parseTime(start);
   const endMinutes = parseTime(end);
-  if (startMinutes == null || endMinutes == null || endMinutes <= startMinutes) return 0;
-  return endMinutes - startMinutes;
+  if (startMinutes == null || endMinutes == null) return 0;
+  let effectiveEnd = endMinutes;
+  if (effectiveEnd <= startMinutes) effectiveEnd += 24 * 60;
+  return effectiveEnd - startMinutes;
 }
 
 function parseTime(value: string) {

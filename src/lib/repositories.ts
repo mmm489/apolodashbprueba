@@ -2502,9 +2502,29 @@ async function ensureEmployeeScheduleTables() {
       shift_start TEXT NOT NULL,
       shift_end TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE(employee_id, business_date)
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `);
+  await sql.query(`
+    DO $$
+    DECLARE
+      constraint_name text;
+    BEGIN
+      SELECT c.conname INTO constraint_name
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+      WHERE n.nspname = 'public'
+        AND t.relname = 'employee_schedule_shifts'
+        AND c.contype = 'u'
+        AND pg_get_constraintdef(c.oid) LIKE '%employee_id%'
+        AND pg_get_constraintdef(c.oid) LIKE '%business_date%'
+      LIMIT 1;
+
+      IF constraint_name IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE employee_schedule_shifts DROP CONSTRAINT %I', constraint_name);
+      END IF;
+    END $$;
   `);
   await sql.query(`
     CREATE INDEX IF NOT EXISTS idx_employee_schedule_shifts_business_date
@@ -2620,38 +2640,84 @@ export async function getEmployeeScheduleByToken(token: string, from: string, to
 }
 
 export async function upsertEmployeeScheduleShift(input: {
+  id?: string;
   employeeId: string;
   businessDate: string;
   shiftStart: string;
   shiftEnd: string;
 }) {
-  if (!hasDatabase()) return;
+  if (!hasDatabase()) return null;
   validateScheduleShiftInput(input);
   await ensureEmployeeScheduleTables();
 
   const sql = getSql();
-  const id = randomUUID();
-  await sql`
+  const id = input.id || randomUUID();
+  const rows = await sql`
     INSERT INTO employee_schedule_shifts (id, employee_id, business_date, shift_start, shift_end)
     VALUES (${id}, ${input.employeeId}, ${input.businessDate}, ${input.shiftStart}, ${input.shiftEnd})
-    ON CONFLICT (employee_id, business_date)
+    ON CONFLICT (id)
     DO UPDATE SET
+      employee_id = EXCLUDED.employee_id,
+      business_date = EXCLUDED.business_date,
       shift_start = EXCLUDED.shift_start,
       shift_end = EXCLUDED.shift_end,
       updated_at = NOW()
+    RETURNING id, employee_id, employee_id AS employee_name, business_date, shift_start, shift_end, created_at, updated_at
   `;
+  return mapEmployeeScheduleShift(rows[0]);
 }
 
-export async function deleteEmployeeScheduleShift(employeeId: string, businessDate: string) {
+export async function replaceEmployeeScheduleShiftsForDays(items: Array<{
+  employeeId: string;
+  businessDate: string;
+  shiftStart: string;
+  shiftEnd: string;
+}>) {
+  if (!hasDatabase() || items.length === 0) return [] satisfies EmployeeScheduleShift[];
+  for (const item of items) validateScheduleShiftInput(item);
+  await ensureEmployeeScheduleTables();
+
+  const sql = getSql();
+  const pairs = [...new Set(items.map((item) => `${item.employeeId}|${item.businessDate}`))].map((pair) => {
+    const [employeeId, businessDate] = pair.split("|");
+    return { employeeId, businessDate };
+  });
+
+  for (const pair of pairs) {
+    await sql`
+      DELETE FROM employee_schedule_shifts
+      WHERE employee_id = ${pair.employeeId}
+        AND business_date = ${pair.businessDate}
+    `;
+  }
+
+  const saved: EmployeeScheduleShift[] = [];
+  for (const item of items) {
+    const shift = await upsertEmployeeScheduleShift(item);
+    if (shift) saved.push(shift);
+  }
+  return saved;
+}
+
+export async function deleteEmployeeScheduleShift(input: { id?: string; employeeId?: string; businessDate?: string }) {
   if (!hasDatabase()) return;
   await ensureEmployeeScheduleTables();
 
   const sql = getSql();
-  await sql`
-    DELETE FROM employee_schedule_shifts
-    WHERE employee_id = ${employeeId}
-      AND business_date = ${businessDate}
-  `;
+  if (input.id) {
+    await sql`
+      DELETE FROM employee_schedule_shifts
+      WHERE id = ${input.id}
+    `;
+    return;
+  }
+  if (input.employeeId && input.businessDate) {
+    await sql`
+      DELETE FROM employee_schedule_shifts
+      WHERE employee_id = ${input.employeeId}
+        AND business_date = ${input.businessDate}
+    `;
+  }
 }
 
 function mapEmployeeScheduleShift(row: Record<string, unknown>) {
@@ -2688,8 +2754,12 @@ function validateScheduleShiftInput(input: {
   if (start == null || end == null) {
     throw new Error("Hora no valida.");
   }
-  if (end <= start) {
+  const duration = scheduleShiftMinutes(input.shiftStart, input.shiftEnd);
+  if (duration <= 0) {
     throw new Error("La hora fin debe ser posterior a la hora inicio.");
+  }
+  if (duration > 18 * 60) {
+    throw new Error("El turno no puede superar 18 horas.");
   }
 }
 
@@ -2700,6 +2770,15 @@ function parseTimeMinutes(value: string) {
   const minutes = Number(match[2]);
   if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
   return hours * 60 + minutes;
+}
+
+function scheduleShiftMinutes(startValue: string, endValue: string) {
+  const start = parseTimeMinutes(startValue);
+  const end = parseTimeMinutes(endValue);
+  if (start == null || end == null) return 0;
+  let effectiveEnd = end;
+  if (effectiveEnd <= start) effectiveEnd += 24 * 60;
+  return effectiveEnd - start;
 }
 
 /* ---------- Time Clock ---------- */

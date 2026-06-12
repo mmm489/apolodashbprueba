@@ -3,8 +3,17 @@ import { NextResponse } from "next/server";
 import {
   deleteEmployeeScheduleShift,
   listEmployeeScheduleShifts,
+  replaceEmployeeScheduleShiftsForDays,
   upsertEmployeeScheduleShift,
 } from "@/lib/repositories";
+
+type SchedulingInput = {
+  id?: unknown;
+  employeeId?: unknown;
+  businessDate?: unknown;
+  shiftStart?: unknown;
+  shiftEnd?: unknown;
+};
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -17,19 +26,27 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const rawItems = Array.isArray(body.items) ? body.items : [body];
+  const rawItems: SchedulingInput[] = Array.isArray(body.items) ? body.items : [body];
 
   try {
-    for (const item of rawItems) {
-      await upsertEmployeeScheduleShift({
+    const items = rawItems.map((item) => ({
+      id: item.id ? String(item.id) : undefined,
+      employeeId: String(item.employeeId ?? ""),
+      businessDate: String(item.businessDate ?? ""),
+      shiftStart: String(item.shiftStart ?? ""),
+      shiftEnd: String(item.shiftEnd ?? ""),
+    }));
+    const saved = body.replaceExisting
+      ? await replaceEmployeeScheduleShiftsForDays(items)
+      : await Promise.all(items.map((item) => upsertEmployeeScheduleShift({
+        id: item.id,
         employeeId: String(item.employeeId ?? ""),
         businessDate: String(item.businessDate ?? ""),
         shiftStart: String(item.shiftStart ?? ""),
         shiftEnd: String(item.shiftEnd ?? ""),
-      });
-    }
+      })));
 
-    return NextResponse.json({ ok: true, count: rawItems.length }, { status: 201 });
+    return NextResponse.json({ ok: true, count: rawItems.length, shifts: saved.filter(Boolean) }, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "No se ha podido guardar el turno." },
@@ -40,13 +57,14 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   const body = await request.json();
+  const id = String(body.id ?? body.shiftId ?? "");
   const employeeId = String(body.employeeId ?? "");
   const businessDate = String(body.businessDate ?? "");
 
-  if (!employeeId || !businessDate) {
+  if (!id && (!employeeId || !businessDate)) {
     return NextResponse.json({ error: "Faltan campos obligatorios." }, { status: 400 });
   }
 
-  await deleteEmployeeScheduleShift(employeeId, businessDate);
+  await deleteEmployeeScheduleShift({ id, employeeId, businessDate });
   return NextResponse.json({ ok: true });
 }

@@ -789,7 +789,10 @@ function weatherEmoji(code: number): string {
 function parseHours(start: string, end: string) {
   const [sh, sm] = start.split(":").map(Number);
   const [eh, em] = end.split(":").map(Number);
-  return (eh + em / 60) - (sh + sm / 60);
+  const startHours = sh + sm / 60;
+  let endHours = eh + em / 60;
+  if (endHours <= startHours) endHours += 24;
+  return endHours - startHours;
 }
 
 function formatDate(dateStr: string) {

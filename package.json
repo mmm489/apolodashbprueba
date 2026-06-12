@@ -11,6 +11,7 @@
     "db:setup": "tsx scripts/setup-db.ts",
     "env:pull:old-dashboard": "tsx scripts/pull-old-dashboard-env.ts",
     "history:import:legacy": "tsx scripts/import-old-dashboard-history.ts",
+    "schedule:import-square-week": "tsx scripts/import-square-schedule-week.ts",
     "ingest:onedrive": "tsx scripts/scan-onedrive.ts",
     "ingest:graph": "tsx scripts/sync-microsoft-graph.ts"
   },
