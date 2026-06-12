@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -57,6 +57,7 @@ export function ProductCostsPanel({ initialWorkspace }: { initialWorkspace: Prod
   const selected = workspace.products.find((product) => product.posProductId === selectedId)
     ?? workspace.products[0]
     ?? null;
+  const defaultEffectiveFrom = workspace.firstPosSaleDate ?? todayIso();
 
   const visibleProducts = useMemo(() => {
     const term = normalize(query);
@@ -191,39 +192,15 @@ export function ProductCostsPanel({ initialWorkspace }: { initialWorkspace: Prod
               </thead>
               <tbody>
                 {visibleProducts.map((product) => (
-                  <tr
+                  <ProductCostRow
                     key={product.posProductId}
-                    onClick={() => setSelectedId(product.posProductId)}
-                    className={cn(
-                      "cursor-pointer border-b border-[var(--line)] text-sm transition hover:bg-slate-50",
-                      selected?.posProductId === product.posProductId && "bg-indigo-50/60",
-                    )}
-                  >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="font-black text-slate-900">{product.posProductName}</span>
-                        {!product.active && <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-400">Inactiu</span>}
-                        {product.isTopping && <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">Topping</span>}
-                      </div>
-                      <p className="mt-0.5 text-xs text-slate-400">POS #{product.posProductId}</p>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">{product.posCategory}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-slate-700">{MONEY.format(netPrice(product))}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-rose-600">{product.unitCost == null ? "--" : MONEY.format(product.unitCost)}</td>
-                    <td className="px-4 py-3 text-right">
-                      {product.margin == null ? (
-                        <span className="text-slate-300">--</span>
-                      ) : (
-                        <div>
-                          <p className={cn("font-black", product.margin >= 0 ? "text-emerald-700" : "text-rose-600")}>{MONEY.format(product.margin)}</p>
-                          <p className="text-xs text-slate-400">{product.marginPct == null ? "--" : `${PCT.format(product.marginPct)}%`}</p>
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={product.status} />
-                    </td>
-                  </tr>
+                    product={product}
+                    selected={selected?.posProductId === product.posProductId}
+                    defaultEffectiveFrom={defaultEffectiveFrom}
+                    isPending={isPending}
+                    onSelect={() => setSelectedId(product.posProductId)}
+                    onSaveManual={saveManual}
+                  />
                 ))}
               </tbody>
             </table>
@@ -237,13 +214,101 @@ export function ProductCostsPanel({ initialWorkspace }: { initialWorkspace: Prod
 
         <CostInspector
           product={selected}
-          defaultEffectiveFrom={workspace.firstPosSaleDate ?? todayIso()}
+          defaultEffectiveFrom={defaultEffectiveFrom}
           onApplyCandidate={applyCandidate}
-          onSaveManual={saveManual}
           isPending={isPending}
         />
       </div>
     </div>
+  );
+}
+
+function ProductCostRow({
+  product,
+  selected,
+  defaultEffectiveFrom,
+  isPending,
+  onSelect,
+  onSaveManual,
+}: {
+  product: ProductCostReconcileRow;
+  selected: boolean;
+  defaultEffectiveFrom: string;
+  isPending: boolean;
+  onSelect: () => void;
+  onSaveManual: (product: ProductCostReconcileRow, unitCost: number, effectiveFrom?: string) => void;
+}) {
+  const [costValue, setCostValue] = useState(formatCostInput(product.unitCost));
+
+  useEffect(() => {
+    setCostValue(formatCostInput(product.unitCost));
+  }, [product.posProductId, product.unitCost]);
+
+  const parsedCost = parseMoney(costValue);
+  const costChanged = parsedCost != null && (product.unitCost == null || Math.abs(parsedCost - product.unitCost) > 0.00005);
+  const canSave = parsedCost != null && costChanged;
+
+  return (
+    <tr
+      onClick={onSelect}
+      className={cn(
+        "cursor-pointer border-b border-[var(--line)] text-sm transition hover:bg-slate-50",
+        selected && "bg-indigo-50/60",
+      )}
+    >
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          <span className="font-black text-slate-900">{product.posProductName}</span>
+          {!product.active && <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-400">Inactiu</span>}
+          {product.isTopping && <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">Topping</span>}
+        </div>
+        <p className="mt-0.5 text-xs text-slate-400">POS #{product.posProductId}</p>
+      </td>
+      <td className="px-4 py-3 text-slate-600">{product.posCategory}</td>
+      <td className="px-4 py-3 text-right font-semibold text-slate-700">{MONEY.format(netPrice(product))}</td>
+      <td className="px-4 py-3">
+        <div
+          className="flex items-center justify-end gap-2"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <input
+            value={costValue}
+            onChange={(event) => setCostValue(event.target.value)}
+            onFocus={(event) => event.currentTarget.select()}
+            inputMode="decimal"
+            aria-label={`Coste de ${product.posProductName}`}
+            className={cn(
+              "w-24 rounded-xl border bg-white px-3 py-2 text-right text-sm font-black outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10",
+              parsedCost == null ? "border-rose-200 text-rose-600" : "border-[var(--line)] text-rose-600",
+            )}
+          />
+          <button
+            type="button"
+            disabled={isPending || !canSave}
+            onClick={() => {
+              if (parsedCost != null) onSaveManual(product, parsedCost, defaultEffectiveFrom);
+            }}
+            title="Guardar coste"
+            className="inline-flex size-9 items-center justify-center rounded-xl bg-slate-950 text-white transition hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400"
+          >
+            <Save className="size-4" />
+          </button>
+        </div>
+      </td>
+      <td className="px-4 py-3 text-right">
+        {product.margin == null ? (
+          <span className="text-slate-300">--</span>
+        ) : (
+          <div>
+            <p className={cn("font-black", product.margin >= 0 ? "text-emerald-700" : "text-rose-600")}>{MONEY.format(product.margin)}</p>
+            <p className="text-xs text-slate-400">{product.marginPct == null ? "--" : `${PCT.format(product.marginPct)}%`}</p>
+          </div>
+        )}
+      </td>
+      <td className="px-4 py-3">
+        <StatusBadge status={product.status} />
+      </td>
+    </tr>
   );
 }
 
@@ -356,16 +421,13 @@ function CostInspector({
   product,
   defaultEffectiveFrom,
   onApplyCandidate,
-  onSaveManual,
   isPending,
 }: {
   product: ProductCostReconcileRow | null;
   defaultEffectiveFrom: string;
   onApplyCandidate: (product: ProductCostReconcileRow, candidate: ProductCostCandidate, effectiveFrom?: string) => void;
-  onSaveManual: (product: ProductCostReconcileRow, unitCost: number, effectiveFrom?: string) => void;
   isPending: boolean;
 }) {
-  const [manualCost, setManualCost] = useState("");
   const [effectiveFrom, setEffectiveFrom] = useState(defaultEffectiveFrom);
   const [history, setHistory] = useState<ProductCostHistoryEntry[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -412,39 +474,6 @@ function CostInspector({
           </div>
         </div>
       )}
-
-      <div className="mt-5 space-y-3 rounded-2xl border border-[var(--line)] bg-slate-50/70 p-4">
-        <div className="flex items-center gap-2">
-          <Save className="size-4 text-slate-400" />
-          <p className="text-sm font-black text-slate-800">Editar manualment</p>
-        </div>
-        <div className="grid grid-cols-[1fr_150px] gap-2">
-          <input
-            value={manualCost}
-            onChange={(event) => setManualCost(event.target.value)}
-            inputMode="decimal"
-            placeholder={product.unitCost == null ? "0,00" : String(product.unitCost).replace(".", ",")}
-            className="rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
-          />
-          <input
-            type="date"
-            value={effectiveFrom}
-            onChange={(event) => setEffectiveFrom(event.target.value)}
-            className="rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-indigo-300"
-          />
-        </div>
-        <button
-          type="button"
-          disabled={isPending || parseMoney(manualCost) == null}
-          onClick={() => {
-            const cost = parseMoney(manualCost);
-            if (cost != null) onSaveManual(product, cost, effectiveFrom);
-          }}
-          className="w-full rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white transition hover:bg-slate-800 disabled:bg-slate-200 disabled:text-slate-400"
-        >
-          Guardar cost manual
-        </button>
-      </div>
 
       <div className="mt-5">
         <div className="mb-3 flex items-center justify-between">
@@ -549,6 +578,10 @@ function parseMoney(value: string) {
   if (!normalized) return null;
   const parsed = Number(normalized);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function formatCostInput(value: number | null) {
+  return value == null ? "" : String(value).replace(".", ",");
 }
 
 function normalize(value: string) {
