@@ -289,7 +289,7 @@ export function PlanificacionPanel({
   function getScheduleUrl(employeeId: string) {
     const token = shareMap.get(employeeId)?.token;
     if (!token || typeof window === "undefined") return null;
-    return new URL(`/horario/${token}?week=${weekStart}`, window.location.origin).toString();
+    return new URL(`/mi-horario/${token}?week=${weekStart}`, window.location.origin).toString();
   }
 
   return (
