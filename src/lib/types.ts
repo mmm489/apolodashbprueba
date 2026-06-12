@@ -191,6 +191,7 @@ export interface Employee {
   shiftEnd: string;
   workingDaysPerMonth: number;
   hourlyCost: number;
+  weeklyHours: number;
   isActive: boolean;
   createdAt: string;
   role?: "admin" | "employee";

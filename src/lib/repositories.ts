@@ -2008,6 +2008,15 @@ async function ensureEmployeeCostTables() {
     CREATE INDEX IF NOT EXISTS idx_employee_hourly_cost_history_employee_date
       ON employee_hourly_cost_history(employee_id, valid_from DESC)
   `);
+  await sql.query(`
+    CREATE TABLE IF NOT EXISTS employee_labor_settings (
+      employee_id TEXT PRIMARY KEY,
+      employee_name_snapshot TEXT NOT NULL,
+      weekly_hours NUMERIC(6,2) NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
   employeeCostTablesEnsured = true;
 }
 
@@ -2023,6 +2032,44 @@ async function listEmployeeCurrentCostMap(atDate = todayIsoLocal()) {
     ORDER BY employee_id, valid_from DESC
   `;
   return new Map(rows.map((row) => [String(row.employee_id), toNumber(row.hourly_cost)]));
+}
+
+async function listEmployeeWeeklyHoursMap() {
+  if (!hasDatabase()) return new Map<string, number>();
+  await ensureEmployeeCostTables();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT employee_id, weekly_hours
+    FROM employee_labor_settings
+  `;
+  return new Map(rows.map((row) => [String(row.employee_id), toNumber(row.weekly_hours)]));
+}
+
+export async function upsertEmployeeLaborSettings(input: {
+  employeeId: string;
+  employeeName?: string;
+  weeklyHours: number;
+}) {
+  if (!hasDatabase()) return;
+  await ensureEmployeeCostTables();
+  const employeeId = String(input.employeeId ?? "").trim();
+  const weeklyHours = Number(input.weeklyHours);
+  if (!employeeId) throw new Error("Falta el empleado.");
+  if (!Number.isFinite(weeklyHours) || weeklyHours < 0 || weeklyHours > 168) {
+    throw new Error("Horas semanales no validas.");
+  }
+
+  const sql = getSql();
+  const employeeName = input.employeeName?.trim() || await resolveEmployeeNameSnapshot(sql, employeeId);
+  await sql`
+    INSERT INTO employee_labor_settings (employee_id, employee_name_snapshot, weekly_hours)
+    VALUES (${employeeId}, ${employeeName}, ${weeklyHours})
+    ON CONFLICT (employee_id)
+    DO UPDATE SET
+      employee_name_snapshot = EXCLUDED.employee_name_snapshot,
+      weekly_hours = EXCLUDED.weekly_hours,
+      updated_at = NOW()
+  `;
 }
 
 export async function listEmployeeHourlyCostHistory(employeeId?: string) {
@@ -2135,6 +2182,7 @@ export async function listEmployees() {
   if (isPosDataSource()) {
     await ensurePosEmployeeAccessColumns();
     const currentCostMap = await listEmployeeCurrentCostMap();
+    const weeklyHoursMap = await listEmployeeWeeklyHoursMap();
     const rows = await sql`
       SELECT id, name, role, active,
              can_access_cashlogy, can_access_supplier_payments, can_access_products
@@ -2149,6 +2197,7 @@ export async function listEmployees() {
       shiftEnd: "00:00",
       workingDaysPerMonth: 0,
       hourlyCost: currentCostMap.get(String(row.id)) ?? 0,
+      weeklyHours: weeklyHoursMap.get(String(row.id)) ?? 0,
       isActive: Boolean(row.active),
       createdAt: "1970-01-01T00:00:00.000Z",
       role: String(row.role) === "admin" ? "admin" : "employee",
@@ -2160,6 +2209,7 @@ export async function listEmployees() {
   }
 
   const currentCostMap = await listEmployeeCurrentCostMap();
+  const weeklyHoursMap = await listEmployeeWeeklyHoursMap();
   const rows = await sql`SELECT id, name, shift_start, shift_end, working_days_per_month, hourly_cost, is_active, created_at FROM employees WHERE is_active = TRUE ORDER BY name ASC`;
   return rows.map((row) => ({
     id: String(row.id),
@@ -2168,6 +2218,7 @@ export async function listEmployees() {
     shiftEnd: String(row.shift_end),
     workingDaysPerMonth: Number(row.working_days_per_month),
     hourlyCost: currentCostMap.get(String(row.id)) ?? toNumber(row.hourly_cost),
+    weeklyHours: weeklyHoursMap.get(String(row.id)) ?? 0,
     isActive: Boolean(row.is_active),
     createdAt: new Date(String(row.created_at)).toISOString(),
   })) satisfies Employee[];
@@ -2204,6 +2255,7 @@ async function mergePendingEmployeeChanges(sql: ReturnType<typeof getSql>, emplo
         shiftEnd: "00:00",
         workingDaysPerMonth: 0,
         hourlyCost: 0,
+        weeklyHours: 0,
         isActive: true,
         createdAt: requestedAt,
         role,
@@ -2293,7 +2345,7 @@ export async function createEmployee(input: {
   const id = randomUUID();
 
   if (!hasDatabase()) {
-    return { id, ...input, isActive: true, createdAt: new Date().toISOString() } satisfies Employee;
+    return { id, ...input, weeklyHours: 0, isActive: true, createdAt: new Date().toISOString() } satisfies Employee;
   }
   if (isPosDataSource()) {
     const name = input.name.trim();
@@ -2322,6 +2374,7 @@ export async function createEmployee(input: {
       shiftEnd: "00:00",
       workingDaysPerMonth: 0,
       hourlyCost: 0,
+      weeklyHours: 0,
       isActive: true,
       createdAt: new Date().toISOString(),
       role,
@@ -2338,7 +2391,7 @@ export async function createEmployee(input: {
     VALUES (${id}, ${input.name}, ${input.shiftStart}, ${input.shiftEnd}, ${input.workingDaysPerMonth}, ${input.hourlyCost})
   `;
 
-  return { id, ...input, isActive: true, createdAt: new Date().toISOString() } satisfies Employee;
+  return { id, ...input, weeklyHours: 0, isActive: true, createdAt: new Date().toISOString() } satisfies Employee;
 }
 
 export async function updateEmployee(

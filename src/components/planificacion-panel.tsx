@@ -82,6 +82,7 @@ export function PlanificacionPanel({
 
   const stats = useMemo(() => {
     const plannedMinutes = shifts.reduce((sum, shift) => sum + shiftMinutes(shift.shiftStart, shift.shiftEnd), 0);
+    const targetMinutes = employees.reduce((sum, employee) => sum + Math.round((employee.weeklyHours ?? 0) * 60), 0);
     const realMinutes = timeClockSessions.reduce((sum, session) => sum + (session.durationMinutes ?? 0), 0);
     const plannedCost = shifts.reduce((sum, shift) => {
       const employee = employeeMap.get(shift.employeeId);
@@ -97,12 +98,13 @@ export function PlanificacionPanel({
       employees: employees.length,
       shifts: shifts.length,
       plannedMinutes,
+      targetMinutes,
       realMinutes,
       plannedCost,
       missingCosts,
       openSessions: timeClockSessions.filter((session) => session.status === "open").length,
     };
-  }, [costHistoryByEmployee, employeeMap, employees.length, shifts, timeClockSessions]);
+  }, [costHistoryByEmployee, employeeMap, employees, shifts, timeClockSessions]);
 
   const previousWeek = addDaysIso(weekStart, -7);
   const previousWeekEnd = addDaysIso(weekEnd, -7);
@@ -371,10 +373,11 @@ export function PlanificacionPanel({
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <Metric icon={<Users className="size-5" />} label="Empleados activos" value={fmtNum(stats.employees)} />
         <Metric icon={<CalendarDays className="size-5" />} label="Turnos" value={fmtNum(stats.shifts)} />
         <Metric icon={<Clock className="size-5" />} label="Horas previstas" value={formatDuration(stats.plannedMinutes)} />
+        <Metric icon={<Clock className="size-5" />} label="Objetivo semanal" value={formatDuration(stats.targetMinutes)} />
         <Metric icon={<Clock className="size-5" />} label="Horas reales" value={formatDuration(stats.realMinutes)} />
         <Metric icon={<Euro className="size-5" />} label="Coste previsto" value={formatMoney(stats.plannedCost)} />
       </section>
@@ -438,6 +441,8 @@ export function PlanificacionPanel({
                   }, 0);
                   const real = realMinutesByEmployee.get(employee.id) ?? 0;
                   const diff = real - planned;
+                  const weeklyTargetMinutes = Math.round((employee.weeklyHours ?? 0) * 60);
+                  const contractDiff = planned - weeklyTargetMinutes;
 
                   return (
                     <div
@@ -452,6 +457,17 @@ export function PlanificacionPanel({
                         <p className={`mt-1 text-xs font-bold ${plannedCost > 0 ? "text-emerald-600" : "text-amber-600"}`}>
                           {plannedCost > 0 ? formatMoney(plannedCost) : "Sin coste/hora"}
                         </p>
+                        {weeklyTargetMinutes > 0 ? (
+                          <p className={`mt-1 text-xs font-black ${Math.abs(contractDiff) <= 5 ? "text-emerald-600" : contractDiff > 0 ? "text-rose-600" : "text-amber-600"}`}>
+                            {Math.abs(contractDiff) <= 5
+                              ? "Horas completas"
+                              : contractDiff > 0
+                                ? `Sobra ${formatDuration(contractDiff)}`
+                                : `Falta ${formatDuration(Math.abs(contractDiff))}`}
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-xs font-bold text-slate-400">Sin horas semanales</p>
+                        )}
                         <div className="mt-3 flex flex-wrap gap-1.5">
                           <button
                             type="button"

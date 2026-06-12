@@ -9,6 +9,7 @@ import type { Employee, EmployeeHourlyCostHistoryEntry } from "@/lib/types";
 type EmployeeForm = {
   name: string;
   hourlyCost: number;
+  weeklyHours: number;
   shiftStart: string;
   shiftEnd: string;
   workingDaysPerMonth: number;
@@ -23,6 +24,7 @@ type EmployeeForm = {
 const emptyForm: EmployeeForm = {
   name: "",
   hourlyCost: 0,
+  weeklyHours: 0,
   shiftStart: "09:00",
   shiftEnd: "17:00",
   workingDaysPerMonth: 22,
@@ -93,6 +95,7 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
           employeeId: costEmployeeId,
           employeeName: form.name,
           hourlyCost: form.hourlyCost,
+          weeklyHours: form.weeklyHours,
           validFrom: form.costValidFrom || todayIso(),
         }),
       });
@@ -123,6 +126,7 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
     setForm({
       name: emp.name,
       hourlyCost: emp.hourlyCost,
+      weeklyHours: emp.weeklyHours,
       shiftStart: emp.shiftStart,
       shiftEnd: emp.shiftEnd,
       workingDaysPerMonth: emp.workingDaysPerMonth,
@@ -319,7 +323,7 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
               )}
 
               <div className="rounded-2xl border border-emerald-100 bg-emerald-50/40 p-4">
-                <div className="grid gap-3 sm:grid-cols-[1fr_160px]">
+                <div className="grid gap-3 sm:grid-cols-[1fr_150px_160px]">
                   <label className="block">
                     <span className="mb-1 block text-[12px] font-medium text-slate-600">Cost empresa/hora (EUR)</span>
                   <input
@@ -333,6 +337,20 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
                     placeholder="0.00"
                     disabled={posMode && !editingId}
                   />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-[12px] font-medium text-slate-600">Horas semana</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={168}
+                      step={0.25}
+                      value={form.weeklyHours}
+                      onChange={(e) => setForm({ ...form, weeklyHours: Number(e.target.value) })}
+                      className="w-full rounded-lg border border-[var(--line)] px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
+                      placeholder="40"
+                      disabled={posMode && !editingId}
+                    />
                   </label>
                   <label className="block">
                     <span className="mb-1 block text-[12px] font-medium text-slate-600">Vigent des de</span>
@@ -351,7 +369,7 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
                   </p>
                 ) : (
                   <p className="mt-2 text-[12px] font-medium text-emerald-700">
-                    Este coste no se envia al POS; solo calcula planificacion, ventas y margen en dashboard.
+                    Este coste y las horas semanales no se envian al POS; solo calculan planificacion, ventas y margen en dashboard.
                   </p>
                 )}
                 {editingId && costHistory.length > 0 && (
@@ -436,7 +454,7 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
               <th className="px-5 py-3">Nom</th>
               {posMode && <th className="px-5 py-3">Rol</th>}
               {posMode && <th className="px-5 py-3">Accessos POS</th>}
-              <th className="px-5 py-3 text-right">Cost/hora</th>
+              <th className="px-5 py-3 text-right">Contrato</th>
               <th className="px-5 py-3 text-right">Estat</th>
               <th className="px-5 py-3 text-right">Accions</th>
             </tr>
@@ -478,7 +496,12 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
                   </td>
                 )}
                 <td className="px-5 py-3 text-right text-slate-600">
-                  {emp.hourlyCost > 0 ? `${emp.hourlyCost.toFixed(2)} EUR/h` : <span className="text-amber-600">Sense cost</span>}
+                  <div>
+                    <p>{emp.hourlyCost > 0 ? `${emp.hourlyCost.toFixed(2)} EUR/h` : <span className="text-amber-600">Sense cost</span>}</p>
+                    <p className="mt-1 text-[11px] font-semibold text-slate-400">
+                      {emp.weeklyHours > 0 ? `${emp.weeklyHours.toFixed(1)} h/setmana` : "Sense hores"}
+                    </p>
+                  </div>
                 </td>
                 <td className="px-5 py-3 text-right text-slate-600">
                   <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
