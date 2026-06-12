@@ -206,7 +206,6 @@ export async function listSalesReports(from?: string, to?: string) {
             AND ((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
             AND status <> 'cancelled'
             AND payment_method <> 'parked'
-            AND COALESCE(business_unit, 'hicream') = 'hicream'
           GROUP BY 1, payment_method
           ORDER BY business_date DESC
         `
@@ -217,7 +216,6 @@ export async function listSalesReports(from?: string, to?: string) {
           FROM pos.orders
           WHERE status <> 'cancelled'
             AND payment_method <> 'parked'
-            AND COALESCE(business_unit, 'hicream') = 'hicream'
           GROUP BY 1, payment_method
           ORDER BY business_date DESC
           LIMIT 1200
@@ -255,7 +253,6 @@ export async function listSalesReports(from?: string, to?: string) {
                 WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = sr.business_date
                   AND o.status <> 'cancelled'
                   AND o.payment_method <> 'parked'
-                  AND COALESCE(o.business_unit, 'hicream') = 'hicream'
               )
             ORDER BY sr.business_date DESC
           `
@@ -268,7 +265,6 @@ export async function listSalesReports(from?: string, to?: string) {
               WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = sr.business_date
                 AND o.status <> 'cancelled'
                 AND o.payment_method <> 'parked'
-                AND COALESCE(o.business_unit, 'hicream') = 'hicream'
             )
             ORDER BY sr.business_date DESC
             LIMIT 5000
@@ -325,7 +321,6 @@ export async function listHourlySales(from?: string, to?: string) {
             AND ((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
             AND status <> 'cancelled'
             AND payment_method <> 'parked'
-            AND COALESCE(business_unit, 'hicream') = 'hicream'
           GROUP BY 1, 2
           ORDER BY business_date DESC, hour_num ASC
         `
@@ -337,7 +332,6 @@ export async function listHourlySales(from?: string, to?: string) {
           FROM pos.orders
           WHERE status <> 'cancelled'
             AND payment_method <> 'parked'
-            AND COALESCE(business_unit, 'hicream') = 'hicream'
           GROUP BY 1, 2
           ORDER BY business_date DESC, hour_num ASC
           LIMIT 10000
@@ -368,7 +362,6 @@ export async function listHourlySales(from?: string, to?: string) {
                 WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = hs.business_date
                   AND o.status <> 'cancelled'
                   AND o.payment_method <> 'parked'
-                  AND COALESCE(o.business_unit, 'hicream') = 'hicream'
               )
             ORDER BY hs.business_date DESC, hs.hour_label ASC
           `
@@ -381,7 +374,6 @@ export async function listHourlySales(from?: string, to?: string) {
               WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = hs.business_date
                 AND o.status <> 'cancelled'
                 AND o.payment_method <> 'parked'
-                AND COALESCE(o.business_unit, 'hicream') = 'hicream'
             )
             ORDER BY hs.business_date DESC, hs.hour_label ASC
             LIMIT 20000
@@ -432,7 +424,6 @@ export async function listHourlyProductSales(from?: string, to?: string) {
             AND ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
             AND o.status <> 'cancelled'
             AND o.payment_method <> 'parked'
-            AND COALESCE(o.business_unit, 'hicream') = 'hicream'
           GROUP BY 1, 2, oi.product_id, p.name
           ORDER BY business_date DESC, hour_num ASC, amount DESC
         `
@@ -448,7 +439,6 @@ export async function listHourlyProductSales(from?: string, to?: string) {
           JOIN pos.products p ON p.id = oi.product_id
           WHERE o.status <> 'cancelled'
             AND o.payment_method <> 'parked'
-            AND COALESCE(o.business_unit, 'hicream') = 'hicream'
           GROUP BY 1, 2, oi.product_id, p.name
           ORDER BY business_date DESC, hour_num ASC, amount DESC
           LIMIT 50000
@@ -482,7 +472,6 @@ export async function listHourlyProductSales(from?: string, to?: string) {
                 WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = hps.business_date
                   AND o.status <> 'cancelled'
                   AND o.payment_method <> 'parked'
-                  AND COALESCE(o.business_unit, 'hicream') = 'hicream'
               )
             ORDER BY hps.business_date DESC, hps.hour_label ASC, hps.amount DESC
           `
@@ -495,7 +484,6 @@ export async function listHourlyProductSales(from?: string, to?: string) {
               WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = hps.business_date
                 AND o.status <> 'cancelled'
                 AND o.payment_method <> 'parked'
-                AND COALESCE(o.business_unit, 'hicream') = 'hicream'
             )
             ORDER BY hps.business_date DESC, hps.hour_label ASC, hps.amount DESC
             LIMIT 50000
@@ -596,7 +584,6 @@ export async function listProductSales(from?: string, to?: string) {
             AND ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
             AND o.status <> 'cancelled'
             AND o.payment_method <> 'parked'
-            AND COALESCE(o.business_unit, 'hicream') = 'hicream'
           GROUP BY 1, oi.product_id, p.name
           ORDER BY business_date DESC, amount DESC
         `
@@ -611,7 +598,6 @@ export async function listProductSales(from?: string, to?: string) {
           JOIN pos.products p ON p.id = oi.product_id
           WHERE o.status <> 'cancelled'
             AND o.payment_method <> 'parked'
-            AND COALESCE(o.business_unit, 'hicream') = 'hicream'
           GROUP BY 1, oi.product_id, p.name
           ORDER BY business_date DESC, amount DESC
           LIMIT 20000
@@ -644,7 +630,6 @@ export async function listProductSales(from?: string, to?: string) {
                 WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = ps.business_date
                   AND o.status <> 'cancelled'
                   AND o.payment_method <> 'parked'
-                  AND COALESCE(o.business_unit, 'hicream') = 'hicream'
               )
             ORDER BY ps.business_date DESC, ps.amount DESC
           `
@@ -657,7 +642,6 @@ export async function listProductSales(from?: string, to?: string) {
               WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = ps.business_date
                 AND o.status <> 'cancelled'
                 AND o.payment_method <> 'parked'
-                AND COALESCE(o.business_unit, 'hicream') = 'hicream'
             )
             ORDER BY ps.business_date DESC, ps.amount DESC
             LIMIT 50000
@@ -725,7 +709,6 @@ export async function listCashClosings(from?: string, to?: string) {
             AND o.created_at <= c.closed_at
             AND o.status NOT IN ('pending', 'cancelled')
             AND o.payment_method <> 'parked'
-            AND COALESCE(o.business_unit, 'hicream') = 'hicream'
         ) payment_totals ON TRUE
         WHERE ((c.closed_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date >= ${from}::date
           AND ((c.closed_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
@@ -757,7 +740,6 @@ export async function listCashClosings(from?: string, to?: string) {
             AND o.created_at <= c.closed_at
             AND o.status NOT IN ('pending', 'cancelled')
             AND o.payment_method <> 'parked'
-            AND COALESCE(o.business_unit, 'hicream') = 'hicream'
         ) payment_totals ON TRUE
         ORDER BY c.closed_at DESC
         LIMIT 200
