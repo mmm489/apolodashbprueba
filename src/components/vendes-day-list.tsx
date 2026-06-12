@@ -405,19 +405,17 @@ function HourlyDetail({
   const [openHour, setOpenHour] = useState<string | null>(null);
   const sorted = [...hourly].sort((a, b) => a.hour.localeCompare(b.hour));
 
-  // Calculate employee cost per hour slot
-  // An employee working 10:00-14:00 covers hours 10:00, 11:00, 12:00, 13:00
+  // Calculate employee cost by real minute overlap inside each hour slot.
+  // Example: 10:30-14:00 counts 0.5 h in 10:00 and 1 h in 11/12/13.
   function getEmployeeCostForHour(hourLabel: string): number {
-    const hourNum = Number.parseInt(hourLabel.split(":")[0], 10);
-    let cost = 0;
-    for (const shift of labor) {
-      const startH = Number.parseInt(shift.shiftStart.split(":")[0], 10);
-      const endH = Number.parseInt(shift.shiftEnd.split(":")[0], 10);
-      if (hourNum >= startH && hourNum < endH) {
-        cost += shift.hourlyCost;
-      }
-    }
-    return cost;
+    const slotStart = hourSlotStartMinutes(hourLabel);
+    if (slotStart == null) return 0;
+    const slotEnd = slotStart + 60;
+
+    return labor.reduce((cost, shift) => {
+      const overlap = shiftOverlapMinutes(shift.shiftStart, shift.shiftEnd, slotStart, slotEnd);
+      return cost + (overlap / 60) * shift.hourlyCost;
+    }, 0);
   }
 
   const totalSales = hourly.reduce((s, h) => s + h.sales, 0);
@@ -794,6 +792,35 @@ function parseHours(start: string, end: string) {
   let endHours = eh + em / 60;
   if (endHours <= startHours) endHours += 24;
   return endHours - startHours;
+}
+
+const BUSINESS_DAY_START_MINUTES = 4 * 60;
+
+function hourSlotStartMinutes(hourLabel: string) {
+  const minutes = timeToMinutes(hourLabel);
+  if (minutes == null) return null;
+  return minutes < BUSINESS_DAY_START_MINUTES ? minutes + 24 * 60 : minutes;
+}
+
+function shiftOverlapMinutes(start: string, end: string, slotStart: number, slotEnd: number) {
+  const shiftStart = timeToMinutes(start);
+  const rawShiftEnd = timeToMinutes(end);
+  if (shiftStart == null || rawShiftEnd == null) return 0;
+
+  let shiftEnd = rawShiftEnd;
+  if (shiftEnd <= shiftStart) shiftEnd += 24 * 60;
+
+  const overlapStart = Math.max(shiftStart, slotStart);
+  const overlapEnd = Math.min(shiftEnd, slotEnd);
+  return Math.max(0, overlapEnd - overlapStart);
+}
+
+function timeToMinutes(value: string) {
+  const [hoursText, minutesText = "0"] = value.split(":");
+  const hours = Number(hoursText);
+  const minutes = Number(minutesText);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  return hours * 60 + minutes;
 }
 
 function formatDate(dateStr: string) {
