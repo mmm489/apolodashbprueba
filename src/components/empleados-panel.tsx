@@ -50,6 +50,7 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [costHistory, setCostHistory] = useState<EmployeeHourlyCostHistoryEntry[]>([]);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
 
   const totalEmployees = employees.length;
   const posMode = readOnly;
@@ -70,20 +71,25 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
       return;
     }
 
-    const method = editingId ? "PUT" : "POST";
-    const body = editingId ? { id: editingId, ...form } : form;
+    const shouldSendToPos = !posMode || !editingId || !editingEmployee || hasPosEmployeeChanges(editingEmployee, form);
+    let data: Record<string, unknown> = {};
 
-    const res = await fetch("/api/employees", {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json().catch(() => ({}));
+    if (shouldSendToPos) {
+      const method = editingId ? "PUT" : "POST";
+      const body = editingId ? { id: editingId, ...form } : form;
 
-    if (!res.ok) {
-      setMessage(data.error || "No s'ha pogut guardar.");
-      setLoading(false);
-      return;
+      const res = await fetch("/api/employees", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setMessage(String(data.error || "No s'ha pogut guardar."));
+        setLoading(false);
+        return;
+      }
     }
 
     const costEmployeeId = editingId || (!posMode ? String(data.id ?? "") : "");
@@ -109,13 +115,16 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
 
     setForm(freshEmptyForm());
     setEditingId(null);
+    setEditingEmployee(null);
     setShowForm(false);
     setCostHistory([]);
     setMessage(
       posMode && !editingId
         ? "Canvi enviat al POS. Quan el sync crei l'empleat, podras editar-lo i afegir el cost/hora."
-        : posMode
+        : posMode && shouldSendToPos
           ? "Canvi enviat al POS i cost/hora guardat al dashboard."
+          : posMode
+            ? "Coste/hora y horas semanales guardadas en dashboard. No se envia al POS."
           : "Empleat guardat.",
     );
     router.refresh();
@@ -138,6 +147,7 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
       canAccessProducts: emp.canAccessProducts ?? emp.role === "admin",
     });
     setEditingId(emp.id);
+    setEditingEmployee(emp);
     setShowForm(true);
     setMessage(null);
     try {
@@ -209,6 +219,7 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
           onClick={() => {
             setForm(freshEmptyForm());
             setEditingId(null);
+            setEditingEmployee(null);
             setCostHistory([]);
             setShowForm(!showForm);
             setMessage(null);
@@ -438,7 +449,7 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
             </button>
             <button
               type="button"
-              onClick={() => { setShowForm(false); setEditingId(null); }}
+              onClick={() => { setShowForm(false); setEditingId(null); setEditingEmployee(null); }}
               className="rounded-xl border border-[var(--line)] px-5 py-2 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50"
             >
               Cancelar
@@ -546,6 +557,22 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
         </table>
       </div>
     </div>
+  );
+}
+
+function hasPosEmployeeChanges(employee: Employee, form: EmployeeForm) {
+  const role = employee.role === "admin" ? "admin" : "employee";
+  const canAccessCashlogy = employee.canAccessCashlogy ?? role === "admin";
+  const canAccessSupplierPayments = employee.canAccessSupplierPayments ?? role === "admin";
+  const canAccessProducts = employee.canAccessProducts ?? role === "admin";
+
+  return (
+    employee.name.trim() !== form.name.trim() ||
+    role !== form.role ||
+    canAccessCashlogy !== form.canAccessCashlogy ||
+    canAccessSupplierPayments !== form.canAccessSupplierPayments ||
+    canAccessProducts !== form.canAccessProducts ||
+    form.pin.length > 0
   );
 }
 
