@@ -192,4 +192,80 @@ CREATE TABLE IF NOT EXISTS employee_schedule_links (
   token TEXT NOT NULL UNIQUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS accounting_accounts (
+  id TEXT PRIMARY KEY,
+  code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS accounting_journal_entries (
+  id TEXT PRIMARY KEY,
+  entry_date DATE NOT NULL,
+  period TEXT NOT NULL,
+  source_type TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  description TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(source_type, source_id)
+);
+
+CREATE TABLE IF NOT EXISTS accounting_journal_lines (
+  id TEXT PRIMARY KEY,
+  entry_id TEXT NOT NULL REFERENCES accounting_journal_entries(id) ON DELETE CASCADE,
+  account_code TEXT NOT NULL,
+  account_name TEXT NOT NULL,
+  debit NUMERIC(12,2) NOT NULL DEFAULT 0,
+  credit NUMERIC(12,2) NOT NULL DEFAULT 0,
+  memo TEXT
+);
+
+CREATE TABLE IF NOT EXISTS accounting_periods (
+  period TEXT PRIMARY KEY,
+  status TEXT NOT NULL DEFAULT 'open',
+  closed_at TIMESTAMPTZ,
+  closed_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS bank_accounts (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  iban TEXT,
+  currency TEXT NOT NULL DEFAULT 'EUR',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS bank_transactions (
+  id TEXT PRIMARY KEY,
+  bank_account_id TEXT NOT NULL REFERENCES bank_accounts(id) ON DELETE CASCADE,
+  transaction_date DATE NOT NULL,
+  value_date DATE,
+  description TEXT NOT NULL,
+  counterparty TEXT,
+  amount NUMERIC(12,2) NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  external_id TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS bank_reconciliation_matches (
+  id TEXT PRIMARY KEY,
+  bank_transaction_id TEXT NOT NULL REFERENCES bank_transactions(id) ON DELETE CASCADE,
+  entry_id TEXT REFERENCES accounting_journal_entries(id) ON DELETE SET NULL,
+  match_type TEXT NOT NULL,
+  confidence NUMERIC(5,2) NOT NULL DEFAULT 0,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_accounting_entries_date ON accounting_journal_entries(entry_date DESC);
+CREATE INDEX IF NOT EXISTS idx_accounting_entries_period ON accounting_journal_entries(period, status);
+CREATE INDEX IF NOT EXISTS idx_accounting_lines_entry ON accounting_journal_lines(entry_id);
+CREATE INDEX IF NOT EXISTS idx_bank_transactions_date ON bank_transactions(transaction_date DESC);
+CREATE INDEX IF NOT EXISTS idx_bank_transactions_status ON bank_transactions(status);
 `;

@@ -267,6 +267,108 @@ export interface TimeClockSessionRecord {
   updatedAt: string;
 }
 
+export type AccountingAccountType = "asset" | "liability" | "equity" | "income" | "expense";
+export type AccountingEntryStatus = "draft" | "validated" | "locked";
+export type AccountingPeriodStatus = "open" | "closed";
+export type BankTransactionStatus = "pending" | "matched" | "ignored";
+
+export interface AccountingAccount {
+  id: string;
+  code: string;
+  name: string;
+  type: AccountingAccountType;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface AccountingJournalLine {
+  id: string;
+  entryId: string;
+  accountCode: string;
+  accountName: string;
+  debit: number;
+  credit: number;
+  memo: string | null;
+}
+
+export interface AccountingJournalEntry {
+  id: string;
+  entryDate: string;
+  period: string;
+  sourceType: string;
+  sourceId: string;
+  description: string;
+  status: AccountingEntryStatus;
+  totalDebit: number;
+  totalCredit: number;
+  isBalanced: boolean;
+  createdAt: string;
+  updatedAt: string;
+  lines: AccountingJournalLine[];
+}
+
+export interface AccountingPeriod {
+  period: string;
+  status: AccountingPeriodStatus;
+  closedAt: string | null;
+  closedBy: string | null;
+}
+
+export interface BankAccount {
+  id: string;
+  name: string;
+  iban: string | null;
+  currency: string;
+  createdAt: string;
+}
+
+export interface BankTransaction {
+  id: string;
+  bankAccountId: string;
+  transactionDate: string;
+  valueDate: string | null;
+  description: string;
+  counterparty: string | null;
+  amount: number;
+  status: BankTransactionStatus;
+  externalId: string;
+  createdAt: string;
+}
+
+export interface BankReconciliationMatch {
+  id: string;
+  bankTransactionId: string;
+  entryId: string | null;
+  matchType: string;
+  confidence: number;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface AccountingVatSummary {
+  outputVat: number;
+  inputVat: number;
+  payableVat: number;
+}
+
+export interface AccountingWorkspace {
+  accounts: AccountingAccount[];
+  entries: AccountingJournalEntry[];
+  bankAccounts: BankAccount[];
+  bankTransactions: BankTransaction[];
+  periods: AccountingPeriod[];
+  vatSummary: AccountingVatSummary;
+  totals: {
+    draftEntries: number;
+    validatedEntries: number;
+    lockedEntries: number;
+    unbalancedEntries: number;
+    bankPending: number;
+    debit: number;
+    credit: number;
+  };
+}
+
 export interface TimeClockAuditRecord {
   id: string;
   sessionId: string | null;

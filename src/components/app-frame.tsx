@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import {
   Bell,
+  BookOpenCheck,
   Calculator,
   ChevronLeft,
   ChevronRight,
@@ -35,6 +36,7 @@ const navItems = [
   { href: "/cierres", label: "Tancaments", section: "General", icon: ClipboardCheck },
   { href: "/gastos", label: "Despeses", section: "General", icon: Receipt },
   { href: "/pagaments-proveidors", label: "Pagaments", section: "General", icon: Receipt },
+  { href: "/contabilidad", label: "Contabilidad", section: "General", icon: BookOpenCheck },
   { href: "/empleados", label: "Empleats", section: "General", icon: Users },
   { href: "/control-horario", label: "Control horario", section: "General", icon: Clock },
   { href: "/planificacion", label: "Planificació", section: "General", icon: CalendarDays },
