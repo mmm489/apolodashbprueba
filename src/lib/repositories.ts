@@ -314,7 +314,10 @@ export async function listHourlySales(from?: string, to?: string) {
     const rows = from && to
       ? await sql`
           SELECT ((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
-                 EXTRACT(HOUR FROM created_at AT TIME ZONE 'Europe/Madrid')::int AS hour_num,
+                 (
+                   EXTRACT(HOUR FROM created_at AT TIME ZONE 'Europe/Madrid')::int * 2
+                   + FLOOR(EXTRACT(MINUTE FROM created_at AT TIME ZONE 'Europe/Madrid') / 30)::int
+                 )::int AS half_hour_slot,
                  COALESCE(SUM(COALESCE(total_base, total)), 0)::float AS sales,
                  COUNT(*)::int AS order_count
           FROM pos.orders
@@ -323,26 +326,30 @@ export async function listHourlySales(from?: string, to?: string) {
             AND status <> 'cancelled'
             AND payment_method <> 'parked'
           GROUP BY 1, 2
-          ORDER BY business_date DESC, hour_num ASC
+          ORDER BY business_date DESC, half_hour_slot ASC
         `
       : await sql`
           SELECT ((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
-                 EXTRACT(HOUR FROM created_at AT TIME ZONE 'Europe/Madrid')::int AS hour_num,
+                 (
+                   EXTRACT(HOUR FROM created_at AT TIME ZONE 'Europe/Madrid')::int * 2
+                   + FLOOR(EXTRACT(MINUTE FROM created_at AT TIME ZONE 'Europe/Madrid') / 30)::int
+                 )::int AS half_hour_slot,
                  COALESCE(SUM(COALESCE(total_base, total)), 0)::float AS sales,
                  COUNT(*)::int AS order_count
           FROM pos.orders
           WHERE status <> 'cancelled'
             AND payment_method <> 'parked'
           GROUP BY 1, 2
-          ORDER BY business_date DESC, hour_num ASC
+          ORDER BY business_date DESC, half_hour_slot ASC
           LIMIT 10000
         `;
 
     const entries = rows.map((row) => {
       const businessDate = normalizeDate(row.business_date);
-      const hour = `${String(row.hour_num).padStart(2, "0")}:00`;
+      const halfHourSlot = Number(row.half_hour_slot);
+      const hour = formatHalfHourSlot(halfHourSlot);
       return {
-        id: `pos-hour-${businessDate}-${row.hour_num}`,
+        id: `pos-hour-${businessDate}-${halfHourSlot}`,
         businessDate,
         hour,
         sales: toNumber(row.sales),
@@ -413,7 +420,10 @@ export async function listHourlyProductSales(from?: string, to?: string) {
     const rows = from && to
       ? await sql`
           SELECT ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
-                 EXTRACT(HOUR FROM o.created_at AT TIME ZONE 'Europe/Madrid')::int AS hour_num,
+                 (
+                   EXTRACT(HOUR FROM o.created_at AT TIME ZONE 'Europe/Madrid')::int * 2
+                   + FLOOR(EXTRACT(MINUTE FROM o.created_at AT TIME ZONE 'Europe/Madrid') / 30)::int
+                 )::int AS half_hour_slot,
                  oi.product_id,
                  p.name AS product_name,
                  SUM(oi.qty)::float AS units,
@@ -426,11 +436,14 @@ export async function listHourlyProductSales(from?: string, to?: string) {
             AND o.status <> 'cancelled'
             AND o.payment_method <> 'parked'
           GROUP BY 1, 2, oi.product_id, p.name
-          ORDER BY business_date DESC, hour_num ASC, amount DESC
+          ORDER BY business_date DESC, half_hour_slot ASC, amount DESC
         `
       : await sql`
           SELECT ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
-                 EXTRACT(HOUR FROM o.created_at AT TIME ZONE 'Europe/Madrid')::int AS hour_num,
+                 (
+                   EXTRACT(HOUR FROM o.created_at AT TIME ZONE 'Europe/Madrid')::int * 2
+                   + FLOOR(EXTRACT(MINUTE FROM o.created_at AT TIME ZONE 'Europe/Madrid') / 30)::int
+                 )::int AS half_hour_slot,
                  oi.product_id,
                  p.name AS product_name,
                  SUM(oi.qty)::float AS units,
@@ -441,16 +454,17 @@ export async function listHourlyProductSales(from?: string, to?: string) {
           WHERE o.status <> 'cancelled'
             AND o.payment_method <> 'parked'
           GROUP BY 1, 2, oi.product_id, p.name
-          ORDER BY business_date DESC, hour_num ASC, amount DESC
+          ORDER BY business_date DESC, half_hour_slot ASC, amount DESC
           LIMIT 50000
         `;
 
     const entries = rows.map((row) => {
       const businessDate = normalizeDate(row.business_date);
-      const hourLabel = `${String(row.hour_num).padStart(2, "0")}:00`;
+      const halfHourSlot = Number(row.half_hour_slot);
+      const hourLabel = formatHalfHourSlot(halfHourSlot);
       const productCode = String(row.product_id);
       return {
-        id: `pos-hour-product-${businessDate}-${row.hour_num}-${productCode}`,
+        id: `pos-hour-product-${businessDate}-${halfHourSlot}-${productCode}`,
         businessDate,
         hourLabel,
         productCode,
@@ -3239,6 +3253,13 @@ function normalizeDateTime(value: unknown): string {
   const date = new Date(String(value));
   if (!Number.isNaN(date.getTime())) return date.toISOString();
   return String(value);
+}
+
+function formatHalfHourSlot(slot: number): string {
+  const safeSlot = Number.isFinite(slot) ? Math.max(0, Math.min(47, Math.trunc(slot))) : 0;
+  const hour = Math.floor(safeSlot / 2);
+  const minute = safeSlot % 2 === 0 ? "00" : "30";
+  return `${String(hour).padStart(2, "0")}:${minute}`;
 }
 
 function normalizeJsonObject(value: unknown): Record<string, unknown> | null {

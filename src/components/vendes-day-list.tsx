@@ -404,13 +404,14 @@ function HourlyDetail({
 }) {
   const [openHour, setOpenHour] = useState<string | null>(null);
   const sorted = [...hourly].sort((a, b) => a.hour.localeCompare(b.hour));
+  const usesHalfHourSlots = hourly.some((h) => h.id.startsWith("pos-hour-") || h.hour.endsWith(":30"));
 
-  // Calculate employee cost by real minute overlap inside each hour slot.
-  // Example: 10:30-14:00 counts 0.5 h in 10:00 and 1 h in 11/12/13.
+  // Calculate employee cost by real minute overlap inside the displayed slot.
+  // New POS data is grouped in 30-minute slots; legacy PDF data can still be hourly.
   function getEmployeeCostForHour(hourLabel: string): number {
     const slotStart = hourSlotStartMinutes(hourLabel);
     if (slotStart == null) return 0;
-    const slotEnd = slotStart + 60;
+    const slotEnd = slotStart + (usesHalfHourSlots ? 30 : 60);
 
     return labor.reduce((cost, shift) => {
       const overlap = shiftOverlapMinutes(shift.shiftStart, shift.shiftEnd, slotStart, slotEnd);
