@@ -13,6 +13,7 @@ type OrderGroup = {
   invoiceNumber: string | null;
   status: string;
   paymentMethod: string;
+  serviceType: "dine_in" | "takeaway";
   tableNumber: string | null;
   employeeName: string | null;
   businessDate: string;
@@ -49,11 +50,14 @@ export default async function ComandesPage({
   const averageTicket = activeOrders.length > 0 ? totalBase / activeOrders.length : 0;
   const cancelledOrders = orders.filter((order) => order.status === "cancelled").length;
   const parkedOrders = orders.filter((order) => order.paymentMethod === "aparcat" && order.status !== "cancelled").length;
-  const exportHref = (format: "csv" | "xlsx") => {
+  const exportHref = (format: "csv" | "xlsx", type: "detail" | "iva-summary" = "detail") => {
     const exportParams = new URLSearchParams();
     exportParams.set("from", filter.from);
     exportParams.set("to", filter.to);
     exportParams.set("format", format);
+    if (type !== "detail") {
+      exportParams.set("type", type);
+    }
     return `/api/comandes/export?${exportParams.toString()}`;
   };
 
@@ -70,7 +74,7 @@ export default async function ComandesPage({
             Exportar facturas simplificadas
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Descarga las lineas del periodo seleccionado para gestoria o AEAT. Incluye anuladas marcadas y excluye Cookies y aparcados.
+            Descarga el detalle por lineas o el resumen IVA diario del periodo seleccionado. El resumen excluye anuladas, Cookies y aparcados.
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
@@ -78,13 +82,19 @@ export default async function ComandesPage({
             href={exportHref("xlsx")}
             className="inline-flex items-center justify-center rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800"
           >
-            Descargar Excel
+            Descargar Excel detallado
           </a>
           <a
             href={exportHref("csv")}
             className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
           >
-            Descargar CSV
+            Descargar CSV detallado
+          </a>
+          <a
+            href={exportHref("xlsx", "iva-summary")}
+            className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700"
+          >
+            Descargar resumen IVA
           </a>
         </div>
       </section>
@@ -162,6 +172,8 @@ export default async function ComandesPage({
                         </p>
                         <p className="mt-1 truncate text-xs font-semibold text-slate-500">
                           {order.employeeName || "Sense empleat"}
+                          {" · "}
+                          {serviceLabel(order.serviceType)}
                           {order.tableNumber ? ` · Taula ${order.tableNumber}` : ""}
                         </p>
                       </div>
@@ -284,6 +296,7 @@ function groupOrders(lines: PosOrderLineRecord[]): OrderGroup[] {
       invoiceNumber: first.invoiceNumber,
       status: first.status,
       paymentMethod: first.paymentMethod,
+      serviceType: first.serviceType,
       tableNumber: first.tableNumber,
       employeeName: first.employeeName,
       businessDate: first.businessDate,
@@ -462,6 +475,10 @@ function paymentLabel(method: string) {
     aparcat: "Aparcat",
   };
   return labels[method] ?? method;
+}
+
+function serviceLabel(serviceType: "dine_in" | "takeaway") {
+  return serviceType === "takeaway" ? "Llevar" : "Aquí";
 }
 
 function formatDate(date: string) {

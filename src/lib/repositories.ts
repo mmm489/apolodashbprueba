@@ -787,6 +787,7 @@ export async function listPosOrderLines(from?: string, to?: string) {
 
   const sql = getSql();
   await ensurePosBusinessUnitColumn(sql);
+  await sql.query("ALTER TABLE pos.orders ADD COLUMN IF NOT EXISTS service_type TEXT NOT NULL DEFAULT 'dine_in'");
   const rows = from && to
     ? await sql`
         SELECT oi.id,
@@ -795,6 +796,7 @@ export async function listPosOrderLines(from?: string, to?: string) {
                o.invoice_number,
                o.status,
                o.payment_method,
+               o.service_type,
                o.table_number,
                e.name AS employee_name,
                ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
@@ -832,6 +834,7 @@ export async function listPosOrderLines(from?: string, to?: string) {
                o.invoice_number,
                o.status,
                o.payment_method,
+               o.service_type,
                o.table_number,
                e.name AS employee_name,
                ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
@@ -868,6 +871,7 @@ export async function listPosOrderLines(from?: string, to?: string) {
     invoiceNumber: row.invoice_number ? String(row.invoice_number) : null,
     status: String(row.status),
     paymentMethod: normalizePaymentMethod(row.payment_method),
+    serviceType: row.service_type === "takeaway" ? "takeaway" : "dine_in",
     tableNumber: row.table_number ? String(row.table_number) : null,
     employeeName: row.employee_name ? String(row.employee_name) : null,
     businessDate: normalizeDate(row.business_date),

@@ -54,6 +54,7 @@ export interface PosOrderLineRecord {
   invoiceNumber: string | null;
   status: "pending" | "preparing" | "ready" | "completed" | "cancelled" | string;
   paymentMethod: string;
+  serviceType: "dine_in" | "takeaway";
   tableNumber: string | null;
   employeeName: string | null;
   businessDate: string;
