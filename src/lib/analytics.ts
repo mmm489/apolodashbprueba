@@ -21,7 +21,7 @@ import {
 import { describeCalendarContext, getCalendarContext } from "@/lib/calendar";
 import { classifyFamily } from "@/lib/product-families";
 import { toDashboardDateOnly } from "@/lib/timezone";
-import type { ChatAnswer, DailyCalendarNote, DailyDigest as DailyDigestType, DateFilter, DatePreset, Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleShift, FamilyMovement, FinancialWorkspace, HistoricalWeather, HourlyProductSale, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, PlannedLaborRecord, ProductCost, ProductCostHistoryEntry, ProductSaleRecord, SalesReport } from "@/lib/types";
+import type { ChatAnswer, DailyCalendarNote, DailyDigest as DailyDigestType, DateFilter, DatePreset, DocumentRecord, Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleShift, FamilyMovement, FinancialWorkspace, HistoricalWeather, HourlyProductSale, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, PlannedLaborRecord, ProductCost, ProductCostHistoryEntry, ProductSaleRecord, SalesReport } from "@/lib/types";
 
 const BUSINESS_DAY_START_HOUR = 4;
 
@@ -488,6 +488,7 @@ export interface ProductSpend {
 export interface ExpensesWorkspace {
   filter: DateFilter;
   rows: ExpenseRow[];
+  documents: DocumentRecord[];
   invoices: InvoiceSummary[];
   products: ProductSpend[];
   suppliers: string[];
@@ -504,7 +505,8 @@ export async function getExpensesWorkspace(input?: {
   category?: string;
 }): Promise<ExpensesWorkspace> {
   const filter = resolveDateFilter(input);
-  const [invoices, invoiceLines] = await Promise.all([
+  const [documents, invoices, invoiceLines] = await Promise.all([
+    listDocuments(filter.from, filter.to),
     listInvoices(filter.from, filter.to),
     listInvoiceLines(filter.from, filter.to),
   ]);
@@ -629,6 +631,7 @@ export async function getExpensesWorkspace(input?: {
   return {
     filter,
     rows,
+    documents,
     invoices: invoiceSummaries,
     products,
     suppliers: allSuppliers,

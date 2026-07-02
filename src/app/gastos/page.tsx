@@ -23,7 +23,7 @@ export default async function GastosPage({
     category: firstValue(params?.category),
   });
 
-  const { rows, invoices, products, totals, filter } = workspace;
+  const { rows, documents, invoices, products, totals, filter } = workspace;
 
   return (
     <AppFrame
@@ -55,6 +55,7 @@ export default async function GastosPage({
       {/* Tabbed content */}
       <GastosTabs
         rows={rows}
+        documents={documents}
         invoices={invoices}
         products={products}
         totals={{ totalGross: totals.totalGross, totalVat: totals.totalVat }}

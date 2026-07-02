@@ -1,19 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Package, FileText, List } from "lucide-react";
+import { ChevronDown, ChevronRight, FileUp, Package, FileText, List } from "lucide-react";
 import type { ExpenseRow, InvoiceSummary, ProductSpend } from "@/lib/analytics";
 import { formatDashboardDate } from "@/lib/timezone";
+import type { DocumentRecord } from "@/lib/types";
 
-type Tab = "lineas" | "facturas" | "productos";
+type Tab = "lineas" | "facturas" | "productos" | "documentos";
 
 export function GastosTabs({
   rows,
+  documents,
   invoices,
   products,
   totals,
 }: {
   rows: ExpenseRow[];
+  documents: DocumentRecord[];
   invoices: InvoiceSummary[];
   products: ProductSpend[];
   totals: { totalGross: number; totalVat: number };
@@ -27,12 +30,14 @@ export function GastosTabs({
         <TabButton active={tab === "facturas"} onClick={() => setTab("facturas")} icon={<FileText className="h-4 w-4" />} label="Factures" count={invoices.length} />
         <TabButton active={tab === "lineas"} onClick={() => setTab("lineas")} icon={<List className="h-4 w-4" />} label="Linies" count={rows.length} />
         <TabButton active={tab === "productos"} onClick={() => setTab("productos")} icon={<Package className="h-4 w-4" />} label="Productes" count={products.length} />
+        <TabButton active={tab === "documentos"} onClick={() => setTab("documentos")} icon={<FileUp className="h-4 w-4" />} label="Pujades" count={documents.length} />
       </div>
 
       <div className="p-5">
         {tab === "facturas" && <InvoicesTab invoices={invoices} />}
         {tab === "lineas" && <LinesTab rows={rows} totals={totals} />}
         {tab === "productos" && <ProductsTab products={products} />}
+        {tab === "documentos" && <DocumentsTab documents={documents} />}
       </div>
     </div>
   );
@@ -215,6 +220,44 @@ function ProductsTab({ products }: { products: ProductSpend[] }) {
   );
 }
 
+/* ---- Documents Tab ---- */
+function DocumentsTab({ documents }: { documents: DocumentRecord[] }) {
+  if (!documents.length) {
+    return <Empty text="No hi ha pujades en aquest periode." />;
+  }
+
+  const sorted = [...documents].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  return (
+    <div className="space-y-2">
+      {sorted.map((document) => (
+        <div key={document.id} className="rounded-xl border border-[var(--line)] bg-slate-50/50 p-4 transition hover:bg-white hover:shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <p className="truncate text-[13px] font-semibold text-slate-800">{document.fileName}</p>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-slate-500">
+                <span>{formatDateTime(document.createdAt)}</span>
+                <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-500">
+                  {document.documentType}
+                </span>
+                <span>confiança {Math.round(document.confidence * 100)}%</span>
+              </div>
+              {document.errorMessage ? (
+                <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-[12px] text-rose-700">
+                  {document.errorMessage}
+                </p>
+              ) : null}
+            </div>
+            <span className={`shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider ${statusClass(document.status)}`}>
+              {statusLabel(document.status)}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ---- Shared helpers ---- */
 function Empty({ text }: { text: string }) {
   return <p className="py-8 text-center text-[13px] text-slate-400">{text}</p>;
@@ -246,4 +289,29 @@ function fmtNum(value: number) {
 
 function formatDate(dateStr: string) {
   return formatDashboardDate(dateStr, "ca-ES", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+function formatDateTime(dateStr: string) {
+  return formatDashboardDate(dateStr, "ca-ES", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function statusLabel(status: DocumentRecord["status"]) {
+  if (status === "validated") return "Validada";
+  if (status === "error") return "Error";
+  if (status === "processing") return "Processant";
+  if (status === "extracted") return "Extreta";
+  return "Rebuda";
+}
+
+function statusClass(status: DocumentRecord["status"]) {
+  if (status === "validated") return "bg-emerald-50 text-emerald-700";
+  if (status === "error") return "bg-rose-50 text-rose-700";
+  if (status === "processing" || status === "extracted") return "bg-amber-50 text-amber-700";
+  return "bg-slate-100 text-slate-600";
 }
