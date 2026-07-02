@@ -1,15 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { isPosDataSource } from "@/lib/db";
+import { env } from "@/lib/env";
 import { ingestPdfBuffer } from "@/lib/ingestion/service";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  if (isPosDataSource()) {
-    return NextResponse.json({ error: "Dashboard en modo solo lectura POS" }, { status: 405 });
-  }
-
   try {
     const formData = await request.formData();
     const entries = formData.getAll("files");
@@ -26,6 +22,9 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: !hasErrors,
       uploaded: processed.length,
+      warning: env.ANTHROPIC_API_KEY
+        ? undefined
+        : "Falta ANTHROPIC_API_KEY. Los PDF con texto pueden procesarse de forma limitada, pero fotos/PDF escaneados no se podrán leer automáticamente.",
       processed,
     }, { status: hasErrors ? 207 : 200 });
   } catch (error) {

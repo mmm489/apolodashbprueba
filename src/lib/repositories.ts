@@ -60,6 +60,125 @@ function assertLegacyWritable() {
   }
 }
 
+let ingestionTablesEnsured = false;
+
+async function ensureIngestionTables(sql: DashboardSql) {
+  if (ingestionTablesEnsured) return;
+
+  const statements = [
+    `CREATE TABLE IF NOT EXISTS documents (
+      id TEXT PRIMARY KEY,
+      file_name TEXT NOT NULL,
+      source_path TEXT NOT NULL,
+      content_hash TEXT NOT NULL UNIQUE,
+      document_type TEXT NOT NULL,
+      status TEXT NOT NULL,
+      confidence NUMERIC(6,4) NOT NULL DEFAULT 0,
+      extractor_version TEXT NOT NULL,
+      error_message TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS sales_reports (
+      id TEXT PRIMARY KEY,
+      document_id TEXT REFERENCES documents(id) ON DELETE CASCADE,
+      business_date DATE NOT NULL,
+      total_sales NUMERIC(12,2) NOT NULL,
+      order_count INTEGER NOT NULL,
+      average_ticket NUMERIC(12,2) NOT NULL,
+      payment_mix JSONB NOT NULL DEFAULT '{}'::jsonb
+    )`,
+    `CREATE TABLE IF NOT EXISTS hourly_sales (
+      id TEXT PRIMARY KEY,
+      document_id TEXT REFERENCES documents(id) ON DELETE CASCADE,
+      business_date DATE NOT NULL,
+      hour_label TEXT NOT NULL,
+      sales NUMERIC(12,2) NOT NULL,
+      order_count INTEGER NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS product_sales (
+      id TEXT PRIMARY KEY,
+      sales_report_id TEXT REFERENCES sales_reports(id) ON DELETE CASCADE,
+      business_date DATE NOT NULL,
+      product_code TEXT NOT NULL,
+      product_name TEXT NOT NULL,
+      units NUMERIC(12,2) NOT NULL,
+      amount NUMERIC(12,2) NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS invoices (
+      id TEXT PRIMARY KEY,
+      document_id TEXT REFERENCES documents(id) ON DELETE CASCADE,
+      supplier_name TEXT NOT NULL,
+      issue_date DATE NOT NULL,
+      due_date DATE,
+      total_amount NUMERIC(12,2) NOT NULL,
+      tax_amount NUMERIC(12,2) NOT NULL,
+      category TEXT NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS invoice_lines (
+      id TEXT PRIMARY KEY,
+      invoice_id TEXT NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+      description TEXT NOT NULL,
+      quantity NUMERIC(12,3) NOT NULL DEFAULT 1,
+      unit_price NUMERIC(12,4) NOT NULL DEFAULT 0,
+      amount NUMERIC(12,2) NOT NULL,
+      vat_rate NUMERIC(5,2) NOT NULL DEFAULT 0,
+      vat_amount NUMERIC(12,2) NOT NULL DEFAULT 0
+    )`,
+    `CREATE TABLE IF NOT EXISTS payrolls (
+      id TEXT PRIMARY KEY,
+      document_id TEXT REFERENCES documents(id) ON DELETE CASCADE,
+      employee_name TEXT NOT NULL,
+      pay_period TEXT NOT NULL,
+      gross_amount NUMERIC(12,2) NOT NULL,
+      net_amount NUMERIC(12,2) NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS hourly_product_sales (
+      id TEXT PRIMARY KEY,
+      document_id TEXT REFERENCES documents(id) ON DELETE CASCADE,
+      business_date DATE NOT NULL,
+      hour_label TEXT NOT NULL,
+      product_code TEXT NOT NULL,
+      product_name TEXT NOT NULL,
+      units NUMERIC(12,2) NOT NULL,
+      amount NUMERIC(12,2) NOT NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS product_costs (
+      id TEXT PRIMARY KEY,
+      product_code TEXT NOT NULL,
+      product_name TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'Altres',
+      unit_cost NUMERIC(8,4) NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(product_code)
+    )`,
+    `CREATE TABLE IF NOT EXISTS product_cost_history (
+      id TEXT PRIMARY KEY,
+      product_code TEXT NOT NULL,
+      product_name TEXT NOT NULL,
+      unit_cost NUMERIC(8,4) NOT NULL,
+      valid_from DATE NOT NULL,
+      valid_until DATE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_sales_reports_business_date ON sales_reports(business_date DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_hourly_sales_business_date ON hourly_sales(business_date DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_product_sales_business_date ON product_sales(business_date DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_hourly_product_sales_business_date ON hourly_product_sales(business_date DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_invoices_issue_date ON invoices(issue_date DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_invoice_lines_invoice_id ON invoice_lines(invoice_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_payrolls_pay_period ON payrolls(pay_period DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_documents_created_at ON documents(created_at DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_cost_history_lookup ON product_cost_history(product_code, valid_from DESC)`,
+    `CREATE INDEX IF NOT EXISTS idx_cost_history_current ON product_cost_history(product_code) WHERE valid_until IS NULL`,
+  ];
+
+  for (const statement of statements) {
+    await sql.query(statement);
+  }
+
+  ingestionTablesEnsured = true;
+}
+
 function normalizePaymentMethod(value: unknown): string {
   const method = String(value ?? "otros").toLowerCase();
   if (method === "cash") return "efectivo";
@@ -3013,11 +3132,9 @@ export async function findDocumentByHash(contentHash: string) {
   if (!hasDatabase()) {
     return null;
   }
-  if (isPosDataSource()) {
-    return null;
-  }
 
   const sql = getSql();
+  await ensureIngestionTables(sql);
   const rows = await sql`SELECT id, file_name, source_path, document_type, status, confidence, extractor_version, error_message, created_at FROM documents WHERE content_hash = ${contentHash} LIMIT 1`;
   return rows[0] ? mapDocument(rows[0]) : null;
 }
@@ -3047,9 +3164,9 @@ export async function createDocument(input: {
   if (!hasDatabase()) {
     return document;
   }
-  assertLegacyWritable();
 
   const sql = getSql();
+  await ensureIngestionTables(sql);
   await sql`
     INSERT INTO documents (id, file_name, source_path, content_hash, document_type, status, confidence, extractor_version, error_message)
     VALUES (
@@ -3078,9 +3195,9 @@ export async function updateDocumentProcessingState(input: {
   if (!hasDatabase()) {
     return;
   }
-  assertLegacyWritable();
 
   const sql = getSql();
+  await ensureIngestionTables(sql);
   await sql`
     UPDATE documents
     SET
@@ -3096,9 +3213,9 @@ export async function persistExtraction(documentId: string, result: ExtractionRe
   if (!hasDatabase()) {
     return "no-database";
   }
-  assertLegacyWritable();
 
   const sql = getSql();
+  await ensureIngestionTables(sql);
   console.log(`[persistExtraction] docId=${documentId}, type=${result.documentType}, confidence=${result.confidence}`);
   console.log(`[persistExtraction] normalizedData keys:`, Object.keys(result.normalizedData ?? {}));
 

@@ -13,6 +13,7 @@ type UploadResult = {
     documentType: string;
     error?: string;
   }>;
+  warning?: string;
   error?: string;
 };
 
@@ -141,6 +142,12 @@ export function UploadPanel() {
             <div className="mt-3 flex items-start gap-2 rounded-lg bg-rose-50 p-3">
               <XCircle className="mt-0.5 size-4 shrink-0 text-rose-500" />
               <p className="text-[13px] text-rose-700">{result.error}</p>
+            </div>
+          ) : null}
+          {result.warning ? (
+            <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 p-3">
+              <XCircle className="mt-0.5 size-4 shrink-0 text-amber-500" />
+              <p className="text-[13px] text-amber-700">{result.warning}</p>
             </div>
           ) : null}
           {result.processed?.length ? (
