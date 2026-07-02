@@ -3209,6 +3209,21 @@ export async function updateDocumentProcessingState(input: {
   `;
 }
 
+export async function deleteUploadedDocument(documentId: string) {
+  if (!hasDatabase()) {
+    return false;
+  }
+
+  const sql = getSql();
+  await ensureIngestionTables(sql);
+  const rows = await sql`
+    DELETE FROM documents
+    WHERE id = ${documentId}
+    RETURNING id
+  `;
+  return rows.length > 0;
+}
+
 export async function persistExtraction(documentId: string, result: ExtractionResult): Promise<string | null> {
   if (!hasDatabase()) {
     return "no-database";
