@@ -1039,9 +1039,11 @@ function buildHourlyProfitabilitySlots(
       const slotEnd = slotStart + PROFITABILITY_SLOT_MINUTES;
       let laborCost = 0;
       let laborHours = 0;
+      const activeEmployeeIds = new Set<string>();
       for (const shift of dayLabor) {
         const overlap = shiftOverlapMinutes(shift.shiftStart, shift.shiftEnd, slotStart, slotEnd);
         if (overlap <= 0) continue;
+        activeEmployeeIds.add(shift.employeeId);
         laborHours += overlap / 60;
         laborCost += (overlap / 60) * shift.hourlyCost;
       }
@@ -1061,6 +1063,7 @@ function buildHourlyProfitabilitySlots(
         productCost,
         laborCost,
         laborHours,
+        employeeCount: activeEmployeeIds.size,
         margin,
         marginPct: hasSales ? margin / salesEntry.sales : null,
         productCostCoverage,

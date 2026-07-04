@@ -476,6 +476,7 @@ function HourlyDetail({
           const orderCount = slot ? slot.orderCount : hourlyRow?.orderCount ?? 0;
           const hourProductCost = slot ? slot.productCost : products.reduce((s, p) => s + p.productCost, 0);
           const hourEmpCost = slot ? slot.laborCost : getEmployeeCostForHour(hourLabel);
+          const employeeCount = slot ? slot.employeeCount : 0;
           const margin = slot ? slot.margin : sales - hourProductCost - hourEmpCost;
           const marginPct = sales > 0 ? margin / sales : null;
           const rowMissingProductCost = slot ? slot.missingProductCost : products.some((p) => p.missingCost);
@@ -494,6 +495,7 @@ function HourlyDetail({
                   <span className="text-[12px] text-slate-500">Venda s/IVA: <span className="font-semibold text-emerald-700">{euro(sales)}</span></span>
                   <span className="text-[12px] text-slate-500">Prod: <span className="font-semibold text-rose-600">{euro(hourProductCost)}</span></span>
                   {hourEmpCost > 0 && <span className="text-[12px] text-slate-500">Empl: <span className="font-semibold text-violet-600">{euro(hourEmpCost)}</span></span>}
+                  {employeeCount > 0 && <span className="rounded-md bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">{employeeCount} emp.</span>}
                   {marginPct != null && <span className="text-[12px] font-semibold text-slate-500">{(marginPct * 100).toFixed(0)}%</span>}
                   {rowMissingProductCost && <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">cost?</span>}
                   <span className={`rounded-lg px-2 py-0.5 text-[11px] font-semibold ${margin >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>

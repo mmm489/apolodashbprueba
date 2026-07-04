@@ -577,6 +577,7 @@ export interface HourlyProfitabilitySlot {
   productCost: number;
   laborCost: number;
   laborHours: number;
+  employeeCount: number;
   margin: number;
   marginPct: number | null;
   productCostCoverage: number;

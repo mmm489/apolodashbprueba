@@ -346,11 +346,16 @@ function HourlyProfitabilityHeatmap({
                   return (
                     <div
                       key={`${date}-${label}`}
-                      title={slot ? `${date} ${label}: venda ${euro(slot.sales)} · producte ${euro(slot.productCost)} · personal ${euro(slot.laborCost)} · marge ${euro(slot.margin)}` : `${date} ${label}`}
-                      className="flex min-h-[42px] items-center justify-center rounded-md border border-white text-[10px] font-bold transition hover:scale-[1.03]"
+                      title={slot ? `${date} ${label}: ${slot.employeeCount} empleats · venda ${euro(slot.sales)} · producte ${euro(slot.productCost)} · personal ${euro(slot.laborCost)} · marge ${euro(slot.margin)}` : `${date} ${label}`}
+                      className="flex min-h-[42px] flex-col items-center justify-center rounded-md border border-white text-[10px] font-bold leading-tight transition hover:scale-[1.03]"
                       style={profitCellStyle(slot, maxAbsMargin)}
                     >
-                      {active ? compactMoney(slot.margin) : ""}
+                      {active && (
+                        <>
+                          <span>{compactMoney(slot.margin)}</span>
+                          {slot.employeeCount > 0 && <span className="text-[9px] font-semibold opacity-80">{slot.employeeCount} emp.</span>}
+                        </>
+                      )}
                     </div>
                   );
                 })}
