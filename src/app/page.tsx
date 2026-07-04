@@ -9,12 +9,58 @@ import { formatDashboardDate } from "@/lib/timezone";
 
 export const dynamic = "force-dynamic";
 
+type ProfitabilityMetric =
+  | "margin"
+  | "salesLaborRatio"
+  | "laborShare"
+  | "grossMarginLaborRatio"
+  | "salesPerLaborHour";
+
+const PROFITABILITY_METRICS: Array<{
+  id: ProfitabilityMetric;
+  label: string;
+  shortLabel: string;
+  description: string;
+}> = [
+  {
+    id: "margin",
+    label: "Benefici EUR",
+    shortLabel: "EUR",
+    description: "Vendes s/IVA - producte - personal",
+  },
+  {
+    id: "salesLaborRatio",
+    label: "Vendes / personal",
+    shortLabel: "x vendes",
+    description: "Euros venuts per cada euro de personal",
+  },
+  {
+    id: "laborShare",
+    label: "% personal",
+    shortLabel: "% pers.",
+    description: "Cost de personal sobre vendes",
+  },
+  {
+    id: "grossMarginLaborRatio",
+    label: "Marge brut / personal",
+    shortLabel: "x marge",
+    description: "Vendes menys producte per cada euro de personal",
+  },
+  {
+    id: "salesPerLaborHour",
+    label: "Vendes / hora emp.",
+    shortLabel: "EUR/h",
+    description: "Vendes per hora planificada de personal",
+  },
+];
+
 export default async function HomePage({
   searchParams,
 }: {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
+  const profitMetric = parseProfitabilityMetric(firstValue(params?.profitMetric));
   const workspace = await getFinancialWorkspace({
     preset: firstValue(params?.preset),
     from: firstValue(params?.from),
@@ -161,6 +207,8 @@ export default async function HomePage({
           slots={workspace.snapshot.hourlyProfitability}
           summary={workspace.snapshot.hourlyProfitabilitySummary}
           productCostCoverage={kpis.productCostCoverage}
+          metric={profitMetric}
+          filter={workspace.filter}
         />
       )}
 
@@ -285,10 +333,14 @@ function HourlyProfitabilityHeatmap({
   slots,
   summary,
   productCostCoverage,
+  metric,
+  filter,
 }: {
   slots: import("@/lib/types").HourlyProfitabilitySlot[];
   summary: import("@/lib/types").HourlyProfitabilitySummary;
   productCostCoverage: number;
+  metric: ProfitabilityMetric;
+  filter: import("@/lib/types").DateFilter;
 }) {
   const dates = [...new Set(slots.map((slot) => slot.businessDate))].sort();
   const labels = [...new Set(slots.map((slot) => slot.slotLabel))].sort((a, b) => slotSortValue(a) - slotSortValue(b));
@@ -296,6 +348,7 @@ function HourlyProfitabilityHeatmap({
   const activeSlots = slots.filter((slot) => slot.hasSales || slot.hasLabor);
   const maxAbsMargin = Math.max(...activeSlots.map((slot) => Math.abs(slot.margin)), 1);
   const missingCost = activeSlots.some((slot) => slot.missingProductCost);
+  const metricConfig = PROFITABILITY_METRICS.find((item) => item.id === metric) ?? PROFITABILITY_METRICS[0];
 
   return (
     <section className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
@@ -303,8 +356,27 @@ function HourlyProfitabilityHeatmap({
         <div>
           <p className="text-[20px] font-bold tracking-tight text-slate-900">Rentabilitat per franja</p>
           <p className="mt-0.5 text-[13px] text-slate-500">
-            Benefici controlable cada 30 min: vendes s/IVA menys producte i personal planificat.
+            {metricConfig.description}. Cada cel.la representa una franja de 30 min.
           </p>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {PROFITABILITY_METRICS.map((option) => {
+              const active = option.id === metric;
+              return (
+                <a
+                  key={option.id}
+                  href={buildProfitMetricHref(option.id, filter)}
+                  title={option.description}
+                  className={`rounded-full border px-3 py-1.5 text-[12px] font-semibold transition ${
+                    active
+                      ? "border-indigo-500 bg-indigo-600 text-white shadow-sm"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+                  }`}
+                >
+                  {option.label}
+                </a>
+              );
+            })}
+          </div>
         </div>
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           <ProfitChip label="Millor franja" value={summary.bestSlot ? `${formatShortDate(summary.bestSlot.businessDate)} ${summary.bestSlot.slotLabel}` : "--"} detail={summary.bestSlot ? euro(summary.bestSlot.margin) : "--"} tone="green" />
@@ -343,16 +415,17 @@ function HourlyProfitabilityHeatmap({
                 {labels.map((label) => {
                   const slot = slotMap.get(`${date}|${label}`);
                   const active = !!slot && (slot.hasSales || slot.hasLabor);
+                  const metricValue = slot ? getProfitMetricValue(slot, metric) : null;
                   return (
                     <div
                       key={`${date}-${label}`}
-                      title={slot ? `${date} ${label}: ${slot.employeeCount} empleats · venda ${euro(slot.sales)} · producte ${euro(slot.productCost)} · personal ${euro(slot.laborCost)} · marge ${euro(slot.margin)}` : `${date} ${label}`}
+                      title={slot ? `${date} ${label}: ${metricConfig.label} ${metricValue?.longDisplay ?? "--"} · ${slot.employeeCount} empleats · venda ${euro(slot.sales)} · producte ${euro(slot.productCost)} · personal ${euro(slot.laborCost)} · marge ${euro(slot.margin)}` : `${date} ${label}`}
                       className="flex min-h-[42px] flex-col items-center justify-center rounded-md border border-white text-[10px] font-bold leading-tight transition hover:scale-[1.03]"
-                      style={profitCellStyle(slot, maxAbsMargin)}
+                      style={profitCellStyle(slot, maxAbsMargin, metric)}
                     >
                       {active && (
                         <>
-                          <span>{compactMoney(slot.margin)}</span>
+                          <span>{metricValue?.display ?? "--"}</span>
                           {slot.employeeCount > 0 && <span className="text-[9px] font-semibold opacity-80">{slot.employeeCount} emp.</span>}
                         </>
                       )}
@@ -390,15 +463,151 @@ function ProfitChip({ label, value, detail, tone }: { label: string; value: stri
   );
 }
 
-function profitCellStyle(slot: import("@/lib/types").HourlyProfitabilitySlot | undefined, maxAbsMargin: number): React.CSSProperties {
+function profitCellStyle(
+  slot: import("@/lib/types").HourlyProfitabilitySlot | undefined,
+  maxAbsMargin: number,
+  metric: ProfitabilityMetric,
+): React.CSSProperties {
   if (!slot || (!slot.hasSales && !slot.hasLabor)) {
     return { backgroundColor: "#f8fafc", color: "#cbd5e1" };
   }
-  const alpha = Math.min(0.95, Math.max(0.18, Math.abs(slot.margin) / maxAbsMargin));
-  if (slot.margin >= 0) {
-    return { backgroundColor: `rgba(16, 185, 129, ${alpha})`, color: alpha > 0.45 ? "white" : "#065f46" };
+  const value = getProfitMetricValue(slot, metric);
+  if (metric === "margin") {
+    const alpha = Math.min(0.95, Math.max(0.18, Math.abs(slot.margin) / maxAbsMargin));
+    if (slot.margin >= 0) {
+      return { backgroundColor: `rgba(16, 185, 129, ${alpha})`, color: alpha > 0.45 ? "white" : "#065f46" };
+    }
+    return { backgroundColor: `rgba(244, 63, 94, ${alpha})`, color: alpha > 0.45 ? "white" : "#9f1239" };
   }
-  return { backgroundColor: `rgba(244, 63, 94, ${alpha})`, color: alpha > 0.45 ? "white" : "#9f1239" };
+  if (!value.hasValue) {
+    return slot.hasLabor
+      ? { backgroundColor: "rgba(244, 63, 94, 0.28)", color: "#9f1239" }
+      : { backgroundColor: "#f8fafc", color: "#cbd5e1" };
+  }
+  const alpha = Math.min(0.9, Math.max(0.24, 0.24 + value.intensity * 0.58));
+  if (value.tone === "green") {
+    return { backgroundColor: `rgba(16, 185, 129, ${alpha})`, color: alpha > 0.48 ? "white" : "#065f46" };
+  }
+  if (value.tone === "amber") {
+    return { backgroundColor: `rgba(245, 158, 11, ${alpha})`, color: alpha > 0.52 ? "white" : "#92400e" };
+  }
+  return { backgroundColor: `rgba(244, 63, 94, ${alpha})`, color: alpha > 0.48 ? "white" : "#9f1239" };
+}
+
+function getProfitMetricValue(
+  slot: import("@/lib/types").HourlyProfitabilitySlot,
+  metric: ProfitabilityMetric,
+): {
+  display: string;
+  longDisplay: string;
+  hasValue: boolean;
+  tone: "green" | "amber" | "red";
+  intensity: number;
+} {
+  const grossMargin = slot.sales - slot.productCost;
+  if (metric === "margin") {
+    return {
+      display: compactMoney(slot.margin),
+      longDisplay: euro(slot.margin),
+      hasValue: true,
+      tone: slot.margin >= 0 ? "green" : "red",
+      intensity: 1,
+    };
+  }
+  if (metric === "salesLaborRatio") {
+    if (slot.laborCost <= 0) {
+      return slot.sales > 0
+        ? { display: "∞", longDisplay: "sense cost de personal", hasValue: true, tone: "green", intensity: 1 }
+        : emptyMetricValue();
+    }
+    const ratio = slot.sales / slot.laborCost;
+    return ratioMetricValue(ratio, 4, 2, `${formatRatio(ratio)}x`);
+  }
+  if (metric === "laborShare") {
+    if (slot.sales <= 0) {
+      return slot.laborCost > 0
+        ? { display: "100%+", longDisplay: "personal sense venda", hasValue: true, tone: "red", intensity: 1 }
+        : emptyMetricValue();
+    }
+    const share = slot.laborCost / slot.sales;
+    const tone = share <= 0.25 ? "green" : share <= 0.4 ? "amber" : "red";
+    const intensity = tone === "green"
+      ? clamp01(1 - share / 0.25)
+      : tone === "amber"
+        ? clamp01((share - 0.25) / 0.15)
+        : clamp01(Math.min(1, (share - 0.4) / 0.35));
+    return {
+      display: `${(share * 100).toFixed(0)}%`,
+      longDisplay: `${(share * 100).toFixed(1)}%`,
+      hasValue: true,
+      tone,
+      intensity,
+    };
+  }
+  if (metric === "grossMarginLaborRatio") {
+    if (slot.laborCost <= 0) {
+      return grossMargin > 0
+        ? { display: "∞", longDisplay: "marge sense cost de personal", hasValue: true, tone: "green", intensity: 1 }
+        : emptyMetricValue();
+    }
+    const ratio = grossMargin / slot.laborCost;
+    return ratioMetricValue(ratio, 2.5, 1.25, `${formatRatio(ratio)}x`);
+  }
+  if (slot.laborHours <= 0) {
+    return slot.sales > 0
+      ? { display: "∞", longDisplay: "venda sense hores planificades", hasValue: true, tone: "green", intensity: 1 }
+      : emptyMetricValue();
+  }
+  const salesPerHour = slot.sales / slot.laborHours;
+  const tone = salesPerHour >= 80 ? "green" : salesPerHour >= 45 ? "amber" : "red";
+  const intensity = tone === "green"
+    ? clamp01(salesPerHour / 140)
+    : tone === "amber"
+      ? clamp01((salesPerHour - 45) / 35)
+      : clamp01(1 - salesPerHour / 45);
+  return {
+    display: `${compactMoney(salesPerHour)}/h`,
+    longDisplay: `${euro(salesPerHour)} per hora-empleat`,
+    hasValue: true,
+    tone,
+    intensity,
+  };
+}
+
+function ratioMetricValue(value: number, greenTarget: number, amberTarget: number, display: string) {
+  const tone: "green" | "amber" | "red" = value >= greenTarget ? "green" : value >= amberTarget ? "amber" : "red";
+  const intensity = tone === "green"
+    ? clamp01(value / (greenTarget * 1.8))
+    : tone === "amber"
+      ? clamp01((value - amberTarget) / (greenTarget - amberTarget))
+      : clamp01(1 - value / amberTarget);
+  return {
+    display,
+    longDisplay: `${formatRatio(value)}x`,
+    hasValue: true,
+    tone,
+    intensity,
+  };
+}
+
+function emptyMetricValue() {
+  return {
+    display: "--",
+    longDisplay: "--",
+    hasValue: false,
+    tone: "red" as const,
+    intensity: 0,
+  };
+}
+
+function formatRatio(value: number) {
+  if (!Number.isFinite(value)) return "∞";
+  if (Math.abs(value) >= 10) return value.toFixed(0);
+  return value.toFixed(1);
+}
+
+function clamp01(value: number) {
+  return Math.min(1, Math.max(0, value));
 }
 
 function slotSortValue(label: string) {
@@ -1066,6 +1275,21 @@ function DigestCard({
       )}
     </div>
   );
+}
+
+function parseProfitabilityMetric(value: string | undefined): ProfitabilityMetric {
+  return PROFITABILITY_METRICS.some((item) => item.id === value)
+    ? (value as ProfitabilityMetric)
+    : "margin";
+}
+
+function buildProfitMetricHref(metric: ProfitabilityMetric, filter: import("@/lib/types").DateFilter) {
+  const params = new URLSearchParams();
+  params.set("preset", filter.preset);
+  params.set("from", filter.from);
+  params.set("to", filter.to);
+  if (metric !== "margin") params.set("profitMetric", metric);
+  return `/?${params.toString()}`;
 }
 
 function euro(value: number) {
