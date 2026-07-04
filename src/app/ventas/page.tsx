@@ -20,7 +20,7 @@ export default async function VentasPage({
   });
   const readOnly = isPosDataSource();
 
-  const { dayStatuses, productSales, hourlySales, hourlyProductSales, productCosts, plannedLabor, topProducts, totals, filter } = workspace;
+  const { dayStatuses, productSales, hourlySales, hourlyProductSales, productCosts, hourlyProfitability, plannedLabor, topProducts, totals, filter } = workspace;
 
   return (
     <AppFrame
@@ -34,11 +34,15 @@ export default async function VentasPage({
         <Metric label="Total vendes s/IVA" value={euro(totals.totalSales)} color="emerald" />
         <Metric label="Total comandes" value={fmtNum(totals.totalOrders)} color="indigo" />
         <Metric label="Tiquet mitja s/IVA" value={euro(totals.averageTicket)} color="amber" />
+        <Metric label="Marge controlable" value={euro(totals.controlledMargin)} color={totals.controlledMargin >= 0 ? "emerald" : "rose"} />
+        <Metric label="Benefici / hora planificada" value={euro(totals.controlledMarginPerPlannedHour)} color={totals.controlledMarginPerPlannedHour >= 0 ? "emerald" : "rose"} />
         <Metric label="Cost personal planificat" value={euro(totals.plannedLaborCost)} color="rose" />
         <Metric label="% personal / vendes" value={`${(totals.laborCostRatio * 100).toFixed(1)}%`} color="slate" />
-        <Metric label="Vendes per hora planificada" value={euro(totals.salesPerPlannedHour)} color="emerald" />
+        <Metric label="Cost productes" value={euro(totals.totalProductCost)} color="rose" />
+        <Metric label="Franges en perdua" value={fmtNum(totals.lossSlotCount)} color={totals.lossSlotCount > 0 ? "rose" : "emerald"} />
+        <Metric label="Personal sense venda" value={fmtNum(totals.lowSalesLaborSlotCount)} color={totals.lowSalesLaborSlotCount > 0 ? "amber" : "emerald"} />
         <Metric label="Hores planificades" value={`${totals.plannedLaborHours.toFixed(1)} h`} color="indigo" />
-        <Metric label="Dies amb dades" value={String(totals.daysWithData)} color="slate" />
+        <Metric label="Costos informats" value={`${(totals.productCostCoverage * 100).toFixed(0)}%`} color={totals.productCostCoverage >= 0.8 ? "emerald" : "amber"} />
       </section>
 
       {/* Product & category summary for the period */}
@@ -53,6 +57,7 @@ export default async function VentasPage({
         hourlySales={hourlySales}
         hourlyProductSales={hourlyProductSales}
         productCosts={productCosts}
+        hourlyProfitability={hourlyProfitability}
         plannedLabor={plannedLabor}
         readOnly={readOnly}
       />
@@ -67,6 +72,7 @@ const metricColors: Record<string, string> = {
   amber: "border-l-amber-500",
   indigo: "border-l-indigo-500",
   slate: "border-l-slate-400",
+  rose: "border-l-rose-500",
 };
 
 function Metric({ label, value, color = "indigo" }: { label: string; value: string; color?: string }) {

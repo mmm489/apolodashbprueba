@@ -7,7 +7,7 @@ import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, Clock, FileUp, Lo
 import type { DayStatus } from "@/lib/analytics";
 import { classifyFamily } from "@/lib/product-families";
 import { formatDashboardDate } from "@/lib/timezone";
-import type { Employee, EmployeeShift, HourlyProductSale, HourlySalesEntry, PlannedLaborRecord, ProductCost, ProductSaleRecord } from "@/lib/types";
+import type { Employee, EmployeeShift, HourlyProductSale, HourlyProfitabilitySlot, HourlySalesEntry, PlannedLaborRecord, ProductCost, ProductSaleRecord } from "@/lib/types";
 
 interface FamilyGroup {
   name: string;
@@ -41,6 +41,7 @@ export function VendesDayList({
   hourlySales,
   hourlyProductSales,
   productCosts,
+  hourlyProfitability,
   plannedLabor,
   readOnly = false,
 }: {
@@ -49,6 +50,7 @@ export function VendesDayList({
   hourlySales: HourlySalesEntry[];
   hourlyProductSales: HourlyProductSale[];
   productCosts: ProductCost[];
+  hourlyProfitability: HourlyProfitabilitySlot[];
   plannedLabor: PlannedLaborRecord[];
   readOnly?: boolean;
 }) {
@@ -77,6 +79,7 @@ export function VendesDayList({
             const dayProducts = productSales.filter((p) => p.businessDate === day.date);
             const dayHourly = hourlySales.filter((h) => h.businessDate === day.date);
             const dayHourlyProducts = hourlyProductSales.filter((hp) => hp.businessDate === day.date);
+            const dayProfitability = hourlyProfitability.filter((slot) => slot.businessDate === day.date);
             const dayLabor = plannedLabor.filter((s) => s.businessDate === day.date);
 
             return (
@@ -88,6 +91,7 @@ export function VendesDayList({
                 dayProducts={dayProducts}
                 dayHourly={dayHourly}
                 dayHourlyProducts={dayHourlyProducts}
+                dayProfitability={dayProfitability}
                 productCosts={productCosts}
                 dayLabor={dayLabor}
                 readOnly={readOnly}
@@ -117,6 +121,7 @@ function DayRow({
   dayProducts,
   dayHourly,
   dayHourlyProducts,
+  dayProfitability,
   productCosts,
   dayLabor,
   readOnly,
@@ -127,6 +132,7 @@ function DayRow({
   dayProducts: ProductSaleRecord[];
   dayHourly: HourlySalesEntry[];
   dayHourlyProducts: HourlyProductSale[];
+  dayProfitability: HourlyProfitabilitySlot[];
   productCosts: ProductCost[];
   dayLabor: PlannedLaborRecord[];
   readOnly: boolean;
@@ -208,8 +214,8 @@ function DayRow({
               )}
 
               {/* Hourly with product detail */}
-              {day.hasHourly && dayHourly.length > 0 && (
-                <HourlyDetail hourly={dayHourly} hourlyProducts={dayHourlyProducts} costMap={costMap} labor={dayLabor} />
+              {(dayHourly.length > 0 || dayProfitability.some((slot) => slot.hasSales || slot.hasLabor)) && (
+                <HourlyDetail hourly={dayHourly} hourlyProducts={dayHourlyProducts} costMap={costMap} labor={dayLabor} profitability={dayProfitability} />
               )}
               {dayLabor.length > 0 && (
                 <PlannedLaborDetail labor={dayLabor} />
@@ -396,14 +402,19 @@ function HourlyDetail({
   hourlyProducts,
   costMap,
   labor,
+  profitability,
 }: {
   hourly: HourlySalesEntry[];
   hourlyProducts: HourlyProductSale[];
   costMap: Map<string, number>;
   labor: PlannedLaborRecord[];
+  profitability: HourlyProfitabilitySlot[];
 }) {
   const [openHour, setOpenHour] = useState<string | null>(null);
   const sorted = [...hourly].sort((a, b) => a.hour.localeCompare(b.hour));
+  const activeProfitability = profitability
+    .filter((slot) => slot.hasSales || slot.hasLabor)
+    .sort((a, b) => slotSortValue(a.slotLabel) - slotSortValue(b.slotLabel));
   const usesHalfHourSlots = hourly.some((h) => h.id.startsWith("pos-hour-") || h.hour.endsWith(":30"));
 
   // Calculate employee cost by real minute overlap inside the displayed slot.
@@ -419,35 +430,72 @@ function HourlyDetail({
     }, 0);
   }
 
-  const totalSales = hourly.reduce((s, h) => s + h.sales, 0);
-  const totalProductCost = hourlyProducts.reduce((s, p) => s + (costMap.get(p.productCode) ?? 0) * p.units, 0);
-  const totalEmployeeCost = labor.reduce((s, row) => s + row.totalCost, 0);
+  const totalSales = activeProfitability.length > 0 ? activeProfitability.reduce((s, h) => s + h.sales, 0) : hourly.reduce((s, h) => s + h.sales, 0);
+  const totalProductCost = activeProfitability.length > 0 ? activeProfitability.reduce((s, h) => s + h.productCost, 0) : hourlyProducts.reduce((s, p) => s + (costMap.get(p.productCode) ?? 0) * p.units, 0);
+  const totalEmployeeCost = activeProfitability.length > 0 ? activeProfitability.reduce((s, h) => s + h.laborCost, 0) : labor.reduce((s, row) => s + row.totalCost, 0);
+  const missingProductCost = activeProfitability.some((slot) => slot.missingProductCost);
+  const rows: Array<
+    | { kind: "profitability"; slot: HourlyProfitabilitySlot }
+    | { kind: "hourly"; hour: HourlySalesEntry }
+  > = activeProfitability.length > 0
+    ? activeProfitability.map((slot) => ({ kind: "profitability", slot }))
+    : sorted.map((hour) => ({ kind: "hourly", hour }));
 
   return (
     <div>
-      <p className="mb-3 text-[12px] font-semibold uppercase tracking-wider text-slate-500">Detall per hora</p>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <p className="text-[12px] font-semibold uppercase tracking-wider text-slate-500">Rentabilitat per franja</p>
+        {missingProductCost && (
+          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+            marge incomplet
+          </span>
+        )}
+      </div>
       <div className="space-y-1.5">
-        {sorted.map((h) => {
-          const isOpen = openHour === h.hour;
-          const products = hourlyProducts.filter((p) => p.hourLabel === h.hour);
-          const hourProductCost = products.reduce((s, p) => s + (costMap.get(p.productCode) ?? 0) * p.units, 0);
-          const hourEmpCost = getEmployeeCostForHour(h.hour);
-          const margin = h.sales - hourProductCost - hourEmpCost;
+        {rows.map((row) => {
+          const slot = row.kind === "profitability" ? row.slot : null;
+          const hourlyRow = row.kind === "hourly" ? row.hour : null;
+          const hourLabel = slot ? slot.slotLabel : hourlyRow?.hour ?? "--";
+          const isOpen = openHour === hourLabel;
+          const products = slot
+            ? slot.products
+            : hourlyProducts.filter((p) => normalizeHourLabel(p.hourLabel) === normalizeHourLabel(hourLabel)).map((p) => {
+                const unitCost = costMap.get(p.productCode) ?? 0;
+                const productCost = unitCost * p.units;
+                return {
+                  productCode: p.productCode,
+                  productName: p.productName,
+                  units: p.units,
+                  amount: p.amount,
+                  productCost,
+                  margin: p.amount - productCost,
+                  missingCost: unitCost <= 0 && p.amount > 0,
+                };
+              });
+          const sales = slot ? slot.sales : hourlyRow?.sales ?? 0;
+          const orderCount = slot ? slot.orderCount : hourlyRow?.orderCount ?? 0;
+          const hourProductCost = slot ? slot.productCost : products.reduce((s, p) => s + p.productCost, 0);
+          const hourEmpCost = slot ? slot.laborCost : getEmployeeCostForHour(hourLabel);
+          const margin = slot ? slot.margin : sales - hourProductCost - hourEmpCost;
+          const marginPct = sales > 0 ? margin / sales : null;
+          const rowMissingProductCost = slot ? slot.missingProductCost : products.some((p) => p.missingCost);
 
           return (
-            <div key={h.id} className="rounded-lg border border-[var(--line)] bg-white overflow-hidden">
+            <div key={slot ? slot.id : hourlyRow?.id ?? hourLabel} className="rounded-lg border border-[var(--line)] bg-white overflow-hidden">
               <button
                 type="button"
-                onClick={() => setOpenHour(isOpen ? null : h.hour)}
+                onClick={() => setOpenHour(isOpen ? null : hourLabel)}
                 className="flex w-full items-center gap-3 px-3 py-2 text-left transition hover:bg-slate-50/50"
               >
                 {isOpen ? <ChevronDown className="size-3 text-slate-400" /> : <ChevronRight className="size-3 text-slate-400" />}
-                <span className="text-[13px] font-bold text-slate-800 w-12">{h.hour}</span>
-                <span className="text-[12px] text-slate-500">{fmtNum(h.orderCount)} uds</span>
+                <span className="text-[13px] font-bold text-slate-800 w-12">{hourLabel}</span>
+                <span className="text-[12px] text-slate-500">{fmtNum(orderCount)} uds</span>
                 <span className="ml-auto flex items-center gap-3 shrink-0">
-                  <span className="text-[12px] text-slate-500">Venda s/IVA: <span className="font-semibold text-emerald-700">{euro(h.sales)}</span></span>
+                  <span className="text-[12px] text-slate-500">Venda s/IVA: <span className="font-semibold text-emerald-700">{euro(sales)}</span></span>
                   <span className="text-[12px] text-slate-500">Prod: <span className="font-semibold text-rose-600">{euro(hourProductCost)}</span></span>
                   {hourEmpCost > 0 && <span className="text-[12px] text-slate-500">Empl: <span className="font-semibold text-violet-600">{euro(hourEmpCost)}</span></span>}
+                  {marginPct != null && <span className="text-[12px] font-semibold text-slate-500">{(marginPct * 100).toFixed(0)}%</span>}
+                  {rowMissingProductCost && <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">cost?</span>}
                   <span className={`rounded-lg px-2 py-0.5 text-[11px] font-semibold ${margin >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>
                     Marge: {euro(margin)}
                   </span>
@@ -467,17 +515,14 @@ function HourlyDetail({
                       </tr>
                     </thead>
                     <tbody>
-                      {products.sort((a, b) => b.amount - a.amount).map((p) => {
-                        const unitCost = costMap.get(p.productCode) ?? 0;
-                        const totalCostP = unitCost * p.units;
-                        const marginP = p.amount - totalCostP;
+                      {products.sort((a, b) => b.amount - a.amount).map((p, idx) => {
                         return (
-                          <tr key={p.id} className="border-t border-[var(--line)]/30">
+                          <tr key={`${p.productCode}-${p.productName}-${idx}`} className="border-t border-[var(--line)]/30">
                             <td className="py-1 pr-2 text-[12px] text-slate-700">{p.productName}</td>
                             <td className="py-1 text-right text-[12px] text-slate-500">{fmtNum(p.units)}</td>
                             <td className="py-1 text-right text-[12px] text-emerald-700">{euro(p.amount)}</td>
-                            <td className="py-1 text-right text-[12px] text-rose-600">{unitCost > 0 ? euro(totalCostP) : <span className="text-slate-300">--</span>}</td>
-                            <td className={`py-1 text-right text-[12px] font-semibold ${marginP >= 0 ? "text-emerald-700" : "text-rose-600"}`}>{unitCost > 0 ? euro(marginP) : <span className="text-slate-300">--</span>}</td>
+                            <td className="py-1 text-right text-[12px] text-rose-600">{!p.missingCost ? euro(p.productCost) : <span className="text-slate-300">--</span>}</td>
+                            <td className={`py-1 text-right text-[12px] font-semibold ${p.margin >= 0 ? "text-emerald-700" : "text-rose-600"}`}>{!p.missingCost ? euro(p.margin) : <span className="text-slate-300">--</span>}</td>
                           </tr>
                         );
                       })}
@@ -771,6 +816,20 @@ function fmtNum(value: number) {
 }
 
 /** WMO weather codes → emoji */
+/* Hour slot helpers */
+function normalizeHourLabel(hourLabel: string) {
+  return hourLabel.replace(/^0/, "");
+}
+
+function slotSortValue(label: string) {
+  const [hoursText, minutesText = "0"] = label.split(":");
+  const hours = Number(hoursText);
+  const minutes = Number(minutesText);
+  const total = hours * 60 + minutes;
+  return total < BUSINESS_DAY_START_MINUTES ? total + 24 * 60 : total;
+}
+
+/** WMO weather codes */
 function weatherEmoji(code: number): string {
   if (code === 0) return "☀️";
   if (code <= 3) return "⛅";

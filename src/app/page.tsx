@@ -103,10 +103,10 @@ export default async function HomePage({
         />
         <MiniStatCard
           icon={<Clock className="size-4" />}
-          label="Vendes / hora planificada"
-          value={euro(kpis.salesPerPlannedHour)}
-          delta="Planificacio"
-          color="emerald"
+          label="Benefici / hora planificada"
+          value={euro(kpis.controlledMarginPerPlannedHour)}
+          delta="Marge controlable"
+          color={kpis.controlledMarginPerPlannedHour >= 0 ? "emerald" : "rose"}
         />
         <MiniStatCard
           icon={<Percent className="size-4" />}
@@ -156,6 +156,14 @@ export default async function HomePage({
         <FamilyMovements movements={workspace.familyMovements} />
       )}
 
+      {workspace.snapshot.hourlyProfitability.length > 0 && (
+        <HourlyProfitabilityHeatmap
+          slots={workspace.snapshot.hourlyProfitability}
+          summary={workspace.snapshot.hourlyProfitabilitySummary}
+          productCostCoverage={kpis.productCostCoverage}
+        />
+      )}
+
       {/* Day of week + Expense breakdown */}
       <section className="grid gap-5 xl:grid-cols-2">
         {/* Day of week */}
@@ -197,44 +205,139 @@ export default async function HomePage({
         </div>
       </section>
 
-      {/* Hourly performance */}
-      {workspace.snapshot.hourlyPerformance.length > 0 && (
-        <section className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
-          <div className="mb-4">
-            <p className="text-[20px] font-bold tracking-tight text-slate-900">Vendes per hora</p>
-            <p className="mt-0.5 text-[13px] text-slate-500">Acumulat del periode seleccionat</p>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            {buildFullHourRange(workspace.snapshot.hourlyPerformance).map((h) => {
-                const maxSales = Math.max(...workspace.snapshot.hourlyPerformance.map((x) => x.sales), 1);
-                const pct = h.sales > 0 ? (h.sales / maxSales) * 100 : 0;
-                const isBest = h.hour === kpis.bestHourLabel && h.sales > 0;
-                const isEmpty = h.sales === 0;
-                return (
-                  <div key={h.hour} className={`rounded-xl border p-3 transition hover:shadow-sm ${isBest ? "border-indigo-200 bg-indigo-50/50" : isEmpty ? "border-[var(--line)] bg-slate-50/30 opacity-60" : "border-[var(--line)] bg-slate-50/50"}`}>
-                    <div className="flex items-center justify-between">
-                      <span className={`text-[14px] font-bold ${isBest ? "text-indigo-700" : isEmpty ? "text-slate-400" : "text-slate-800"}`}>{h.hour}</span>
-                      <span className={`text-[13px] font-semibold ${isBest ? "text-indigo-700" : isEmpty ? "text-slate-300" : "text-emerald-700"}`}>{isEmpty ? "--" : euro(h.sales)}</span>
-                    </div>
-                    <div className="mt-2 h-1.5 w-full rounded-full bg-slate-200 overflow-hidden">
-                      <div className={`h-full rounded-full transition-all ${isBest ? "bg-indigo-500" : "bg-emerald-400"}`} style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
-          {kpis.bestHourLabel !== "--" && (
-            <div className="mt-4 flex items-center gap-2 rounded-lg bg-indigo-50 px-4 py-2.5">
-              <Clock className="size-4 text-indigo-600" />
-              <p className="text-[13px] text-indigo-800">
-                <span className="font-semibold">Millor franja:</span> {kpis.bestHourLabel} amb {euro(kpis.bestHourSales)} acumulats
-              </p>
-            </div>
-          )}
-        </section>
-      )}
     </AppFrame>
   );
+}
+
+function HourlyProfitabilityHeatmap({
+  slots,
+  summary,
+  productCostCoverage,
+}: {
+  slots: import("@/lib/types").HourlyProfitabilitySlot[];
+  summary: import("@/lib/types").HourlyProfitabilitySummary;
+  productCostCoverage: number;
+}) {
+  const dates = [...new Set(slots.map((slot) => slot.businessDate))].sort();
+  const labels = [...new Set(slots.map((slot) => slot.slotLabel))].sort((a, b) => slotSortValue(a) - slotSortValue(b));
+  const slotMap = new Map(slots.map((slot) => [`${slot.businessDate}|${slot.slotLabel}`, slot] as const));
+  const activeSlots = slots.filter((slot) => slot.hasSales || slot.hasLabor);
+  const maxAbsMargin = Math.max(...activeSlots.map((slot) => Math.abs(slot.margin)), 1);
+  const missingCost = activeSlots.some((slot) => slot.missingProductCost);
+
+  return (
+    <section className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
+      <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+        <div>
+          <p className="text-[20px] font-bold tracking-tight text-slate-900">Rentabilitat per franja</p>
+          <p className="mt-0.5 text-[13px] text-slate-500">
+            Benefici controlable cada 30 min: vendes s/IVA menys producte i personal planificat.
+          </p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <ProfitChip label="Millor franja" value={summary.bestSlot ? `${formatShortDate(summary.bestSlot.businessDate)} ${summary.bestSlot.slotLabel}` : "--"} detail={summary.bestSlot ? euro(summary.bestSlot.margin) : "--"} tone="green" />
+          <ProfitChip label="Pitjor franja" value={summary.worstSlot ? `${formatShortDate(summary.worstSlot.businessDate)} ${summary.worstSlot.slotLabel}` : "--"} detail={summary.worstSlot ? euro(summary.worstSlot.margin) : "--"} tone={summary.worstSlot && summary.worstSlot.margin < 0 ? "red" : "slate"} />
+          <ProfitChip label="Marge / hora" value={euro(summary.marginPerPlannedHour)} detail="planificada" tone={summary.marginPerPlannedHour >= 0 ? "green" : "red"} />
+          <ProfitChip label="Personal sense venda" value={String(summary.lowSalesLaborSlotCount)} detail="franges" tone={summary.lowSalesLaborSlotCount > 0 ? "amber" : "green"} />
+        </div>
+      </div>
+
+      {(missingCost || productCostCoverage < 0.8) && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-[13px] font-medium text-amber-800">
+          Marge incomplet: hi ha productes venuts sense cost registrat. La lectura de benefici pot quedar per sobre de la real.
+        </div>
+      )}
+
+      <div className="overflow-x-auto pb-2">
+        <div
+          className="grid min-w-[1180px] gap-1"
+          style={{ gridTemplateColumns: `124px repeat(${labels.length}, minmax(46px, 1fr))` }}
+        >
+          <div />
+          {labels.map((label) => (
+            <div key={label} className="text-center text-[10px] font-semibold text-slate-400">
+              {label}
+            </div>
+          ))}
+          {dates.map((date) => {
+            const daySlots = slots.filter((slot) => slot.businessDate === date);
+            const dayMargin = daySlots.reduce((sum, slot) => sum + slot.margin, 0);
+            return (
+              <div key={date} className="contents">
+                <div className="flex min-h-[42px] flex-col justify-center rounded-lg bg-slate-50 px-2">
+                  <span className="text-[12px] font-bold text-slate-800">{formatShortDate(date)}</span>
+                  <span className={`text-[11px] font-semibold ${dayMargin >= 0 ? "text-emerald-700" : "text-rose-600"}`}>{euro(dayMargin)}</span>
+                </div>
+                {labels.map((label) => {
+                  const slot = slotMap.get(`${date}|${label}`);
+                  const active = !!slot && (slot.hasSales || slot.hasLabor);
+                  return (
+                    <div
+                      key={`${date}-${label}`}
+                      title={slot ? `${date} ${label}: venda ${euro(slot.sales)} · producte ${euro(slot.productCost)} · personal ${euro(slot.laborCost)} · marge ${euro(slot.margin)}` : `${date} ${label}`}
+                      className="flex min-h-[42px] items-center justify-center rounded-md border border-white text-[10px] font-bold transition hover:scale-[1.03]"
+                      style={profitCellStyle(slot, maxAbsMargin)}
+                    >
+                      {active ? compactMoney(slot.margin) : ""}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2 text-[11px] font-medium text-slate-500">
+        <span className="inline-flex items-center gap-1"><span className="size-3 rounded bg-emerald-300" /> marge positiu</span>
+        <span className="inline-flex items-center gap-1"><span className="size-3 rounded bg-rose-300" /> marge negatiu</span>
+        <span className="inline-flex items-center gap-1"><span className="size-3 rounded bg-slate-100 ring-1 ring-slate-200" /> sense activitat</span>
+      </div>
+    </section>
+  );
+}
+
+function ProfitChip({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: "green" | "red" | "amber" | "slate" }) {
+  const tones = {
+    green: "bg-emerald-50 text-emerald-800",
+    red: "bg-rose-50 text-rose-800",
+    amber: "bg-amber-50 text-amber-800",
+    slate: "bg-slate-50 text-slate-700",
+  };
+  return (
+    <div className={`rounded-xl px-3 py-2 ${tones[tone]}`}>
+      <p className="text-[10px] font-semibold uppercase tracking-wider opacity-70">{label}</p>
+      <p className="mt-0.5 max-w-[130px] truncate text-[12px] font-black">{value}</p>
+      <p className="text-[11px] font-semibold opacity-80">{detail}</p>
+    </div>
+  );
+}
+
+function profitCellStyle(slot: import("@/lib/types").HourlyProfitabilitySlot | undefined, maxAbsMargin: number): React.CSSProperties {
+  if (!slot || (!slot.hasSales && !slot.hasLabor)) {
+    return { backgroundColor: "#f8fafc", color: "#cbd5e1" };
+  }
+  const alpha = Math.min(0.95, Math.max(0.18, Math.abs(slot.margin) / maxAbsMargin));
+  if (slot.margin >= 0) {
+    return { backgroundColor: `rgba(16, 185, 129, ${alpha})`, color: alpha > 0.45 ? "white" : "#065f46" };
+  }
+  return { backgroundColor: `rgba(244, 63, 94, ${alpha})`, color: alpha > 0.45 ? "white" : "#9f1239" };
+}
+
+function slotSortValue(label: string) {
+  const [hoursText, minutesText = "0"] = label.split(":");
+  const hours = Number(hoursText);
+  const minutes = Number(minutesText);
+  const total = hours * 60 + minutes;
+  return total < 4 * 60 ? total + 24 * 60 : total;
+}
+
+function compactMoney(value: number) {
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+  if (abs >= 1000) return `${sign}${(abs / 1000).toFixed(1)}k`;
+  if (abs >= 100) return `${sign}${abs.toFixed(0)}`;
+  return `${sign}${abs.toFixed(abs >= 10 ? 0 : 1)}`;
 }
 
 /* ---------- P&L components ---------- */

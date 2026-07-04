@@ -553,6 +553,47 @@ export interface KpiSnapshot {
   productCostCoverage: number;
   totalProductCost: number;
   totalEmployeeCost: number;
+  controlledMargin: number;
+  controlledMarginPerPlannedHour: number;
+  lowSalesLaborSlotCount: number;
+}
+
+export interface HourlyProfitabilityProduct {
+  productCode: string;
+  productName: string;
+  units: number;
+  amount: number;
+  productCost: number;
+  margin: number;
+  missingCost: boolean;
+}
+
+export interface HourlyProfitabilitySlot {
+  id: string;
+  businessDate: string;
+  slotLabel: string;
+  sales: number;
+  orderCount: number;
+  productCost: number;
+  laborCost: number;
+  laborHours: number;
+  margin: number;
+  marginPct: number | null;
+  productCostCoverage: number;
+  hasSales: boolean;
+  hasLabor: boolean;
+  missingProductCost: boolean;
+  products: HourlyProfitabilityProduct[];
+}
+
+export interface HourlyProfitabilitySummary {
+  bestSlot: HourlyProfitabilitySlot | null;
+  worstSlot: HourlyProfitabilitySlot | null;
+  totalMargin: number;
+  marginPerPlannedHour: number;
+  profitableSlotCount: number;
+  lossSlotCount: number;
+  lowSalesLaborSlotCount: number;
 }
 
 export interface DashboardSnapshot {
@@ -560,6 +601,8 @@ export interface DashboardSnapshot {
   alerts: AlertRecord[];
   documents: DocumentRecord[];
   hourlyPerformance: Array<{ hour: string; sales: number }>;
+  hourlyProfitability: HourlyProfitabilitySlot[];
+  hourlyProfitabilitySummary: HourlyProfitabilitySummary;
   telegramOverview: {
     authorizedUsers: number;
     lastMessages: TelegramMessage[];

@@ -21,9 +21,11 @@ import {
 import { describeCalendarContext, getCalendarContext } from "@/lib/calendar";
 import { classifyFamily } from "@/lib/product-families";
 import { toDashboardDateOnly } from "@/lib/timezone";
-import type { ChatAnswer, DailyCalendarNote, DailyDigest as DailyDigestType, DateFilter, DatePreset, DocumentRecord, Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleShift, FamilyMovement, FinancialWorkspace, HistoricalWeather, HourlyProductSale, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, PlannedLaborRecord, ProductCost, ProductCostHistoryEntry, ProductSaleRecord, SalesReport } from "@/lib/types";
+import type { ChatAnswer, DailyCalendarNote, DailyDigest as DailyDigestType, DateFilter, DatePreset, DocumentRecord, Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleShift, FamilyMovement, FinancialWorkspace, HistoricalWeather, HourlyProductSale, HourlyProfitabilityProduct, HourlyProfitabilitySlot, HourlyProfitabilitySummary, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, PlannedLaborRecord, ProductCost, ProductCostHistoryEntry, ProductSaleRecord, SalesReport } from "@/lib/types";
 
 const BUSINESS_DAY_START_HOUR = 4;
+const BUSINESS_DAY_START_MINUTES = BUSINESS_DAY_START_HOUR * 60;
+const PROFITABILITY_SLOT_MINUTES = 30;
 
 export function resolveDateFilter(input?: {
   preset?: string;
@@ -78,12 +80,13 @@ export async function getFinancialWorkspace(input?: {
   // Extend the sales query to cover the previous period and the same period
   // 52 weeks earlier (DOW-aligned year-over-year) for comparison metrics.
   const comparisonRange = buildComparisonRange(filter);
-  const [documents, salesReports, extendedSales, hourlySales, invoices, payrolls, productSales, previousProductSales, alerts, telegramUsers, telegramMessages, employees, productCosts, productCostHistory, employeeScheduleShifts, employeeCostHistory] =
+  const [documents, salesReports, extendedSales, hourlySales, hourlyProductSales, invoices, payrolls, productSales, previousProductSales, alerts, telegramUsers, telegramMessages, employees, productCosts, productCostHistory, employeeScheduleShifts, employeeCostHistory] =
     await Promise.all([
       listDocuments(filter.from, filter.to),
       listSalesReports(filter.from, filter.to),
       listSalesReports(comparisonRange.from, comparisonRange.to),
       listHourlySales(filter.from, filter.to),
+      listHourlyProductSales(filter.from, filter.to),
       listInvoices(filter.from, filter.to),
       listPayrolls(filter.from, filter.to),
       listProductSales(filter.from, filter.to),
@@ -109,6 +112,7 @@ export async function getFinancialWorkspace(input?: {
   const scopedHourly = hourlySales.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
   const scopedProductSales = productSales.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
   const scopedDocuments = documents.filter((item) => isDateInRange(item.createdAt, fromDate, toDate));
+  const scopedHourlyProducts = hourlyProductSales.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
 
   const totalSales = scopedSales.reduce((sum, item) => sum + item.totalSales, 0);
   const totalExpenses = scopedInvoices.reduce((sum, item) => sum + item.totalAmount, 0);
@@ -143,6 +147,8 @@ export async function getFinancialWorkspace(input?: {
   const plannedLabor = buildPlannedLaborRecords(employeeScheduleShifts, employeeCostHistory, employees);
   const plannedLaborHours = plannedLabor.reduce((sum, row) => sum + row.hours, 0);
   const plannedLaborCost = plannedLabor.reduce((sum, row) => sum + row.totalCost, 0);
+  const hourlyProfitability = buildHourlyProfitabilitySlots(scopedHourly, scopedHourlyProducts, plannedLabor, productCosts, productCostHistory);
+  const hourlyProfitabilitySummary = summarizeHourlyProfitability(hourlyProfitability, plannedLaborHours);
   const laborCostRatio = totalSales > 0 ? plannedLaborCost / totalSales : 0;
   const salesPerPlannedHour = plannedLaborHours > 0 ? totalSales / plannedLaborHours : 0;
   const estimatedMargin = totalSales - totalExpenses - plannedLaborCost;
@@ -184,6 +190,8 @@ export async function getFinancialWorkspace(input?: {
   const productCostCoverage = salesAmountTotal > 0 ? salesAmountWithCost / salesAmountTotal : 0;
 
   const totalEmployeeCost = plannedLaborCost;
+  const controlledMargin = totalSales - totalProductCost - totalEmployeeCost;
+  const controlledMarginPerPlannedHour = plannedLaborHours > 0 ? controlledMargin / plannedLaborHours : 0;
 
   const totalsByCategory = Object.entries(
     scopedInvoices.reduce<Record<string, number>>((acc, invoice) => {
@@ -230,11 +238,16 @@ export async function getFinancialWorkspace(input?: {
         salesPerPlannedHour,
         totalProductCost,
         totalEmployeeCost,
+        controlledMargin,
+        controlledMarginPerPlannedHour,
+        lowSalesLaborSlotCount: hourlyProfitabilitySummary.lowSalesLaborSlotCount,
         productCostCoverage,
       },
       alerts,
       documents: scopedDocuments,
       hourlyPerformance,
+      hourlyProfitability,
+      hourlyProfitabilitySummary,
       telegramOverview: {
         authorizedUsers: telegramUsers.filter((user) => user.isActive).length,
         lastMessages: telegramMessages.slice(0, 3),
@@ -333,6 +346,7 @@ export interface SalesWorkspace {
   hourlySales: HourlySalesEntry[];
   hourlyProductSales: HourlyProductSale[];
   productCosts: ProductCost[];
+  hourlyProfitability: HourlyProfitabilitySlot[];
   plannedLabor: PlannedLaborRecord[];
   employeeCostHistory: EmployeeHourlyCostHistoryEntry[];
   employees: Employee[];
@@ -347,6 +361,12 @@ export interface SalesWorkspace {
     plannedLaborCost: number;
     laborCostRatio: number;
     salesPerPlannedHour: number;
+    totalProductCost: number;
+    controlledMargin: number;
+    controlledMarginPerPlannedHour: number;
+    lowSalesLaborSlotCount: number;
+    lossSlotCount: number;
+    productCostCoverage: number;
   };
 }
 
@@ -356,7 +376,7 @@ export async function getSalesWorkspace(input?: {
   to?: string;
 }): Promise<SalesWorkspace> {
   const filter = resolveDateFilter(input);
-  const [salesReports, productSales, hourlySales, hourlyProductSales, employees, employeeScheduleShifts, employeeCostHistory, productCosts] = await Promise.all([
+  const [salesReports, productSales, hourlySales, hourlyProductSales, employees, employeeScheduleShifts, employeeCostHistory, productCosts, productCostHistory] = await Promise.all([
     listSalesReports(filter.from, filter.to),
     listProductSales(filter.from, filter.to),
     listHourlySales(filter.from, filter.to),
@@ -365,6 +385,7 @@ export async function getSalesWorkspace(input?: {
     listEmployeeScheduleShifts(filter.from, filter.to),
     listAllEmployeeHourlyCostHistory(),
     listProductCosts(),
+    listAllProductCostHistory(),
   ]);
 
   const fromDate = startOfDaySafe(filter.from);
@@ -381,6 +402,21 @@ export async function getSalesWorkspace(input?: {
   const plannedLabor = buildPlannedLaborRecords(employeeScheduleShifts, employeeCostHistory, employees);
   const plannedLaborHours = plannedLabor.reduce((sum, row) => sum + row.hours, 0);
   const plannedLaborCost = plannedLabor.reduce((sum, row) => sum + row.totalCost, 0);
+  const hourlyProfitability = buildHourlyProfitabilitySlots(scopedHourly, scopedHourlyProducts, plannedLabor, productCosts, productCostHistory);
+  const hourlyProfitabilitySummary = summarizeHourlyProfitability(hourlyProfitability, plannedLaborHours);
+  const costHistoryByProduct = buildProductCostHistoryMap(productCostHistory);
+  const currentCostMap = buildCurrentProductCostMap(productCosts);
+  let totalProductCost = 0;
+  let salesAmountWithCost = 0;
+  let salesAmountTotal = 0;
+  for (const item of scopedProducts) {
+    const unitCost = resolveUnitCostForSale(costHistoryByProduct, currentCostMap, item.productCode, item.businessDate);
+    totalProductCost += unitCost * item.units;
+    salesAmountTotal += item.amount;
+    if (unitCost > 0) salesAmountWithCost += item.amount;
+  }
+  const productCostCoverage = salesAmountTotal > 0 ? salesAmountWithCost / salesAmountTotal : 0;
+  const controlledMargin = totalSales - totalProductCost - plannedLaborCost;
 
   const topProducts = Object.values(
     scopedProducts.reduce<Record<string, { productName: string; units: number; amount: number }>>((acc, item) => {
@@ -432,6 +468,7 @@ export async function getSalesWorkspace(input?: {
     hourlySales: scopedHourly,
     hourlyProductSales: scopedHourlyProducts,
     productCosts,
+    hourlyProfitability,
     plannedLabor,
     employeeCostHistory,
     employees,
@@ -446,6 +483,12 @@ export async function getSalesWorkspace(input?: {
       plannedLaborCost,
       laborCostRatio: totalSales > 0 ? plannedLaborCost / totalSales : 0,
       salesPerPlannedHour: plannedLaborHours > 0 ? totalSales / plannedLaborHours : 0,
+      totalProductCost,
+      controlledMargin,
+      controlledMarginPerPlannedHour: plannedLaborHours > 0 ? controlledMargin / plannedLaborHours : 0,
+      lowSalesLaborSlotCount: hourlyProfitabilitySummary.lowSalesLaborSlotCount,
+      lossSlotCount: hourlyProfitabilitySummary.lossSlotCount,
+      productCostCoverage,
     },
   };
 }
@@ -938,6 +981,186 @@ function buildLast7Days(sortedDesc: SalesReport[], todayDate: Date): Array<{ dat
     out.push({ date: iso, sales: byDate.get(iso) ?? 0 });
   }
   return out;
+}
+
+function buildHourlyProfitabilitySlots(
+  hourlySales: HourlySalesEntry[],
+  hourlyProducts: HourlyProductSale[],
+  plannedLabor: PlannedLaborRecord[],
+  productCosts: ProductCost[],
+  productCostHistory: ProductCostHistoryEntry[],
+): HourlyProfitabilitySlot[] {
+  const costHistoryByProduct = buildProductCostHistoryMap(productCostHistory);
+  const currentCostMap = buildCurrentProductCostMap(productCosts);
+  const dateSet = new Set<string>();
+  for (const row of hourlySales) dateSet.add(row.businessDate);
+  for (const row of hourlyProducts) dateSet.add(row.businessDate);
+  for (const row of plannedLabor) dateSet.add(row.businessDate);
+
+  const hourlyMap = new Map<string, { sales: number; orderCount: number }>();
+  for (const row of hourlySales) {
+    const key = profitabilityKey(row.businessDate, row.hour);
+    const existing = hourlyMap.get(key) ?? { sales: 0, orderCount: 0 };
+    existing.sales += row.sales;
+    existing.orderCount += row.orderCount;
+    hourlyMap.set(key, existing);
+  }
+
+  const productsBySlot = new Map<string, HourlyProfitabilityProduct[]>();
+  for (const row of hourlyProducts) {
+    const key = profitabilityKey(row.businessDate, row.hourLabel);
+    const unitCost = resolveUnitCostForSale(costHistoryByProduct, currentCostMap, row.productCode, row.businessDate);
+    const productCost = unitCost * row.units;
+    const existing = productsBySlot.get(key) ?? [];
+    existing.push({
+      productCode: row.productCode,
+      productName: row.productName,
+      units: row.units,
+      amount: row.amount,
+      productCost,
+      margin: row.amount - productCost,
+      missingCost: unitCost <= 0 && row.amount > 0,
+    });
+    productsBySlot.set(key, existing);
+  }
+
+  const slotLabels = buildProfitabilitySlotLabels();
+  const slots: HourlyProfitabilitySlot[] = [];
+  for (const businessDate of [...dateSet].sort()) {
+    const dayLabor = plannedLabor.filter((row) => row.businessDate === businessDate);
+    for (const slotLabel of slotLabels) {
+      const key = profitabilityKey(businessDate, slotLabel);
+      const salesEntry = hourlyMap.get(key) ?? { sales: 0, orderCount: 0 };
+      const products = productsBySlot.get(key) ?? [];
+      const productCost = products.reduce((sum, row) => sum + row.productCost, 0);
+      const productSales = products.reduce((sum, row) => sum + row.amount, 0);
+      const productSalesWithCost = products.reduce((sum, row) => sum + (row.missingCost ? 0 : row.amount), 0);
+      const slotStart = slotStartMinutes(slotLabel);
+      const slotEnd = slotStart + PROFITABILITY_SLOT_MINUTES;
+      let laborCost = 0;
+      let laborHours = 0;
+      for (const shift of dayLabor) {
+        const overlap = shiftOverlapMinutes(shift.shiftStart, shift.shiftEnd, slotStart, slotEnd);
+        if (overlap <= 0) continue;
+        laborHours += overlap / 60;
+        laborCost += (overlap / 60) * shift.hourlyCost;
+      }
+
+      const margin = salesEntry.sales - productCost - laborCost;
+      const hasSales = salesEntry.sales > 0;
+      const hasLabor = laborCost > 0;
+      const missingProductCost = products.some((row) => row.missingCost) || (hasSales && productSales <= 0);
+      const productCostCoverage = productSales > 0 ? productSalesWithCost / productSales : hasSales ? 0 : 1;
+
+      slots.push({
+        id: `${businessDate}-${normalizeHourLabel(slotLabel).replace(":", "")}`,
+        businessDate,
+        slotLabel: normalizeHourLabel(slotLabel),
+        sales: salesEntry.sales,
+        orderCount: salesEntry.orderCount,
+        productCost,
+        laborCost,
+        laborHours,
+        margin,
+        marginPct: hasSales ? margin / salesEntry.sales : null,
+        productCostCoverage,
+        hasSales,
+        hasLabor,
+        missingProductCost,
+        products: products.sort((a, b) => b.amount - a.amount),
+      });
+    }
+  }
+
+  return slots;
+}
+
+function summarizeHourlyProfitability(
+  slots: HourlyProfitabilitySlot[],
+  plannedLaborHours: number,
+): HourlyProfitabilitySummary {
+  const activeSlots = slots.filter((slot) => slot.hasSales || slot.hasLabor);
+  const slotsWithSales = activeSlots.filter((slot) => slot.hasSales);
+  const bestSlot = slotsWithSales.length > 0
+    ? [...slotsWithSales].sort((a, b) => b.margin - a.margin)[0]
+    : null;
+  const worstSlot = activeSlots.length > 0
+    ? [...activeSlots].sort((a, b) => a.margin - b.margin)[0]
+    : null;
+  const totalMargin = activeSlots.reduce((sum, slot) => sum + slot.margin, 0);
+  return {
+    bestSlot,
+    worstSlot,
+    totalMargin,
+    marginPerPlannedHour: plannedLaborHours > 0 ? totalMargin / plannedLaborHours : 0,
+    profitableSlotCount: activeSlots.filter((slot) => slot.margin >= 0 && slot.hasSales).length,
+    lossSlotCount: activeSlots.filter((slot) => slot.margin < 0).length,
+    lowSalesLaborSlotCount: activeSlots.filter((slot) => slot.hasLabor && slot.sales < slot.laborCost).length,
+  };
+}
+
+function buildProductCostHistoryMap(productCostHistory: ProductCostHistoryEntry[]) {
+  const costHistoryByProduct = new Map<string, ProductCostHistoryEntry[]>();
+  for (const entry of productCostHistory) {
+    const list = costHistoryByProduct.get(entry.productCode) ?? [];
+    list.push(entry);
+    costHistoryByProduct.set(entry.productCode, list);
+  }
+  for (const list of costHistoryByProduct.values()) {
+    list.sort((a, b) => b.validFrom.localeCompare(a.validFrom));
+  }
+  return costHistoryByProduct;
+}
+
+function buildCurrentProductCostMap(productCosts: ProductCost[]) {
+  const currentCostMap = new Map<string, number>();
+  for (const pc of productCosts) currentCostMap.set(pc.productCode, pc.unitCost);
+  return currentCostMap;
+}
+
+function buildProfitabilitySlotLabels() {
+  const slots: string[] = [];
+  for (let h = 9; h <= 23; h++) {
+    slots.push(`${h}:00`, `${h}:30`);
+  }
+  for (let h = 0; h <= 2; h++) {
+    slots.push(`${h}:00`, `${h}:30`);
+  }
+  slots.push("3:00");
+  return slots;
+}
+
+function profitabilityKey(businessDate: string, hourLabel: string) {
+  return `${businessDate}|${normalizeHourLabel(hourLabel)}`;
+}
+
+function normalizeHourLabel(hourLabel: string) {
+  return hourLabel.replace(/^0/, "");
+}
+
+function slotStartMinutes(hourLabel: string) {
+  const minutes = timeToMinutes(hourLabel);
+  return minutes < BUSINESS_DAY_START_MINUTES ? minutes + 24 * 60 : minutes;
+}
+
+function shiftOverlapMinutes(start: string, end: string, slotStart: number, slotEnd: number) {
+  let shiftStart = timeToMinutes(start);
+  let shiftEnd = timeToMinutes(end);
+  if (shiftStart < BUSINESS_DAY_START_MINUTES) shiftStart += 24 * 60;
+  if (shiftEnd < BUSINESS_DAY_START_MINUTES) shiftEnd += 24 * 60;
+  if (shiftEnd <= shiftStart) shiftEnd += 24 * 60;
+
+  const overlapStart = Math.max(shiftStart, slotStart);
+  const overlapEnd = Math.min(shiftEnd, slotEnd);
+  return Math.max(0, overlapEnd - overlapStart);
+}
+
+function timeToMinutes(value: string) {
+  const [hoursText, minutesText = "0"] = value.split(":");
+  const hours = Number(hoursText);
+  const minutes = Number(minutesText);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return 0;
+  return hours * 60 + minutes;
 }
 
 /** Given a product's cost-history list (sorted valid_from DESC) and a sale
