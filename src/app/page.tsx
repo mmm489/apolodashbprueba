@@ -164,6 +164,14 @@ export default async function HomePage({
         />
       )}
 
+      {workspace.snapshot.hourlyPerformance.length > 0 && (
+        <HourlyRevenueGrid
+          data={workspace.snapshot.hourlyPerformance}
+          bestHourLabel={kpis.bestHourLabel}
+          bestHourSales={kpis.bestHourSales}
+        />
+      )}
+
       {/* Day of week + Expense breakdown */}
       <section className="grid gap-5 xl:grid-cols-2">
         {/* Day of week */}
@@ -206,6 +214,70 @@ export default async function HomePage({
       </section>
 
     </AppFrame>
+  );
+}
+
+function HourlyRevenueGrid({
+  data,
+  bestHourLabel,
+  bestHourSales,
+}: {
+  data: Array<{ hour: string; sales: number }>;
+  bestHourLabel: string;
+  bestHourSales: number;
+}) {
+  const filled = buildFullHourRange(data);
+  const maxSales = Math.max(...filled.map((item) => item.sales), 1);
+
+  return (
+    <section className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
+      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-[20px] font-bold tracking-tight text-slate-900">Ingressos per hora</p>
+          <p className="mt-0.5 text-[13px] text-slate-500">Vendes s/IVA acumulades del periode seleccionat.</p>
+        </div>
+        {bestHourLabel !== "--" && (
+          <div className="inline-flex items-center gap-2 rounded-lg bg-indigo-50 px-3 py-2">
+            <Clock className="size-4 text-indigo-600" />
+            <p className="text-[13px] text-indigo-800">
+              <span className="font-semibold">Millor franja:</span> {bestHourLabel} · {euro(bestHourSales)}
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {filled.map((h) => {
+          const pct = h.sales > 0 ? (h.sales / maxSales) * 100 : 0;
+          const isBest = h.hour === bestHourLabel && h.sales > 0;
+          const isEmpty = h.sales === 0;
+          return (
+            <div
+              key={h.hour}
+              className={`rounded-xl border p-3 transition hover:shadow-sm ${
+                isBest
+                  ? "border-indigo-200 bg-indigo-50/50"
+                  : isEmpty
+                    ? "border-[var(--line)] bg-slate-50/30 opacity-60"
+                    : "border-[var(--line)] bg-slate-50/50"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className={`text-[14px] font-bold ${isBest ? "text-indigo-700" : isEmpty ? "text-slate-400" : "text-slate-800"}`}>
+                  {h.hour}
+                </span>
+                <span className={`text-[13px] font-semibold ${isBest ? "text-indigo-700" : isEmpty ? "text-slate-300" : "text-emerald-700"}`}>
+                  {isEmpty ? "--" : euro(h.sales)}
+                </span>
+              </div>
+              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                <div className={`h-full rounded-full transition-all ${isBest ? "bg-indigo-500" : "bg-emerald-400"}`} style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
