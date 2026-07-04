@@ -349,6 +349,13 @@ function HourlyProfitabilityHeatmap({
   const maxAbsMargin = Math.max(...activeSlots.map((slot) => Math.abs(slot.margin)), 1);
   const missingCost = activeSlots.some((slot) => slot.missingProductCost);
   const metricConfig = PROFITABILITY_METRICS.find((item) => item.id === metric) ?? PROFITABILITY_METRICS[0];
+  const periodSlotMap = new Map(
+    labels.map((label) => [
+      label,
+      aggregateProfitabilitySlots(label, slots.filter((slot) => slot.slotLabel === label), dates.length),
+    ] as const),
+  );
+  const periodMargin = activeSlots.reduce((sum, slot) => sum + slot.margin, 0);
 
   return (
     <section className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
@@ -403,6 +410,32 @@ function HourlyProfitabilityHeatmap({
               {label}
             </div>
           ))}
+          <div className="contents">
+            <div className="flex min-h-[48px] flex-col justify-center rounded-lg border border-indigo-100 bg-indigo-50 px-2">
+              <span className="text-[12px] font-black text-indigo-900">Periode</span>
+              <span className={`text-[11px] font-semibold ${periodMargin >= 0 ? "text-emerald-700" : "text-rose-600"}`}>{euro(periodMargin)}</span>
+            </div>
+            {labels.map((label) => {
+              const slot = periodSlotMap.get(label);
+              const active = !!slot && (slot.hasSales || slot.hasLabor);
+              const metricValue = slot ? getProfitMetricValue(slot, metric) : null;
+              return (
+                <div
+                  key={`period-${label}`}
+                  title={slot ? `Periode ${label}: ${metricConfig.label} ${metricValue?.longDisplay ?? "--"} · mitjana ${formatEmployeeCount(slot.employeeCount)} empleats · venda ${euro(slot.sales)} · producte ${euro(slot.productCost)} · personal ${euro(slot.laborCost)} · marge ${euro(slot.margin)}` : `Periode ${label}`}
+                  className="flex min-h-[48px] flex-col items-center justify-center rounded-md border border-indigo-100 text-[10px] font-black leading-tight ring-1 ring-indigo-100 transition hover:scale-[1.03]"
+                  style={profitCellStyle(slot, maxAbsMargin, metric)}
+                >
+                  {active && (
+                    <>
+                      <span>{metricValue?.display ?? "--"}</span>
+                      {slot.employeeCount > 0 && <span className="text-[9px] font-semibold opacity-80">Ø {formatEmployeeCount(slot.employeeCount)} emp.</span>}
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
           {dates.map((date) => {
             const daySlots = slots.filter((slot) => slot.businessDate === date);
             const dayMargin = daySlots.reduce((sum, slot) => sum + slot.margin, 0);
@@ -426,7 +459,7 @@ function HourlyProfitabilityHeatmap({
                       {active && (
                         <>
                           <span>{metricValue?.display ?? "--"}</span>
-                          {slot.employeeCount > 0 && <span className="text-[9px] font-semibold opacity-80">{slot.employeeCount} emp.</span>}
+                          {slot.employeeCount > 0 && <span className="text-[9px] font-semibold opacity-80">{formatEmployeeCount(slot.employeeCount)} emp.</span>}
                         </>
                       )}
                     </div>
@@ -461,6 +494,51 @@ function ProfitChip({ label, value, detail, tone }: { label: string; value: stri
       <p className="text-[11px] font-semibold opacity-80">{detail}</p>
     </div>
   );
+}
+
+function aggregateProfitabilitySlots(
+  label: string,
+  slots: import("@/lib/types").HourlyProfitabilitySlot[],
+  dateCount: number,
+): import("@/lib/types").HourlyProfitabilitySlot {
+  const sales = slots.reduce((sum, slot) => sum + slot.sales, 0);
+  const orderCount = slots.reduce((sum, slot) => sum + slot.orderCount, 0);
+  const productCost = slots.reduce((sum, slot) => sum + slot.productCost, 0);
+  const laborCost = slots.reduce((sum, slot) => sum + slot.laborCost, 0);
+  const laborHours = slots.reduce((sum, slot) => sum + slot.laborHours, 0);
+  const products = slots.flatMap((slot) => slot.products);
+  const productSales = products.reduce((sum, row) => sum + row.amount, 0);
+  const productSalesWithCost = products.reduce((sum, row) => sum + (row.missingCost ? 0 : row.amount), 0);
+  const employeeCount = slots.reduce((sum, slot) => sum + slot.employeeCount, 0) / Math.max(dateCount, 1);
+  const margin = sales - productCost - laborCost;
+
+  return {
+    id: `period-${normalizeSlotId(label)}`,
+    businessDate: "periode",
+    slotLabel: label,
+    sales,
+    orderCount,
+    productCost,
+    laborCost,
+    laborHours,
+    employeeCount,
+    margin,
+    marginPct: sales > 0 ? margin / sales : null,
+    productCostCoverage: productSales > 0 ? productSalesWithCost / productSales : sales > 0 ? 0 : 1,
+    hasSales: sales > 0,
+    hasLabor: laborCost > 0,
+    missingProductCost: slots.some((slot) => slot.missingProductCost),
+    products: products.sort((a, b) => b.amount - a.amount),
+  };
+}
+
+function formatEmployeeCount(value: number) {
+  if (Number.isInteger(value)) return String(value);
+  return value.toFixed(1).replace(/\.0$/, "");
+}
+
+function normalizeSlotId(label: string) {
+  return label.replace(/[^0-9]/g, "");
 }
 
 function profitCellStyle(
