@@ -212,6 +212,13 @@ export default async function HomePage({
         />
       )}
 
+      {workspace.snapshot.hourlyProfitability.length > 0 && (
+        <StaffPlanningInsights
+          slots={workspace.snapshot.hourlyProfitability}
+          plannedLabor={workspace.plannedLabor}
+        />
+      )}
+
       {workspace.snapshot.hourlyPerformance.length > 0 && (
         <HourlyRevenueGrid
           data={workspace.snapshot.hourlyPerformance}
@@ -496,6 +503,267 @@ function ProfitChip({ label, value, detail, tone }: { label: string; value: stri
   );
 }
 
+function StaffPlanningInsights({
+  slots,
+  plannedLabor,
+}: {
+  slots: import("@/lib/types").HourlyProfitabilitySlot[];
+  plannedLabor: import("@/lib/types").PlannedLaborRecord[];
+}) {
+  const analysis = buildStaffPlanningAnalysis(slots, plannedLabor);
+  const hasLaborData = plannedLabor.length > 0;
+
+  return (
+    <section className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
+      <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <Sparkles className="size-5 text-violet-600" />
+            <p className="text-[20px] font-bold tracking-tight text-slate-900">Analisi de personal</p>
+          </div>
+          <p className="mt-0.5 text-[13px] text-slate-500">
+            Recomanacions calculades amb vendes, marge, cost/hora i planificacio. Es una guia per revisar torns, no un canvi automatic.
+          </p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <ProfitChip label="Cost personal" value={`${(analysis.laborShare * 100).toFixed(1)}%`} detail="sobre vendes" tone={analysis.laborShare <= 0.25 ? "green" : analysis.laborShare <= 0.4 ? "amber" : "red"} />
+          <ProfitChip label="Venda / hora emp." value={euro(analysis.salesPerLaborHour)} detail="productivitat" tone={analysis.salesPerLaborHour >= 80 ? "green" : analysis.salesPerLaborHour >= 45 ? "amber" : "red"} />
+          <ProfitChip label="Franges a revisar" value={String(analysis.overstaffed.length)} detail="possible exces" tone={analysis.overstaffed.length > 0 ? "amber" : "green"} />
+        </div>
+      </div>
+
+      {!hasLaborData ? (
+        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-center">
+          <Users className="mx-auto size-8 text-slate-300" />
+          <p className="mt-2 text-[14px] font-semibold text-slate-700">Falten torns planificats</p>
+          <p className="mt-1 text-[13px] text-slate-500">Quan hi hagi planificacio, aqui apareixeran excessos, reforcos i rendiment per empleat.</p>
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-4 xl:grid-cols-3">
+            <StaffInsightCard
+              title="Possible exces"
+              description="Franges on el cost de personal pesa massa o el marge queda negatiu."
+              empty="No hi ha franges clares d'exces en aquest periode."
+              tone="red"
+              items={analysis.overstaffed.slice(0, 4).map((item) => ({
+                key: item.key,
+                title: `${formatShortDate(item.slot.businessDate)} ${item.slot.slotLabel}`,
+                meta: `${formatEmployeeCount(item.slot.employeeCount)} emp. · personal ${euro(item.slot.laborCost)}`,
+                value: `Marge ${euro(item.slot.margin)}`,
+              }))}
+            />
+            <StaffInsightCard
+              title="Pot faltar reforc"
+              description="Franges amb molta venda per hora-empleat. Poden anar massa carregades."
+              empty="No detecto franges saturades amb les dades actuals."
+              tone="green"
+              items={analysis.reinforce.slice(0, 4).map((item) => ({
+                key: item.key,
+                title: `${formatShortDate(item.slot.businessDate)} ${item.slot.slotLabel}`,
+                meta: `${euro(item.salesPerLaborHour)}/h emp. · ${formatEmployeeCount(item.slot.employeeCount)} emp.`,
+                value: `Vendes ${euro(item.slot.sales)}`,
+              }))}
+            />
+            <StaffInsightCard
+              title="Personal sense venda"
+              description="Torns amb cost de personal i poca o cap venda registrada."
+              empty="No hi ha franges amb personal sense venda."
+              tone="amber"
+              items={analysis.zeroSalesLabor.slice(0, 4).map((item) => ({
+                key: item.key,
+                title: `${formatShortDate(item.slot.businessDate)} ${item.slot.slotLabel}`,
+                meta: `${formatEmployeeCount(item.slot.employeeCount)} emp. actius`,
+                value: `Cost ${euro(item.slot.laborCost)}`,
+              }))}
+            />
+          </div>
+
+          <div className="mt-5 rounded-xl border border-[var(--line)] bg-slate-50/50 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[15px] font-bold text-slate-900">Lectura per empleat</p>
+                <p className="text-[12px] text-slate-500">La venda i marge s'assignen proporcionalment al temps que cada empleat esta planificat en cada franja.</p>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead>
+                  <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    <th className="pb-2">Empleat</th>
+                    <th className="pb-2 text-right">Hores</th>
+                    <th className="pb-2 text-right">Cost</th>
+                    <th className="pb-2 text-right">Venda/h emp.</th>
+                    <th className="pb-2 text-right">% personal</th>
+                    <th className="pb-2 text-right">Franges febles</th>
+                    <th className="pb-2 text-right">Lectura</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {analysis.employees.slice(0, 8).map((employee) => {
+                    const share = employee.allocatedSales > 0 ? employee.cost / employee.allocatedSales : null;
+                    const salesPerHour = employee.hours > 0 ? employee.allocatedSales / employee.hours : 0;
+                    const tone = share == null ? "text-slate-400" : share <= 0.25 ? "text-emerald-700" : share <= 0.4 ? "text-amber-700" : "text-rose-700";
+                    const label = share == null ? "sense venda" : share <= 0.25 ? "sa" : share <= 0.4 ? "vigilar" : "car";
+                    return (
+                      <tr key={employee.employeeId} className="border-t border-[var(--line)]">
+                        <td className="py-2 pr-3 font-semibold text-slate-800">{employee.employeeName}</td>
+                        <td className="py-2 text-right text-slate-600">{employee.hours.toFixed(1)} h</td>
+                        <td className="py-2 text-right text-slate-600">{euro(employee.cost)}</td>
+                        <td className="py-2 text-right font-semibold text-slate-800">{euro(salesPerHour)}</td>
+                        <td className={`py-2 text-right font-semibold ${tone}`}>{share == null ? "--" : `${(share * 100).toFixed(0)}%`}</td>
+                        <td className="py-2 text-right text-slate-600">{employee.weakSlotCount}</td>
+                        <td className={`py-2 text-right font-semibold ${tone}`}>{label}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function StaffInsightCard({
+  title,
+  description,
+  empty,
+  tone,
+  items,
+}: {
+  title: string;
+  description: string;
+  empty: string;
+  tone: "green" | "red" | "amber";
+  items: Array<{ key: string; title: string; meta: string; value: string }>;
+}) {
+  const tones = {
+    green: "border-emerald-100 bg-emerald-50/50 text-emerald-700",
+    red: "border-rose-100 bg-rose-50/50 text-rose-700",
+    amber: "border-amber-100 bg-amber-50/50 text-amber-700",
+  };
+
+  return (
+    <div className="rounded-xl border border-[var(--line)] bg-white p-4">
+      <p className="text-[15px] font-bold text-slate-900">{title}</p>
+      <p className="mt-0.5 min-h-[34px] text-[12px] text-slate-500">{description}</p>
+      {items.length === 0 ? (
+        <p className="mt-3 rounded-lg bg-slate-50 px-3 py-3 text-[12px] font-medium text-slate-400">{empty}</p>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {items.map((item) => (
+            <div key={item.key} className={`rounded-lg border px-3 py-2 ${tones[tone]}`}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[13px] font-black">{item.title}</p>
+                <p className="text-[12px] font-black">{item.value}</p>
+              </div>
+              <p className="mt-0.5 text-[11px] font-semibold opacity-80">{item.meta}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function buildStaffPlanningAnalysis(
+  slots: import("@/lib/types").HourlyProfitabilitySlot[],
+  plannedLabor: import("@/lib/types").PlannedLaborRecord[],
+) {
+  const activeSlots = slots.filter((slot) => slot.hasSales || slot.hasLabor);
+  const totalSales = activeSlots.reduce((sum, slot) => sum + slot.sales, 0);
+  const totalLaborCost = activeSlots.reduce((sum, slot) => sum + slot.laborCost, 0);
+  const totalLaborHours = activeSlots.reduce((sum, slot) => sum + slot.laborHours, 0);
+
+  const slotRows = activeSlots.map((slot) => {
+    const laborShare = slot.sales > 0 ? slot.laborCost / slot.sales : slot.hasLabor ? Infinity : 0;
+    const salesPerLaborHour = slot.laborHours > 0 ? slot.sales / slot.laborHours : slot.sales > 0 ? Infinity : 0;
+    const grossMargin = slot.sales - slot.productCost;
+    const grossMarginLaborRatio = slot.laborCost > 0 ? grossMargin / slot.laborCost : grossMargin > 0 ? Infinity : 0;
+    return {
+      key: `${slot.businessDate}-${slot.slotLabel}`,
+      slot,
+      laborShare,
+      salesPerLaborHour,
+      grossMarginLaborRatio,
+    };
+  });
+
+  const overstaffed = slotRows
+    .filter((row) => row.slot.hasLabor && (row.slot.margin < 0 || row.laborShare > 0.45 || row.slot.sales < row.slot.laborCost * 1.5))
+    .sort((a, b) => (a.slot.margin - b.slot.margin) || (b.laborShare - a.laborShare));
+
+  const reinforce = slotRows
+    .filter((row) => row.slot.hasSales && row.slot.hasLabor && row.salesPerLaborHour >= 95 && row.grossMarginLaborRatio >= 2)
+    .sort((a, b) => b.salesPerLaborHour - a.salesPerLaborHour);
+
+  const zeroSalesLabor = slotRows
+    .filter((row) => row.slot.hasLabor && row.slot.sales <= 0)
+    .sort((a, b) => b.slot.laborCost - a.slot.laborCost);
+
+  const employees = buildEmployeeLaborInsights(slots, plannedLabor);
+
+  return {
+    laborShare: totalSales > 0 ? totalLaborCost / totalSales : 0,
+    salesPerLaborHour: totalLaborHours > 0 ? totalSales / totalLaborHours : 0,
+    overstaffed,
+    reinforce,
+    zeroSalesLabor,
+    employees,
+  };
+}
+
+function buildEmployeeLaborInsights(
+  slots: import("@/lib/types").HourlyProfitabilitySlot[],
+  plannedLabor: import("@/lib/types").PlannedLaborRecord[],
+) {
+  const employeeMap = new Map<string, {
+    employeeId: string;
+    employeeName: string;
+    hours: number;
+    cost: number;
+    allocatedSales: number;
+    allocatedMargin: number;
+    weakSlotCount: number;
+  }>();
+
+  for (const shift of plannedLabor) {
+    const row = employeeMap.get(shift.employeeId) ?? {
+      employeeId: shift.employeeId,
+      employeeName: shift.employeeName,
+      hours: 0,
+      cost: 0,
+      allocatedSales: 0,
+      allocatedMargin: 0,
+      weakSlotCount: 0,
+    };
+    row.hours += shift.hours;
+    row.cost += shift.totalCost;
+
+    const daySlots = slots.filter((slot) => slot.businessDate === shift.businessDate && slot.laborHours > 0);
+    for (const slot of daySlots) {
+      const slotStart = staffSlotStartMinutes(slot.slotLabel);
+      const overlapHours = staffShiftOverlapMinutes(shift.shiftStart, shift.shiftEnd, slotStart, slotStart + 30) / 60;
+      if (overlapHours <= 0) continue;
+      const share = overlapHours / slot.laborHours;
+      row.allocatedSales += slot.sales * share;
+      row.allocatedMargin += slot.margin * share;
+      if (slot.sales < slot.laborCost) row.weakSlotCount += 1;
+    }
+
+    employeeMap.set(shift.employeeId, row);
+  }
+
+  return [...employeeMap.values()].sort((a, b) => {
+    const aShare = a.allocatedSales > 0 ? a.cost / a.allocatedSales : Infinity;
+    const bShare = b.allocatedSales > 0 ? b.cost / b.allocatedSales : Infinity;
+    return bShare - aShare;
+  });
+}
+
 function aggregateProfitabilitySlots(
   label: string,
   slots: import("@/lib/types").HourlyProfitabilitySlot[],
@@ -539,6 +807,25 @@ function formatEmployeeCount(value: number) {
 
 function normalizeSlotId(label: string) {
   return label.replace(/[^0-9]/g, "");
+}
+
+function staffSlotStartMinutes(label: string) {
+  const [hoursText, minutesText = "0"] = label.split(":");
+  const total = Number(hoursText) * 60 + Number(minutesText);
+  return total < 4 * 60 ? total + 24 * 60 : total;
+}
+
+function staffTimeToMinutes(value: string) {
+  const [hoursText, minutesText = "0"] = value.split(":");
+  const total = Number(hoursText) * 60 + Number(minutesText);
+  return total < 4 * 60 ? total + 24 * 60 : total;
+}
+
+function staffShiftOverlapMinutes(start: string, end: string, slotStart: number, slotEnd: number) {
+  const shiftStart = staffTimeToMinutes(start);
+  let shiftEnd = staffTimeToMinutes(end);
+  if (shiftEnd <= shiftStart) shiftEnd += 24 * 60;
+  return Math.max(0, Math.min(shiftEnd, slotEnd) - Math.max(shiftStart, slotStart));
 }
 
 function profitCellStyle(
