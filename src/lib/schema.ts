@@ -193,6 +193,13 @@ CREATE TABLE IF NOT EXISTS employee_schedule_links (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS employee_schedule_week_publications (
+  week_start DATE PRIMARY KEY,
+  is_visible BOOLEAN NOT NULL DEFAULT FALSE,
+  published_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS accounting_accounts (
   id TEXT PRIMARY KEY,
   code TEXT NOT NULL UNIQUE,

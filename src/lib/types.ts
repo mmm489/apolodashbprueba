@@ -240,6 +240,13 @@ export interface EmployeeScheduleShare {
   createdAt: string;
 }
 
+export interface EmployeeScheduleWeekPublication {
+  weekStart: string;
+  isVisible: boolean;
+  publishedAt: string | null;
+  updatedAt: string | null;
+}
+
 export interface PlannedLaborRecord {
   id: string;
   employeeId: string;

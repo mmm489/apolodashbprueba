@@ -84,6 +84,15 @@ export default async function EmployeeSchedulePage({
           </div>
         </section>
 
+        {!data.isPublished ? (
+          <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-600">Horari pendent</p>
+            <h2 className="mt-2 text-2xl font-black text-amber-950">Aquesta setmana encara no esta publicada</h2>
+            <p className="mt-2 text-sm font-bold text-amber-800">
+              L'encarregat esta preparant els torns. Torna a consultar aquest enllac quan t'avisin.
+            </p>
+          </section>
+        ) : (
         <section className="overflow-hidden rounded-3xl border border-[#dacfbf] bg-white shadow-sm">
           <div className="border-b border-[#e5dccf] px-5 py-4">
             <h2 className="text-xl font-black">Setmana</h2>
@@ -123,6 +132,7 @@ export default async function EmployeeSchedulePage({
             })}
           </div>
         </section>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <Link

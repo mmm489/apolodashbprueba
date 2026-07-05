@@ -2674,6 +2674,14 @@ async function ensureEmployeeScheduleTables() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await sql.query(`
+    CREATE TABLE IF NOT EXISTS employee_schedule_week_publications (
+      week_start DATE PRIMARY KEY,
+      is_visible BOOLEAN NOT NULL DEFAULT FALSE,
+      published_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
   employeeScheduleTablesEnsured = true;
 }
 
@@ -2762,6 +2770,7 @@ export async function getEmployeeScheduleByToken(token: string, from: string, to
   const employee = employees.find((item) => item.id === employeeId);
   if (!employee) return null;
 
+  const publication = await getEmployeeScheduleWeekPublication(from);
   const shifts = (await listEmployeeScheduleShifts(from, to))
     .filter((shift) => shift.employeeId === employeeId);
 
@@ -2772,8 +2781,79 @@ export async function getEmployeeScheduleByToken(token: string, from: string, to
       token: String(link.token),
       createdAt: normalizeDateTime(link.created_at),
     } satisfies EmployeeScheduleShare,
-    shifts,
+    publication,
+    isPublished: publication.isVisible,
+    shifts: publication.isVisible ? shifts : [],
   };
+}
+
+export async function getEmployeeScheduleWeekPublication(weekStart: string) {
+  if (!isValidDateOnly(weekStart)) {
+    throw new Error("Semana no valida.");
+  }
+  if (!hasDatabase()) {
+    return {
+      weekStart,
+      isVisible: false,
+      publishedAt: null,
+      updatedAt: null,
+    };
+  }
+
+  await ensureEmployeeScheduleTables();
+  const sql = getSql();
+  const rows = await sql.query(
+    `
+      SELECT week_start, is_visible, published_at, updated_at
+      FROM employee_schedule_week_publications
+      WHERE week_start = $1::date
+      LIMIT 1
+    `,
+    [weekStart],
+  );
+
+  if (!rows[0]) {
+    return {
+      weekStart,
+      isVisible: false,
+      publishedAt: null,
+      updatedAt: null,
+    };
+  }
+
+  return mapEmployeeScheduleWeekPublication(rows[0]);
+}
+
+export async function setEmployeeScheduleWeekPublication(weekStart: string, isVisible: boolean) {
+  if (!isValidDateOnly(weekStart)) {
+    throw new Error("Semana no valida.");
+  }
+  if (!hasDatabase()) return {
+    weekStart,
+    isVisible,
+    publishedAt: isVisible ? new Date().toISOString() : null,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await ensureEmployeeScheduleTables();
+  const sql = getSql();
+  const rows = await sql.query(
+    `
+      INSERT INTO employee_schedule_week_publications (week_start, is_visible, published_at, updated_at)
+      VALUES ($1::date, $2::boolean, CASE WHEN $2::boolean THEN NOW() ELSE NULL END, NOW())
+      ON CONFLICT (week_start)
+      DO UPDATE SET
+        is_visible = EXCLUDED.is_visible,
+        published_at = CASE
+          WHEN EXCLUDED.is_visible THEN COALESCE(employee_schedule_week_publications.published_at, NOW())
+          ELSE NULL
+        END,
+        updated_at = NOW()
+      RETURNING week_start, is_visible, published_at, updated_at
+    `,
+    [weekStart, isVisible],
+  );
+  return mapEmployeeScheduleWeekPublication(rows[0]);
 }
 
 export async function upsertEmployeeScheduleShift(input: {
@@ -2888,6 +2968,15 @@ function mapEmployeeScheduleShift(row: Record<string, unknown>) {
     createdAt: normalizeDateTime(row.created_at),
     updatedAt: normalizeDateTime(row.updated_at),
   } satisfies EmployeeScheduleShift;
+}
+
+function mapEmployeeScheduleWeekPublication(row: Record<string, unknown>) {
+  return {
+    weekStart: normalizeDate(row.week_start),
+    isVisible: Boolean(row.is_visible),
+    publishedAt: row.published_at ? normalizeDateTime(row.published_at) : null,
+    updatedAt: row.updated_at ? normalizeDateTime(row.updated_at) : null,
+  };
 }
 
 function createScheduleToken() {

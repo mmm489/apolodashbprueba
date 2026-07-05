@@ -10,6 +10,8 @@ import {
   Clock,
   Copy,
   Euro,
+  Eye,
+  EyeOff,
   Link2,
   Save,
   Trash2,
@@ -18,7 +20,7 @@ import {
 } from "lucide-react";
 
 import { formatDashboardDate } from "@/lib/timezone";
-import type { Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleShare, EmployeeScheduleShift, TimeClockSessionRecord } from "@/lib/types";
+import type { Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleShare, EmployeeScheduleShift, EmployeeScheduleWeekPublication, TimeClockSessionRecord } from "@/lib/types";
 
 const DEFAULT_HORARI_PUBLIC_BASE_URL = "https://horari-brown.vercel.app";
 const HORARI_PUBLIC_BASE_URL = (process.env.NEXT_PUBLIC_HORARI_BASE_URL || DEFAULT_HORARI_PUBLIC_BASE_URL).replace(/\/+$/, "");
@@ -39,6 +41,7 @@ export function PlanificacionPanel({
   scheduleShares,
   timeClockSessions,
   employeeCostHistory,
+  weekPublication,
   weekStart,
   weekEnd,
 }: {
@@ -47,6 +50,7 @@ export function PlanificacionPanel({
   scheduleShares: EmployeeScheduleShare[];
   timeClockSessions: TimeClockSessionRecord[];
   employeeCostHistory: EmployeeHourlyCostHistoryEntry[];
+  weekPublication: EmployeeScheduleWeekPublication;
   weekStart: string;
   weekEnd: string;
 }) {
@@ -55,11 +59,15 @@ export function PlanificacionPanel({
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isWeekVisible, setIsWeekVisible] = useState(weekPublication.isVisible);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     setShifts(initialShifts);
   }, [initialShifts]);
+  useEffect(() => {
+    setIsWeekVisible(weekPublication.isVisible);
+  }, [weekPublication.isVisible, weekStart]);
 
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, index) => addDaysIso(weekStart, index)),
@@ -298,6 +306,35 @@ export function PlanificacionPanel({
     });
   }
 
+  async function toggleWeekVisibility() {
+    const nextVisible = !isWeekVisible;
+    setMessage(null);
+    setError(null);
+
+    const confirmMessage = nextVisible
+      ? "Vas a mostrar esta semana a los empleados. Veran los turnos desde su enlace. Continuar?"
+      : "Vas a ocultar esta semana a los empleados. El enlace seguira funcionando, pero no vera los turnos. Continuar?";
+    if (!confirm(confirmMessage)) return;
+
+    startTransition(async () => {
+      const res = await fetch("/api/scheduling/publication", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ weekStart, isVisible: nextVisible }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "No se ha podido cambiar la visibilidad de la semana.");
+        return;
+      }
+
+      const publication = data.publication as EmployeeScheduleWeekPublication | undefined;
+      setIsWeekVisible(Boolean(publication?.isVisible ?? nextVisible));
+      setMessage(nextVisible ? "Semana visible para empleados." : "Semana oculta a empleados.");
+      router.refresh();
+    });
+  }
+
   async function copyScheduleLink(employee: Employee) {
     const share = await resolveScheduleShare(employee);
     const url = share?.url;
@@ -308,7 +345,9 @@ export function PlanificacionPanel({
 
     try {
       await navigator.clipboard.writeText(url);
-      setMessage(`Enlace copiado para ${share.employeeName}.`);
+      setMessage(isWeekVisible
+        ? `Enlace copiado para ${share.employeeName}.`
+        : `Enlace copiado para ${share.employeeName}. Esta semana sigue oculta hasta que pulses Mostrar a empleados.`);
       setError(null);
     } catch {
       setError("No se ha podido copiar el enlace. Vuelve a intentarlo.");
@@ -353,11 +392,30 @@ export function PlanificacionPanel({
               {formatDate(weekStart)} - {formatDate(weekEnd)}
             </h2>
             <p className="mt-1 text-sm text-slate-500">
-              Un turno por empleado y dia. Los fichajes reales solo se muestran para comparar.
+              Edita los turnos como borrador y publicalos cuando quieras que el empleado los vea.
             </p>
+            <div className={`mt-3 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-black ${
+              isWeekVisible ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+            }`}>
+              {isWeekVisible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+              {isWeekVisible ? "Visible para empleados" : "Oculta a empleados"}
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleWeekVisibility}
+              disabled={isPending}
+              className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-bold shadow-sm transition disabled:cursor-wait disabled:opacity-60 ${
+                isWeekVisible
+                  ? "border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                  : "bg-emerald-600 text-white hover:bg-emerald-700"
+              }`}
+            >
+              {isWeekVisible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              {isWeekVisible ? "Ocultar a empleados" : "Mostrar a empleados"}
+            </button>
             <Link
               href={`/planificacion?week=${previousWeek}`}
               className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"

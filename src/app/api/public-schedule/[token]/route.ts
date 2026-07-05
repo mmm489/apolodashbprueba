@@ -27,6 +27,8 @@ export async function GET(
       id: data.employee.id,
       name: data.employee.name,
     },
+    isPublished: data.isPublished,
+    publication: data.publication,
     shifts: data.shifts.map((shift) => ({
       id: shift.id,
       employeeId: shift.employeeId,
