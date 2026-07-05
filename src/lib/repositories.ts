@@ -255,10 +255,10 @@ function categoryFamily(value: unknown) {
   if (text.includes("begud")) return "begudes";
   if (text.includes("batut")) return "batuts";
   if (text.includes("berlin")) return "berlines";
+  if (text.includes("granissat") || text.includes("granitzat") || text.includes("granizado") || text.includes("granizada")) return "granissats";
   if (text.includes("cafe")) return "cafes";
   if (text.includes("crep")) return "crepes";
   if (text.includes("frappe")) return "frappes";
-  if (text.includes("granissat") || text.includes("granitzat")) return "granissats";
   if (text.includes("hipop") || text.includes("waffle")) return "hi-pop";
   if (text.includes("ice")) return "ice-drinks";
   if (text.includes("recept")) return "receptes";

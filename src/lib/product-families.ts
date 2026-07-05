@@ -18,6 +18,8 @@ export interface FamilyRule {
 export const familyRules: FamilyRule[] = [
   { name: "Gelats", color: "bg-pink-500", bgLight: "bg-pink-50 text-pink-700",
     keywords: ["cucurutxo", "pot l", "pot m", "pot s", "tupper"] },
+  { name: "Granissats", color: "bg-blue-400", bgLight: "bg-blue-50 text-blue-700",
+    keywords: ["granitzat", "granissat", "granizado", "granizada"] },
   { name: "Cafes", color: "bg-amber-700", bgLight: "bg-amber-50 text-amber-800",
     keywords: ["cafe", "cafè", "café", "capuccino", "tallat", "expresso", "descafeinat", "descafeïnat",
       "xocolata a la tassa", "cola cao", "bombo", "cafe casa", "cafe veïns", "cafe veins"] },
@@ -41,8 +43,6 @@ export const familyRules: FamilyRule[] = [
     keywords: ["smoothie"] },
   { name: "Frozen Iogurt", color: "bg-fuchsia-500", bgLight: "bg-fuchsia-50 text-fuchsia-700",
     keywords: ["pot iogurt", "açai", "acai"] },
-  { name: "Granissats", color: "bg-blue-400", bgLight: "bg-blue-50 text-blue-700",
-    keywords: ["granitzat", "granissat"] },
   { name: "Receptes", color: "bg-rose-500", bgLight: "bg-rose-50 text-rose-700",
     keywords: ["cookies cream", "kinder delight", "lotus receta", "nutella & go", "oreo ice",
       "pistacho receta", "macha receta", "yogurt pasi"] },
