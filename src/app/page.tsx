@@ -1118,7 +1118,7 @@ function TodayDigest({ digest }: { digest: import("@/lib/types").DailyDigest }) 
       )}
 
       {/* Main metrics: 3 cards (Vendes, Comandes, Tiquet mitjà) — all today-specific */}
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <SalesCardWithSparkline
           digest={digest}
         />
@@ -1133,6 +1133,18 @@ function TodayDigest({ digest }: { digest: import("@/lib/types").DailyDigest }) 
           value={digest.averageTicket > 0 ? euro(digest.averageTicket) : "--"}
           delta={ticketDelta}
           deltaLabel="vs setmana passada"
+        />
+        <SameTimeSalesCard
+          label="Fins ara vs ahir"
+          comparison={digest.sameTimeComparison}
+          baseline="yesterday"
+          tone="emerald"
+        />
+        <SameTimeSalesCard
+          label="Fins ara vs fa 7 dies"
+          comparison={digest.sameTimeComparison}
+          baseline="lastWeek"
+          tone="indigo"
         />
       </div>
 
@@ -1193,6 +1205,53 @@ function SalesCardWithSparkline({ digest }: { digest: import("@/lib/types").Dail
         </p>
       )}
       <Sparkline data={digest.last7Days} />
+    </div>
+  );
+}
+
+/** Like-for-like sales progress at the current time of day. */
+function SameTimeSalesCard({
+  label,
+  comparison,
+  baseline,
+  tone,
+}: {
+  label: string;
+  comparison: import("@/lib/types").SalesToTimeComparison | null;
+  baseline: "yesterday" | "lastWeek";
+  tone: "emerald" | "indigo";
+}) {
+  const reference = comparison?.[baseline] ?? null;
+  const delta = reference?.deltaPct;
+  const hasReference = Boolean(reference);
+  const positive = typeof delta === "number" && delta >= 0;
+  const surface = !hasReference
+    ? "ring-slate-200 bg-white"
+    : tone === "emerald"
+    ? positive ? "ring-emerald-200 bg-emerald-50/50" : "ring-rose-200 bg-rose-50/50"
+    : positive ? "ring-indigo-200 bg-indigo-50/50" : "ring-rose-200 bg-rose-50/50";
+  const valueColor = !hasReference
+    ? "text-slate-900"
+    : positive
+    ? tone === "emerald" ? "text-emerald-700" : "text-indigo-700"
+    : "text-rose-700";
+
+  return (
+    <div className={`rounded-xl ring-1 ${surface} p-3`}>
+      <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">{label}</p>
+      <p className={`mt-1 text-[22px] font-bold tracking-tight ${valueColor}`}>
+        {comparison ? euro(comparison.sales) : "--"}
+      </p>
+      {comparison && (
+        <p className="mt-0.5 text-[11px] text-slate-500">Fins a les {comparison.cutoffLabel}</p>
+      )}
+      {reference ? (
+        <p className={`mt-1 text-[11px] font-semibold ${valueColor}`}>
+          {delta !== undefined && delta > 0 ? "+" : ""}{delta?.toFixed(1)}% / {euro(reference.sales)}
+        </p>
+      ) : (
+        <p className="mt-1 text-[11px] font-medium text-slate-400">Sense dada comparable</p>
+      )}
     </div>
   );
 }

@@ -530,6 +530,57 @@ export async function listHourlySales(from?: string, to?: string) {
   })) satisfies HourlySalesEntry[];
 }
 
+export interface PosSalesToTimeRecord {
+  businessDate: string;
+  sales: number;
+  orders: number;
+}
+
+/**
+ * Returns sales up to the same elapsed point in a POS business day. This makes
+ * 15:42 today comparable with 15:42 yesterday, not with a full day of sales.
+ */
+export async function listPosSalesThroughBusinessMinute(
+  businessDates: string[],
+  elapsedBusinessMinutes: number,
+): Promise<PosSalesToTimeRecord[]> {
+  if (!hasDatabase() || !isPosDataSource() || businessDates.length === 0) {
+    return [];
+  }
+
+  const sql = getSql();
+  await ensurePosBusinessUnitColumn(sql);
+  if (!(await hasPosTable(sql, "orders"))) return [];
+
+  const rows = await sql.query(
+    `
+      SELECT
+        ((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date::text AS business_date,
+        COALESCE(SUM(COALESCE(total_base, total)), 0)::float AS sales,
+        COUNT(*)::int AS order_count
+      FROM pos.orders
+      WHERE ((created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date = ANY($1::date[])
+        AND status <> 'cancelled'
+        AND payment_method <> 'parked'
+        AND MOD(
+          EXTRACT(HOUR FROM created_at AT TIME ZONE 'Europe/Madrid')::int * 60
+            + EXTRACT(MINUTE FROM created_at AT TIME ZONE 'Europe/Madrid')::int
+            - 240 + 1440,
+          1440
+        ) <= $2
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `,
+    [businessDates, Math.max(0, Math.min(1439, Math.floor(elapsedBusinessMinutes)))],
+  );
+
+  return rows.map((row) => ({
+    businessDate: normalizeDate(row.business_date),
+    sales: toNumber(row.sales),
+    orders: toNumber(row.order_count),
+  }));
+}
+
 export async function listHourlyProductSales(from?: string, to?: string) {
   if (!hasDatabase()) return [];
 

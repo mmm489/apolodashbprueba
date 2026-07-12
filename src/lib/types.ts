@@ -661,11 +661,29 @@ export interface DailyCalendarNote {
   isHoliday: boolean;
 }
 
+export interface SalesToTimeBaseline {
+  date: string;
+  sales: number;
+  orders: number;
+  deltaPct: number;
+}
+
+export interface SalesToTimeComparison {
+  businessDate: string;
+  cutoffLabel: string;
+  sales: number;
+  orders: number;
+  yesterday: SalesToTimeBaseline | null;
+  lastWeek: SalesToTimeBaseline | null;
+}
+
 export interface DailyDigest {
   date: string;
   sales: number;
   orders: number;
   averageTicket: number;
+  /** Sales accumulated to the current real-world time, from POS orders. */
+  sameTimeComparison: SalesToTimeComparison | null;
   vsLastWeek: { sales: number; orders: number; averageTicket: number; deltaPct: number } | null;
   /** Decomposes today's delta vs last-week into volume (more/fewer
    * transactions) and price (higher/lower avg ticket). Helps answer "did we

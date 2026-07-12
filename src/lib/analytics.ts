@@ -13,6 +13,7 @@ import {
   listInvoiceLines,
   listInvoices,
   listPayrolls,
+  listPosSalesThroughBusinessMinute,
   listProductSales,
   listSalesReports,
   listTelegramMessages,
@@ -20,8 +21,8 @@ import {
 } from "@/lib/repositories";
 import { describeCalendarContext, getCalendarContext } from "@/lib/calendar";
 import { classifyFamily } from "@/lib/product-families";
-import { toDashboardDateOnly } from "@/lib/timezone";
-import type { ChatAnswer, DailyCalendarNote, DailyDigest as DailyDigestType, DateFilter, DatePreset, DocumentRecord, Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleShift, FamilyMovement, FinancialWorkspace, HistoricalWeather, HourlyProductSale, HourlyProfitabilityProduct, HourlyProfitabilitySlot, HourlyProfitabilitySummary, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, PlannedLaborRecord, ProductCost, ProductCostHistoryEntry, ProductSaleRecord, SalesReport } from "@/lib/types";
+import { DASHBOARD_TIME_ZONE, toDashboardDateOnly } from "@/lib/timezone";
+import type { ChatAnswer, DailyCalendarNote, DailyDigest as DailyDigestType, DateFilter, DatePreset, DocumentRecord, Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleShift, FamilyMovement, FinancialWorkspace, HistoricalWeather, HourlyProductSale, HourlyProfitabilityProduct, HourlyProfitabilitySlot, HourlyProfitabilitySummary, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, PlannedLaborRecord, ProductCost, ProductCostHistoryEntry, ProductSaleRecord, SalesReport, SalesToTimeComparison } from "@/lib/types";
 
 const BUSINESS_DAY_START_HOUR = 4;
 const BUSINESS_DAY_START_MINUTES = BUSINESS_DAY_START_HOUR * 60;
@@ -77,10 +78,16 @@ export async function getFinancialWorkspace(input?: {
   to?: string;
 }): Promise<FinancialWorkspace> {
   const filter = resolveDateFilter(input);
+  const sameTimeClock = getMadridBusinessClock();
+  const sameTimeDates = [
+    sameTimeClock.businessDate,
+    formatISO(subDays(parseISO(sameTimeClock.businessDate), 1), { representation: "date" }),
+    formatISO(subDays(parseISO(sameTimeClock.businessDate), 7), { representation: "date" }),
+  ];
   // Extend the sales query to cover the previous period and the same period
   // 52 weeks earlier (DOW-aligned year-over-year) for comparison metrics.
   const comparisonRange = buildComparisonRange(filter);
-  const [documents, salesReports, extendedSales, hourlySales, hourlyProductSales, invoices, payrolls, productSales, previousProductSales, alerts, telegramUsers, telegramMessages, employees, productCosts, productCostHistory, employeeScheduleShifts, employeeCostHistory] =
+  const [documents, salesReports, extendedSales, hourlySales, hourlyProductSales, invoices, payrolls, productSales, previousProductSales, alerts, telegramUsers, telegramMessages, employees, productCosts, productCostHistory, employeeScheduleShifts, employeeCostHistory, sameTimeRows] =
     await Promise.all([
       listDocuments(filter.from, filter.to),
       listSalesReports(filter.from, filter.to),
@@ -99,6 +106,7 @@ export async function getFinancialWorkspace(input?: {
       listAllProductCostHistory(),
       listEmployeeScheduleShifts(filter.from, filter.to),
       listAllEmployeeHourlyCostHistory(),
+      listPosSalesThroughBusinessMinute(sameTimeDates, sameTimeClock.elapsedMinutes),
     ]);
 
   const fromDate = startOfDaySafe(filter.from);
@@ -128,7 +136,8 @@ export async function getFinancialWorkspace(input?: {
   // Historical weather for the two YoY comparison dates so the digest can
   // annotate last year's sales with "it was raining / hot / cold".
   const historicalWeather = await fetchHistoricalWeatherForDigest(extendedSales);
-  const dailyDigest = computeDailyDigest(extendedSales, digestWeather, historicalWeather);
+  const sameTimeComparison = buildSameTimeComparison(sameTimeClock, sameTimeRows);
+  const dailyDigest = computeDailyDigest(extendedSales, digestWeather, historicalWeather, sameTimeComparison);
   const familyMovements = computeFamilyMovements(scopedProductSales, previousProductSales);
 
   const hourlyPerformance = scopedHourly
@@ -723,10 +732,61 @@ function isDateInRange(value: string, from: Date, to: Date) {
  *   forecastTomorrow is adjusted by a temperature factor based on how warm
  *   tomorrow is vs the avg temperature of the same-DOW historical sample.
  *   For ice cream / gelateria, hotter days correlate with higher sales. */
+type MadridBusinessClock = {
+  businessDate: string;
+  elapsedMinutes: number;
+  cutoffLabel: string;
+};
+
+function getMadridBusinessClock(now = new Date()): MadridBusinessClock {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: DASHBOARD_TIME_ZONE,
+  }).formatToParts(now);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value ?? "0");
+  const minute = Number(parts.find((part) => part.type === "minute")?.value ?? "0");
+
+  return {
+    businessDate: toDashboardDateOnly(subHours(now, BUSINESS_DAY_START_HOUR)),
+    elapsedMinutes: (hour * 60 + minute - BUSINESS_DAY_START_MINUTES + 1440) % 1440,
+    cutoffLabel: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+  };
+}
+
+function buildSameTimeComparison(
+  clock: MadridBusinessClock,
+  rows: Array<{ businessDate: string; sales: number; orders: number }>,
+): SalesToTimeComparison | null {
+  if (rows.length === 0) return null;
+
+  const byDate = new Map(rows.map((row) => [row.businessDate, row] as const));
+  const current = byDate.get(clock.businessDate) ?? { sales: 0, orders: 0 };
+  const yesterdayDate = formatISO(subDays(parseISO(clock.businessDate), 1), { representation: "date" });
+  const lastWeekDate = formatISO(subDays(parseISO(clock.businessDate), 7), { representation: "date" });
+  const toBaseline = (date: string) => {
+    const row = byDate.get(date);
+    return row
+      ? { date, sales: row.sales, orders: row.orders, deltaPct: pct(current.sales, row.sales) }
+      : null;
+  };
+
+  return {
+    businessDate: clock.businessDate,
+    cutoffLabel: clock.cutoffLabel,
+    sales: current.sales,
+    orders: current.orders,
+    yesterday: toBaseline(yesterdayDate),
+    lastWeek: toBaseline(lastWeekDate),
+  };
+}
+
 export function computeDailyDigest(
   reports: SalesReport[],
   weather?: Map<string, DayWeather>,
   historicalWeather?: Map<string, HistoricalWeather>,
+  sameTimeComparison: SalesToTimeComparison | null = null,
 ): DailyDigestType | null {
   if (!reports.length) return null;
   const sortedDesc = [...reports].sort((a, b) => b.businessDate.localeCompare(a.businessDate));
@@ -861,6 +921,7 @@ export function computeDailyDigest(
     sales: today.totalSales,
     orders: today.orderCount,
     averageTicket: today.averageTicket,
+    sameTimeComparison,
     vsLastWeek: lastWeekReport
       ? {
           sales: lastWeekReport.totalSales,
