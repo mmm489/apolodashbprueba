@@ -11,6 +11,7 @@ import { getAuthCookieName, isAuthConfigured, verifyToken } from "@/lib/auth";
  *  - /api/telegram/*     Telegram servers POST here, no cookie possible
  *  - /api/public-schedule/* employee schedule JSON, protected by private token
  *  - /api/ingest/microsoft-graph  external webhook with its own secret
+ *  - /api/onedrive/cron Vercel Cron with bearer secret
  *  - /mi-horario/*       employee schedule view, protected by private token
  *  - /horario/*          legacy redirect to /mi-horario/*
  *  - /icon.svg, /favicon.ico, /_next/* assets
@@ -25,6 +26,7 @@ const PUBLIC_PATH_PREFIXES = [
   "/api/telegram",
   "/api/public-schedule",
   "/api/ingest/microsoft-graph",
+  "/api/onedrive/cron",
   "/mi-horario",
   "/horario",
 ];

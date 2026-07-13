@@ -20,6 +20,13 @@ const env = {
   MICROSOFT_CLIENT_SECRET: process.env.MICROSOFT_CLIENT_SECRET,
   MICROSOFT_DRIVE_ID: process.env.MICROSOFT_DRIVE_ID,
   MICROSOFT_ONEDRIVE_FOLDER_PATH: process.env.MICROSOFT_ONEDRIVE_FOLDER_PATH ?? "/Heladeria/entrada",
+  // Personal OneDrive uses an interactive OAuth connection. The refresh token
+  // is encrypted before it is stored in the dashboard database.
+  MICROSOFT_OAUTH_CLIENT_ID: process.env.MICROSOFT_OAUTH_CLIENT_ID,
+  MICROSOFT_OAUTH_CLIENT_SECRET: process.env.MICROSOFT_OAUTH_CLIENT_SECRET,
+  MICROSOFT_OAUTH_REDIRECT_URI: process.env.MICROSOFT_OAUTH_REDIRECT_URI,
+  ONEDRIVE_TOKEN_ENCRYPTION_KEY: process.env.ONEDRIVE_TOKEN_ENCRYPTION_KEY,
+  CRON_SECRET: process.env.CRON_SECRET,
   // Auth: single shared password (comma-separated for multiple operators).
   AUTH_PASSWORD: process.env.AUTH_PASSWORD,
   // Random hex string used to sign auth cookies. Generate with:

@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/onedrive/cron",
+      "schedule": "*/30 * * * *"
+    }
+  ]
+}

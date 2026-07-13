@@ -2,6 +2,7 @@ import { AppFrame } from "@/components/app-frame";
 import { DateFilterBar } from "@/components/date-filter-bar";
 import { ExpenseFilterBar } from "@/components/expense-filter-bar";
 import { GastosTabs } from "@/components/gastos-tabs";
+import { OneDrivePanel } from "@/components/onedrive-panel";
 import { SectionCard } from "@/components/section-card";
 import { UploadPanel } from "@/components/upload-panel";
 import { getExpensesWorkspace } from "@/lib/analytics";
@@ -46,6 +47,14 @@ export default async function GastosPage({
         <Metric label="Factures" value={String(totals.invoiceCount)} color="indigo" />
         <Metric label="Productes unics" value={String(products.length)} color="slate" />
       </section>
+
+      <SectionCard
+        title="Factures automatiques"
+        eyebrow="OneDrive"
+        description="Deixa les factures a la carpeta de OneDrive i el dashboard les analitzara automaticament."
+      >
+        <OneDrivePanel />
+      </SectionCard>
 
       {/* Upload */}
       <SectionCard title="Pujar factura" eyebrow="Carrega" description="Puja factures en PDF o imatge (JPG, PNG) per processar-les.">

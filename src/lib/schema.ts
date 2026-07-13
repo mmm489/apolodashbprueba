@@ -107,6 +107,38 @@ CREATE TABLE IF NOT EXISTS sync_state (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Personal OneDrive connection. This table lives in the dashboard's public
+-- schema and is intentionally separate from all POS operational tables.
+CREATE TABLE IF NOT EXISTS onedrive_connections (
+  id TEXT PRIMARY KEY,
+  refresh_token_encrypted TEXT NOT NULL,
+  drive_id TEXT NOT NULL,
+  root_folder_id TEXT NOT NULL,
+  folder_name TEXT NOT NULL,
+  folder_web_url TEXT,
+  delta_link TEXT,
+  sync_started_at TIMESTAMPTZ,
+  last_sync_at TIMESTAMPTZ,
+  last_success_at TIMESTAMPTZ,
+  last_error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS onedrive_sync_runs (
+  id TEXT PRIMARY KEY,
+  connection_id TEXT NOT NULL REFERENCES onedrive_connections(id) ON DELETE CASCADE,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  finished_at TIMESTAMPTZ,
+  status TEXT NOT NULL,
+  processed_count INTEGER NOT NULL DEFAULT 0,
+  duplicate_count INTEGER NOT NULL DEFAULT 0,
+  skipped_count INTEGER NOT NULL DEFAULT 0,
+  error_message TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_onedrive_sync_runs_started_at ON onedrive_sync_runs(started_at DESC);
+
 CREATE TABLE IF NOT EXISTS employees (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

@@ -34,7 +34,13 @@ Dashboard web y asistente de Telegram para analizar ventas, gastos, nominas y ex
 - Web y APIs en Vercel
 - Base de datos en Neon
 - PDFs subidos desde la propia app
-- OneDrive/Graph solo como opcion secundaria futura si la necesitais
+- OneDrive personal opcional para importar facturas automaticamente
+
+## OneDrive personal
+
+La pagina `Despeses` puede conectarse a una cuenta personal de OneDrive mediante OAuth. El dashboard crea una carpeta privada de la aplicacion, procesa tambien sus subcarpetas y evita duplicados por contenido.
+
+La configuracion completa esta en [`docs/onedrive-personal.md`](docs/onedrive-personal.md).
 
 ## Variables para Graph
 
