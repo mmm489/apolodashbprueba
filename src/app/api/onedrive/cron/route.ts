@@ -19,6 +19,25 @@ async function runCron(request: Request) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
 
+  const madridHour = Number(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/Madrid",
+      hour: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(new Date())
+      .find((part) => part.type === "hour")?.value,
+  );
+
+  if (madridHour >= 1 && madridHour < 7) {
+    return NextResponse.json({
+      ok: true,
+      skipped: true,
+      reason: "closed-hours",
+      message: "OneDrive no se sincroniza entre 01:00 y 07:00 Europe/Madrid.",
+    });
+  }
+
   try {
     const result = await syncPersonalOneDriveInvoices();
     return NextResponse.json({ ok: true, ...result });
