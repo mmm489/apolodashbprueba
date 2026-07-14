@@ -14,7 +14,8 @@ import { getAuthCookieName, isAuthConfigured, verifyToken } from "@/lib/auth";
  *  - /api/onedrive/cron Vercel Cron with bearer secret
  *  - /mi-horario/*       employee schedule view, protected by private token
  *  - /horario/*          legacy redirect to /mi-horario/*
- *  - /icon.svg, /favicon.ico, /_next/* assets
+ *  - /api/pwa-icon/*     installable app icons, no business data
+ *  - manifest, service worker, icons and /_next/* assets
  *
  * If AUTH_PASSWORD or AUTH_SECRET is unset the middleware does nothing —
  * this keeps local dev easy and makes accidental misconfiguration in
@@ -25,13 +26,19 @@ const PUBLIC_PATH_PREFIXES = [
   "/api/auth",
   "/api/telegram",
   "/api/public-schedule",
+  "/api/pwa-icon",
   "/api/ingest/microsoft-graph",
   "/api/onedrive/cron",
   "/mi-horario",
   "/horario",
 ];
 
-const PUBLIC_FILES = new Set(["/icon.svg", "/favicon.ico"]);
+const PUBLIC_FILES = new Set([
+  "/icon.svg",
+  "/favicon.ico",
+  "/manifest.webmanifest",
+  "/sw.js",
+]);
 
 function isPublic(pathname: string): boolean {
   if (PUBLIC_FILES.has(pathname)) return true;
