@@ -60,7 +60,7 @@ export const familyRules: FamilyRule[] = [
     keywords: ["patates xips"] },
   { name: "Toppings i extres", color: "bg-slate-500", bgLight: "bg-slate-100 text-slate-600",
     keywords: ["sabor ", "salsa", "topping", "nutella 0", "nutella 1", "crispy", "brownie",
-      "lacasitos", "lotus pols", "maduixa natural", "nata ", "nube ", "oreo pols", "platan natural",
+      "lacasitos", "lotus pols", "kinder galleta", "granola", "maduixa natural", "nata ", "nube ", "oreo pols", "platan natural",
       "sucre ", "crumble", "pistatxo pols", "gelat avellana", "gelat dulce", "gelat iogurt",
       "gelat kinder", "gelat lotus", "gelat maduixa", "gelat nata", "gelat oreo", "gelat açai",
       "gelat vainilla", "gelat xocolata", "gelat cafe", "gelat cheesecake", "gelat ferrero",

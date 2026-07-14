@@ -1,9 +1,9 @@
 import { AppFrame } from "@/components/app-frame";
 import { DateFilterBar } from "@/components/date-filter-bar";
 import { resolveDateFilter } from "@/lib/analytics";
-import { listPosOrderLines } from "@/lib/repositories";
+import { listPosOrderLines, listPosRefunds } from "@/lib/repositories";
 import { formatDashboardDate } from "@/lib/timezone";
-import type { PosOrderLineRecord } from "@/lib/types";
+import type { PosOrderLineRecord, PosRefundRecord } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -41,12 +41,17 @@ export default async function ComandesPage({
     from: firstValue(params?.from),
     to: firstValue(params?.to),
   });
-  const lines = await listPosOrderLines(filter.from, filter.to);
+  const [lines, refunds] = await Promise.all([
+    listPosOrderLines(filter.from, filter.to),
+    listPosRefunds(filter.from, filter.to),
+  ]);
   const orders = groupOrders(lines);
   const activeOrders = orders.filter((order) => order.status !== "cancelled" && order.paymentMethod !== "aparcat");
-  const activeLines = lines.filter((line) => line.status !== "cancelled" && line.paymentMethod !== "aparcat");
-  const totalBase = activeOrders.reduce((sum, order) => sum + order.base, 0);
-  const totalWithVat = activeOrders.reduce((sum, order) => sum + order.total, 0);
+  const completedRefunds = refunds.filter((refund) => refund.status === "completed");
+  const refundedBase = completedRefunds.reduce((sum, refund) => sum + refund.totalBase, 0);
+  const refundedTotal = completedRefunds.reduce((sum, refund) => sum + refund.amount, 0);
+  const totalBase = activeOrders.reduce((sum, order) => sum + order.base, 0) - refundedBase;
+  const totalWithVat = activeOrders.reduce((sum, order) => sum + order.total, 0) - refundedTotal;
   const averageTicket = activeOrders.length > 0 ? totalBase / activeOrders.length : 0;
   const cancelledOrders = orders.filter((order) => order.status === "cancelled").length;
   const parkedOrders = orders.filter((order) => order.paymentMethod === "aparcat" && order.status !== "cancelled").length;
@@ -101,7 +106,7 @@ export default async function ComandesPage({
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Metric label="Comandes" value={fmtNum(activeOrders.length)} color="indigo" />
-        <Metric label="Línies" value={fmtNum(activeLines.length)} color="slate" />
+        <Metric label="Rectificatives" value={fmtNum(completedRefunds.length)} color="slate" />
         <Metric label="Vendes s/IVA" value={euro(totalBase)} color="emerald" />
         <Metric label="Vendes amb IVA" value={euro(totalWithVat)} color="amber" />
         <Metric label="Tiquet mitjà s/IVA" value={euro(averageTicket)} color="violet" />
@@ -119,6 +124,22 @@ export default async function ComandesPage({
           Hi ha {parkedOrders} comanda{parkedOrders === 1 ? "" : "s"} aparcada
           {parkedOrders === 1 ? "" : "s"} en aquest període. Es mostren a la llista, però no compten com a venda fins que es cobrin.
         </div>
+      )}
+
+      {refunds.length > 0 && (
+        <section className="overflow-hidden rounded-2xl border border-rose-200 bg-white shadow-sm">
+          <div className="border-b border-rose-100 bg-rose-50 px-5 py-4">
+            <h2 className="text-lg font-bold tracking-tight text-rose-950">Factures rectificatives</h2>
+            <p className="mt-1 text-sm text-rose-700">
+              Es resten en la data de la devolucio. La factura original es conserva intacta.
+            </p>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {refunds.map((refund) => (
+              <RefundRow key={refund.id} refund={refund} />
+            ))}
+          </div>
+        </section>
       )}
 
       {orders.length === 0 ? (
@@ -276,6 +297,51 @@ export default async function ComandesPage({
         </section>
       )}
     </AppFrame>
+  );
+}
+
+function RefundRow({ refund }: { refund: PosRefundRecord }) {
+  const completed = refund.status === "completed";
+  return (
+    <details className="group">
+      <summary className="grid cursor-pointer list-none gap-3 px-5 py-4 md:grid-cols-[1fr_1.2fr_1fr_150px] md:items-center [&::-webkit-details-marker]:hidden">
+        <div>
+          <p className="font-black text-slate-950">
+            {refund.rectifyingInvoiceNumber || "Pendent de verificar"}
+          </p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">
+            Original {refund.originalInvoiceNumber || refund.orderNumber}
+          </p>
+        </div>
+        <div>
+          <p className="font-bold text-slate-900">
+            {formatDate(refund.businessDate)} · {refund.refundTime}
+          </p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">
+            {refund.employeeName || "Sense empleat"} · {refund.reason}
+          </p>
+        </div>
+        <div>
+          <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${completed ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}`}>
+            {completed ? "Rectificada" : refund.status === "pending_verification" ? "Pendent verificar" : refund.status}
+          </span>
+        </div>
+        <p className="text-right text-xl font-black tabular-nums text-rose-700">
+          {completed ? "-" : ""}{euro(refund.amount)}
+        </p>
+      </summary>
+      <div className="border-t border-slate-100 bg-slate-50 px-5 py-4">
+        <div className="space-y-2">
+          {refund.items.map((item) => (
+            <div key={item.id} className="grid grid-cols-[1fr_80px_120px] gap-3 rounded-xl bg-white px-4 py-3 text-sm">
+              <span className="font-semibold text-slate-800">{item.productName}</span>
+              <span className="text-right tabular-nums text-slate-600">-{fmtQty(item.qty)}x</span>
+              <span className="text-right font-bold tabular-nums text-rose-700">-{euro(item.lineTotal)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </details>
   );
 }
 

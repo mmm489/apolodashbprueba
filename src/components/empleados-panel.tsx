@@ -19,6 +19,8 @@ type EmployeeForm = {
   canAccessCashlogy: boolean;
   canAccessSupplierPayments: boolean;
   canAccessProducts: boolean;
+  canPostSaleLookup: boolean;
+  canRefundSales: boolean;
 };
 
 const emptyForm: EmployeeForm = {
@@ -34,6 +36,8 @@ const emptyForm: EmployeeForm = {
   canAccessCashlogy: false,
   canAccessSupplierPayments: false,
   canAccessProducts: false,
+  canPostSaleLookup: true,
+  canRefundSales: false,
 };
 
 function freshEmptyForm(): EmployeeForm {
@@ -145,6 +149,8 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
       canAccessCashlogy: emp.canAccessCashlogy ?? emp.role === "admin",
       canAccessSupplierPayments: emp.canAccessSupplierPayments ?? emp.role === "admin",
       canAccessProducts: emp.canAccessProducts ?? emp.role === "admin",
+      canPostSaleLookup: emp.canPostSaleLookup ?? true,
+      canRefundSales: emp.canRefundSales ?? emp.role === "admin",
     });
     setEditingId(emp.id);
     setEditingEmployee(emp);
@@ -287,6 +293,8 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
                         canAccessCashlogy: role === "admin" ? true : form.canAccessCashlogy,
                         canAccessSupplierPayments: role === "admin" ? true : form.canAccessSupplierPayments,
                         canAccessProducts: role === "admin" ? true : form.canAccessProducts,
+                        canPostSaleLookup: role === "admin" ? true : form.canPostSaleLookup,
+                        canRefundSales: role === "admin" ? true : form.canRefundSales,
                       });
                     }}
                     className="w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
@@ -302,7 +310,7 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
                   <p className="text-[12px] font-bold uppercase tracking-wide text-slate-500">
                     Accessos al menu del POS
                   </p>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
                     <AccessToggle
                       label="Cashlogy"
                       description="Backoffice i estat"
@@ -323,6 +331,20 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
                       checked={form.canAccessProducts}
                       disabled={form.role === "admin"}
                       onChange={(checked) => setForm({ ...form, canAccessProducts: checked })}
+                    />
+                    <AccessToggle
+                      label="Consulta i reimpressio"
+                      description="Comprovar pagaments i rebuts"
+                      checked={form.canPostSaleLookup}
+                      disabled={form.role === "admin"}
+                      onChange={(checked) => setForm({ ...form, canPostSaleLookup: checked })}
+                    />
+                    <AccessToggle
+                      label="Devolucions"
+                      description="Totals i parcials de targeta"
+                      checked={form.canRefundSales}
+                      disabled={form.role === "admin"}
+                      onChange={(checked) => setForm({ ...form, canRefundSales: checked })}
                     />
                   </div>
                   {form.role === "admin" && (
@@ -503,6 +525,8 @@ export function EmpleadosPanel({ employees, readOnly = false }: { employees: Emp
                       <AccessBadge label="Cashlogy" enabled={emp.role === "admin" || emp.canAccessCashlogy === true} />
                       <AccessBadge label="Pagaments" enabled={emp.role === "admin" || emp.canAccessSupplierPayments === true} />
                       <AccessBadge label="Productes" enabled={emp.role === "admin" || emp.canAccessProducts === true} />
+                      <AccessBadge label="Consulta" enabled={emp.role === "admin" || emp.canPostSaleLookup !== false} />
+                      <AccessBadge label="Devolucions" enabled={emp.role === "admin" || emp.canRefundSales === true} />
                     </div>
                   </td>
                 )}
@@ -565,6 +589,8 @@ function hasPosEmployeeChanges(employee: Employee, form: EmployeeForm) {
   const canAccessCashlogy = employee.canAccessCashlogy ?? role === "admin";
   const canAccessSupplierPayments = employee.canAccessSupplierPayments ?? role === "admin";
   const canAccessProducts = employee.canAccessProducts ?? role === "admin";
+  const canPostSaleLookup = employee.canPostSaleLookup ?? true;
+  const canRefundSales = employee.canRefundSales ?? role === "admin";
 
   return (
     employee.name.trim() !== form.name.trim() ||
@@ -572,6 +598,8 @@ function hasPosEmployeeChanges(employee: Employee, form: EmployeeForm) {
     canAccessCashlogy !== form.canAccessCashlogy ||
     canAccessSupplierPayments !== form.canAccessSupplierPayments ||
     canAccessProducts !== form.canAccessProducts ||
+    canPostSaleLookup !== form.canPostSaleLookup ||
+    canRefundSales !== form.canRefundSales ||
     form.pin.length > 0
   );
 }

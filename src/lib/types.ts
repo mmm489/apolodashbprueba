@@ -76,6 +76,42 @@ export interface PosOrderLineRecord {
   notes: string | null;
 }
 
+export interface PosRefundItemRecord {
+  id: string;
+  orderItemId: string;
+  productId: string;
+  productName: string;
+  qty: number;
+  unitPrice: number;
+  vatRate: number;
+  lineTotal: number;
+  lineBase: number;
+  lineVat: number;
+  notes: string | null;
+}
+
+export interface PosRefundRecord {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  originalInvoiceNumber: string | null;
+  rectifyingInvoiceNumber: string | null;
+  status: "processing" | "completed" | "failed" | "pending_verification" | string;
+  amount: number;
+  totalBase: number;
+  totalVat: number;
+  reason: string;
+  employeeName: string | null;
+  businessDate: string;
+  refundTime: string;
+  requestedAt: string;
+  completedAt: string | null;
+  providerTransactionId: string | null;
+  providerReference: string | null;
+  receiptText: string | null;
+  items: PosRefundItemRecord[];
+}
+
 export interface CookiesTransactionRecord {
   id: string;
   orderNumber: string;
@@ -199,6 +235,8 @@ export interface Employee {
   canAccessCashlogy?: boolean;
   canAccessSupplierPayments?: boolean;
   canAccessProducts?: boolean;
+  canPostSaleLookup?: boolean;
+  canRefundSales?: boolean;
   syncStatus?: "synced" | "pending";
   pendingAction?: CatalogChangeAction;
 }

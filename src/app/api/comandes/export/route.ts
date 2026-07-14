@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
 
-import { listPosOrderLines } from "@/lib/repositories";
-import type { PosOrderLineRecord } from "@/lib/types";
+import { listPosOrderLines, listPosRefunds } from "@/lib/repositories";
+import type { PosOrderLineRecord, PosRefundRecord } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -59,15 +59,23 @@ export async function GET(request: NextRequest) {
   const to = cleanDate(searchParams.get("to"));
   const format: ExportFormat = searchParams.get("format") === "xlsx" ? "xlsx" : "csv";
   const type: ExportType = searchParams.get("type") === "iva-summary" ? "iva-summary" : "detail";
-  const allLines = await listPosOrderLines(from, to);
+  const [allLines, refunds] = await Promise.all([
+    listPosOrderLines(from, to),
+    listPosRefunds(from, to),
+  ]);
   const suffix = from && to ? `${from}_${to}` : "comandes";
 
   if (type === "iva-summary") {
-    return exportIvaSummary(allLines, from, to, format, suffix);
+    return exportIvaSummary(allLines, refunds, from, to, format, suffix);
   }
 
   const lines = allLines.filter((line) => line.paymentMethod !== "aparcat");
-  const rows = lines.map(toExportRow);
+  const rows = [
+    ...lines.map(toExportRow),
+    ...refunds
+      .filter((refund) => refund.status === "completed")
+      .flatMap((refund) => refund.items.map((item) => toRefundExportRow(refund, item))),
+  ];
 
   if (format === "xlsx") {
     const worksheet = XLSX.utils.json_to_sheet(rows, { header: [...CSV_HEADERS] });
@@ -115,6 +123,33 @@ export async function GET(request: NextRequest) {
   });
 }
 
+function toRefundExportRow(refund: PosRefundRecord, item: PosRefundRecord["items"][number]) {
+  const parent = modifierParent(item.notes);
+  return {
+    "Factura simplificada": refund.rectifyingInvoiceNumber ?? "",
+    Comanda: `${refund.orderNumber} (original ${refund.originalInvoiceNumber ?? ""})`,
+    "Fecha laboral": refund.businessDate,
+    Hora: refund.refundTime,
+    Estado: "Rectificativa",
+    "Metodo de pago": "Targeta - devolucio",
+    Empleado: refund.employeeName ?? "",
+    Servicio: "",
+    Mesa: "",
+    "Tipo linea": parent ? "Complemento rectificado" : "Producto rectificado",
+    "Producto padre": parent ?? "",
+    Producto: noteDisplayName(item.notes) || item.productName,
+    Categoria: "",
+    Cantidad: -round(item.qty),
+    "Precio unitario": round(item.unitPrice),
+    "Base imponible": -round(item.lineBase),
+    "IVA %": round(item.vatRate),
+    "Cuota IVA": -round(item.lineVat),
+    "Total linea": -round(item.lineTotal),
+    "Total ticket": -round(refund.amount),
+    "Notas visibles": refund.reason,
+  } satisfies Record<(typeof CSV_HEADERS)[number], string | number>;
+}
+
 function toExportRow(line: PosOrderLineRecord) {
   const parent = modifierParent(line.notes);
   return {
@@ -144,12 +179,13 @@ function toExportRow(line: PosOrderLineRecord) {
 
 function exportIvaSummary(
   lines: PosOrderLineRecord[],
+  refunds: PosRefundRecord[],
   from: string | undefined,
   to: string | undefined,
   format: ExportFormat,
   suffix: string,
 ) {
-  const summary = buildIvaSummary(lines);
+  const summary = buildIvaSummary(lines, refunds);
   const filename = `vendes-iva-${suffix}`;
 
   if (format === "xlsx") {
@@ -172,7 +208,7 @@ function exportIvaSummary(
   });
 }
 
-function buildIvaSummary(lines: PosOrderLineRecord[]) {
+function buildIvaSummary(lines: PosOrderLineRecord[], refunds: PosRefundRecord[]) {
   const orders = new Map<
     string,
     {
@@ -225,6 +261,33 @@ function buildIvaSummary(lines: PosOrderLineRecord[]) {
       };
     group.orders.push(order);
     groups.set(key, group);
+  }
+
+  for (const refund of refunds) {
+    if (refund.status !== "completed" || !refund.rectifyingInvoiceNumber) continue;
+    const byRate = new Map<number, { base: number; vat: number; total: number }>();
+    for (const item of refund.items) {
+      const current = byRate.get(item.vatRate) ?? { base: 0, vat: 0, total: 0 };
+      current.base += item.lineBase;
+      current.vat += item.lineVat;
+      current.total += item.lineTotal;
+      byRate.set(item.vatRate, current);
+    }
+    if (byRate.size === 0) {
+      byRate.set(10, { base: refund.totalBase, vat: refund.totalVat, total: refund.amount });
+    }
+    for (const [vatRate, values] of byRate) {
+      const key = `${refund.businessDate}|${rateKey(vatRate)}`;
+      const group = groups.get(key) ?? { businessDate: refund.businessDate, vatRate, orders: [] };
+      group.orders.push({
+        createdAt: refund.completedAt || refund.requestedAt,
+        invoiceNumber: refund.rectifyingInvoiceNumber,
+        base: -values.base,
+        vat: -values.vat,
+        total: -values.total,
+      });
+      groups.set(key, group);
+    }
   }
 
   const rows = [...groups.values()]

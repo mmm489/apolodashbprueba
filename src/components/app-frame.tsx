@@ -71,7 +71,7 @@ export function AppFrame({
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="app-frame-root flex min-h-screen">
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
@@ -86,7 +86,7 @@ export function AppFrame({
           "z-50 flex flex-col bg-[var(--sidebar)] transition-all duration-300 ease-in-out",
           collapsed ? "w-[72px]" : "w-[260px]",
           // Mobile: off-canvas overlay (slides in from the left, full height)
-          "fixed top-0 bottom-0 left-0",
+          "app-sidebar fixed top-0 bottom-0 left-0",
           mobileOpen ? "translate-x-0" : "-translate-x-full",
           // Desktop: sticky at top of viewport while the page scrolls.
           // `lg:bottom-auto` releases the bottom:0 set by mobile so sticky
@@ -195,7 +195,7 @@ export function AppFrame({
       {/* Main content */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top header */}
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-[var(--line)] bg-[var(--background)]/80 px-4 backdrop-blur-xl lg:px-8">
+        <header className="app-header sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-[var(--line)] bg-[var(--background)]/80 px-4 backdrop-blur-xl lg:px-8">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}

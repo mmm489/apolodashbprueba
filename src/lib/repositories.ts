@@ -40,6 +40,8 @@ import type {
   PayrollRecord,
   PosCatalog,
   PosOrderLineRecord,
+  PosRefundItemRecord,
+  PosRefundRecord,
   ProductSaleRecord,
   SalesReport,
   SupplierPaymentRecord,
@@ -51,6 +53,7 @@ import type {
 import { toNumber } from "@/lib/utils";
 
 const READ_ONLY_POS_MESSAGE = "Apolodashprueba esta conectado al POS en modo solo lectura.";
+const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 // Dashboard business days follow the POS cash-closing rhythm: sales made after
 // midnight and before 04:00 belong to the previous service day.
 
@@ -403,6 +406,22 @@ export async function listSalesReports(from?: string, to?: string) {
       }
     }
 
+    const refunds = await listPosRefunds(from, to);
+    for (const refund of refunds) {
+      if (refund.status !== "completed") continue;
+      const report = byDate.get(refund.businessDate) ?? {
+        id: `pos-sales-${refund.businessDate}`,
+        businessDate: refund.businessDate,
+        totalSales: 0,
+        orderCount: 0,
+        averageTicket: 0,
+        paymentMix: {},
+      };
+      report.totalSales -= refund.totalBase;
+      report.paymentMix.tarjeta = (report.paymentMix.tarjeta ?? 0) - refund.totalBase;
+      byDate.set(refund.businessDate, report);
+    }
+
     return sortByBusinessDateDesc([...byDate.values()]).map((report) => ({
       ...report,
       averageTicket: report.orderCount > 0 ? report.totalSales / report.orderCount : 0,
@@ -515,7 +534,28 @@ export async function listHourlySales(from?: string, to?: string) {
       })));
     }
 
-    return sortByBusinessDateDesc(entries);
+    const bySlot = new Map<string, HourlySalesEntry>(
+      entries.map((entry) => [`${entry.businessDate}|${entry.hour}`, entry]),
+    );
+    const refunds = await listPosRefunds(from, to);
+    for (const refund of refunds) {
+      if (refund.status !== "completed") continue;
+      const [hourValue, minuteValue] = refund.refundTime.split(":").map(Number);
+      const halfHourSlot = hourValue * 2 + (minuteValue >= 30 ? 1 : 0);
+      const hour = formatHalfHourSlot(halfHourSlot);
+      const key = `${refund.businessDate}|${hour}`;
+      const entry = bySlot.get(key) ?? {
+        id: `pos-hour-${refund.businessDate}-${halfHourSlot}`,
+        businessDate: refund.businessDate,
+        hour,
+        sales: 0,
+        orderCount: 0,
+      };
+      entry.sales -= refund.totalBase;
+      bySlot.set(key, entry);
+    }
+
+    return sortByBusinessDateDesc([...bySlot.values()]);
   }
 
   const rows = from && to
@@ -574,11 +614,28 @@ export async function listPosSalesThroughBusinessMinute(
     [businessDates, Math.max(0, Math.min(1439, Math.floor(elapsedBusinessMinutes)))],
   );
 
-  return rows.map((row) => ({
+  const result = rows.map((row) => ({
     businessDate: normalizeDate(row.business_date),
     sales: toNumber(row.sales),
     orders: toNumber(row.order_count),
   }));
+  const byDate = new Map(result.map((entry) => [entry.businessDate, entry] as const));
+  const sortedDates = [...businessDates].sort();
+  const refunds = await listPosRefunds(sortedDates[0], sortedDates[sortedDates.length - 1]);
+  for (const refund of refunds) {
+    if (refund.status !== "completed" || !businessDates.includes(refund.businessDate)) continue;
+    const [hourValue, minuteValue] = refund.refundTime.split(":").map(Number);
+    const businessMinute = (hourValue * 60 + minuteValue - 240 + 1440) % 1440;
+    if (businessMinute > elapsedBusinessMinutes) continue;
+    const entry = byDate.get(refund.businessDate) ?? {
+      businessDate: refund.businessDate,
+      sales: 0,
+      orders: 0,
+    };
+    entry.sales -= refund.totalBase;
+    byDate.set(refund.businessDate, entry);
+  }
+  return [...byDate.values()];
 }
 
 export async function listHourlyProductSales(from?: string, to?: string) {
@@ -685,7 +742,32 @@ export async function listHourlyProductSales(from?: string, to?: string) {
       })));
     }
 
-    return sortByBusinessDateDesc(entries);
+    const byProductSlot = new Map<string, HourlyProductSale>(
+      entries.map((entry) => [`${entry.businessDate}|${entry.hourLabel}|${entry.productCode}`, entry]),
+    );
+    const refunds = await listPosRefunds(from, to);
+    for (const refund of refunds) {
+      if (refund.status !== "completed") continue;
+      const [hourValue, minuteValue] = refund.refundTime.split(":").map(Number);
+      const hourLabel = formatHalfHourSlot(hourValue * 2 + (minuteValue >= 30 ? 1 : 0));
+      for (const item of refund.items) {
+        const key = `${refund.businessDate}|${hourLabel}|${item.productId}`;
+        const entry = byProductSlot.get(key) ?? {
+          id: `pos-hour-product-refund-${refund.id}-${item.productId}`,
+          businessDate: refund.businessDate,
+          hourLabel,
+          productCode: item.productId,
+          productName: item.productName,
+          units: 0,
+          amount: 0,
+        };
+        entry.units -= item.qty;
+        entry.amount -= item.lineBase;
+        byProductSlot.set(key, entry);
+      }
+    }
+
+    return sortByBusinessDateDesc([...byProductSlot.values()]);
   }
 
   const rows = from && to
@@ -843,7 +925,30 @@ export async function listProductSales(from?: string, to?: string) {
       })));
     }
 
-    return sortByBusinessDateDesc(entries);
+    const byProductDate = new Map<string, ProductSaleRecord>(
+      entries.map((entry) => [`${entry.businessDate}|${entry.productCode}`, entry]),
+    );
+    const refunds = await listPosRefunds(from, to);
+    for (const refund of refunds) {
+      if (refund.status !== "completed") continue;
+      for (const item of refund.items) {
+        const key = `${refund.businessDate}|${item.productId}`;
+        const entry = byProductDate.get(key) ?? {
+          id: `pos-product-refund-${refund.id}-${item.productId}`,
+          salesReportId: `pos-sales-${refund.businessDate}`,
+          businessDate: refund.businessDate,
+          productCode: item.productId,
+          productName: item.productName,
+          units: 0,
+          amount: 0,
+        };
+        entry.units -= item.qty;
+        entry.amount -= item.lineBase;
+        byProductDate.set(key, entry);
+      }
+    }
+
+    return sortByBusinessDateDesc([...byProductDate.values()]);
   }
 
   const rows = from && to
@@ -871,12 +976,12 @@ export async function listCashClosings(from?: string, to?: string) {
     ? await sql`
         SELECT c.id, c.z_number, c.z_label, c.opened_at, c.closed_at,
                COALESCE(payment_totals.total_cash, c.total_cash) AS total_cash,
-               COALESCE(payment_totals.total_card, c.total_card) AS total_card,
-               COALESCE(payment_totals.total_sales, c.total_sales) AS total_sales,
+               (COALESCE(payment_totals.total_card, c.total_card) - COALESCE(refund_totals.amount, 0)) AS total_card,
+               (COALESCE(payment_totals.total_sales, c.total_sales) - COALESCE(refund_totals.amount, 0)) AS total_sales,
                COALESCE(payment_totals.ticket_count, c.ticket_count) AS ticket_count,
                COALESCE(payment_totals.cash_count, c.cash_count) AS cash_count,
                COALESCE(payment_totals.card_count, c.card_count) AS card_count,
-               c.cancelled_count, c.total_refunded,
+               c.cancelled_count, GREATEST(COALESCE(c.total_refunded, 0), COALESCE(refund_totals.amount, 0)) AS total_refunded,
                c.first_invoice, c.last_invoice,
                e.name AS employee_name
         FROM pos.cash_closings c
@@ -894,7 +999,17 @@ export async function listCashClosings(from?: string, to?: string) {
             AND o.created_at <= c.closed_at
             AND o.status NOT IN ('pending', 'cancelled')
             AND o.payment_method <> 'parked'
+            AND COALESCE(o.business_unit, 'hicream') = 'hicream'
         ) payment_totals ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(SUM(r.amount), 0)::float AS amount
+          FROM pos.refunds r
+          JOIN pos.orders ro ON ro.id = r.order_id
+          WHERE r.status = 'completed'
+            AND r.completed_at >= c.opened_at
+            AND r.completed_at <= c.closed_at
+            AND COALESCE(ro.business_unit, 'hicream') = 'hicream'
+        ) refund_totals ON to_regclass('pos.refunds') IS NOT NULL
         WHERE ((c.closed_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date >= ${from}::date
           AND ((c.closed_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
         ORDER BY c.closed_at DESC
@@ -902,12 +1017,12 @@ export async function listCashClosings(from?: string, to?: string) {
     : await sql`
         SELECT c.id, c.z_number, c.z_label, c.opened_at, c.closed_at,
                COALESCE(payment_totals.total_cash, c.total_cash) AS total_cash,
-               COALESCE(payment_totals.total_card, c.total_card) AS total_card,
-               COALESCE(payment_totals.total_sales, c.total_sales) AS total_sales,
+               (COALESCE(payment_totals.total_card, c.total_card) - COALESCE(refund_totals.amount, 0)) AS total_card,
+               (COALESCE(payment_totals.total_sales, c.total_sales) - COALESCE(refund_totals.amount, 0)) AS total_sales,
                COALESCE(payment_totals.ticket_count, c.ticket_count) AS ticket_count,
                COALESCE(payment_totals.cash_count, c.cash_count) AS cash_count,
                COALESCE(payment_totals.card_count, c.card_count) AS card_count,
-               c.cancelled_count, c.total_refunded,
+               c.cancelled_count, GREATEST(COALESCE(c.total_refunded, 0), COALESCE(refund_totals.amount, 0)) AS total_refunded,
                c.first_invoice, c.last_invoice,
                e.name AS employee_name
         FROM pos.cash_closings c
@@ -925,7 +1040,17 @@ export async function listCashClosings(from?: string, to?: string) {
             AND o.created_at <= c.closed_at
             AND o.status NOT IN ('pending', 'cancelled')
             AND o.payment_method <> 'parked'
+            AND COALESCE(o.business_unit, 'hicream') = 'hicream'
         ) payment_totals ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(SUM(r.amount), 0)::float AS amount
+          FROM pos.refunds r
+          JOIN pos.orders ro ON ro.id = r.order_id
+          WHERE r.status = 'completed'
+            AND r.completed_at >= c.opened_at
+            AND r.completed_at <= c.closed_at
+            AND COALESCE(ro.business_unit, 'hicream') = 'hicream'
+        ) refund_totals ON to_regclass('pos.refunds') IS NOT NULL
         ORDER BY c.closed_at DESC
         LIMIT 200
       `;
@@ -1062,6 +1187,105 @@ export async function listPosOrderLines(from?: string, to?: string) {
     orderVat: toNumber(row.order_vat),
     notes: row.notes ? String(row.notes) : null,
   })) satisfies PosOrderLineRecord[];
+}
+
+export async function listPosRefunds(from?: string, to?: string) {
+  if (!hasDatabase() || !isPosDataSource()) return [] satisfies PosRefundRecord[];
+
+  const sql = getSql();
+  if (!(await hasPosTable(sql, "refunds")) || !(await hasPosTable(sql, "refund_items"))) {
+    return [] satisfies PosRefundRecord[];
+  }
+
+  const rows = from && to
+    ? await sql`
+        SELECT r.id, r.order_id, o.order_number, o.invoice_number AS original_invoice_number,
+               r.rectifying_invoice_number, r.status, r.amount, r.total_base, r.total_vat,
+               r.reason, e.name AS employee_name,
+               ((COALESCE(r.completed_at, r.requested_at) AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
+               to_char(COALESCE(r.completed_at, r.requested_at) AT TIME ZONE 'Europe/Madrid', 'HH24:MI') AS refund_time,
+               r.requested_at, r.completed_at, r.provider_transaction_id,
+               r.provider_reference, r.receipt_text
+        FROM pos.refunds r
+        JOIN pos.orders o ON o.id = r.order_id
+        LEFT JOIN pos.employees e ON e.id = r.employee_id
+        WHERE ((COALESCE(r.completed_at, r.requested_at) AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date >= ${from}::date
+          AND ((COALESCE(r.completed_at, r.requested_at) AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
+          AND COALESCE(o.business_unit, 'hicream') = 'hicream'
+        ORDER BY COALESCE(r.completed_at, r.requested_at) DESC
+      `
+    : await sql`
+        SELECT r.id, r.order_id, o.order_number, o.invoice_number AS original_invoice_number,
+               r.rectifying_invoice_number, r.status, r.amount, r.total_base, r.total_vat,
+               r.reason, e.name AS employee_name,
+               ((COALESCE(r.completed_at, r.requested_at) AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date AS business_date,
+               to_char(COALESCE(r.completed_at, r.requested_at) AT TIME ZONE 'Europe/Madrid', 'HH24:MI') AS refund_time,
+               r.requested_at, r.completed_at, r.provider_transaction_id,
+               r.provider_reference, r.receipt_text
+        FROM pos.refunds r
+        JOIN pos.orders o ON o.id = r.order_id
+        LEFT JOIN pos.employees e ON e.id = r.employee_id
+        WHERE COALESCE(o.business_unit, 'hicream') = 'hicream'
+        ORDER BY COALESCE(r.completed_at, r.requested_at) DESC
+        LIMIT 1000
+      `;
+
+  const refundIds = rows.map((row) => Number(row.id));
+  const itemRows = refundIds.length
+    ? await sql.query(
+        `SELECT id, refund_id, order_item_id, product_id, product_name, qty,
+                unit_price, vat_rate, notes
+         FROM pos.refund_items
+         WHERE refund_id = ANY($1::bigint[])
+         ORDER BY id ASC`,
+        [refundIds],
+      )
+    : { rows: [] as Record<string, unknown>[] };
+
+  const normalizedItemRows = Array.isArray(itemRows) ? itemRows : itemRows.rows;
+  const itemsByRefund = new Map<string, PosRefundItemRecord[]>();
+  for (const item of normalizedItemRows as Record<string, unknown>[]) {
+    const vatRate = toNumber(item.vat_rate);
+    const lineTotal = roundMoney(toNumber(item.qty) * toNumber(item.unit_price));
+    const lineBase = roundMoney(lineTotal / (1 + vatRate / 100));
+    const mapped: PosRefundItemRecord = {
+      id: String(item.id),
+      orderItemId: String(item.order_item_id),
+      productId: String(item.product_id),
+      productName: String(item.product_name),
+      qty: toNumber(item.qty),
+      unitPrice: toNumber(item.unit_price),
+      vatRate,
+      lineTotal,
+      lineBase,
+      lineVat: roundMoney(lineTotal - lineBase),
+      notes: item.notes ? String(item.notes) : null,
+    };
+    const key = String(item.refund_id);
+    itemsByRefund.set(key, [...(itemsByRefund.get(key) ?? []), mapped]);
+  }
+
+  return rows.map((row) => ({
+    id: String(row.id),
+    orderId: String(row.order_id),
+    orderNumber: String(row.order_number),
+    originalInvoiceNumber: row.original_invoice_number ? String(row.original_invoice_number) : null,
+    rectifyingInvoiceNumber: row.rectifying_invoice_number ? String(row.rectifying_invoice_number) : null,
+    status: String(row.status),
+    amount: toNumber(row.amount),
+    totalBase: toNumber(row.total_base),
+    totalVat: toNumber(row.total_vat),
+    reason: String(row.reason),
+    employeeName: row.employee_name ? String(row.employee_name) : null,
+    businessDate: normalizeDate(row.business_date),
+    refundTime: String(row.refund_time),
+    requestedAt: normalizeDateTime(row.requested_at),
+    completedAt: row.completed_at ? normalizeDateTime(row.completed_at) : null,
+    providerTransactionId: row.provider_transaction_id ? String(row.provider_transaction_id) : null,
+    providerReference: row.provider_reference ? String(row.provider_reference) : null,
+    receiptText: row.receipt_text ? String(row.receipt_text) : null,
+    items: itemsByRefund.get(String(row.id)) ?? [],
+  })) satisfies PosRefundRecord[];
 }
 
 export async function listCookiesTransactions(from?: string, to?: string) {
@@ -1434,10 +1658,20 @@ async function ensurePosEmployeeAccessColumns() {
     ADD COLUMN IF NOT EXISTS can_access_products BOOLEAN NOT NULL DEFAULT false
   `);
   await sql.query(`
+    ALTER TABLE pos.employees
+    ADD COLUMN IF NOT EXISTS can_post_sale_lookup BOOLEAN NOT NULL DEFAULT true
+  `);
+  await sql.query(`
+    ALTER TABLE pos.employees
+    ADD COLUMN IF NOT EXISTS can_refund_sales BOOLEAN NOT NULL DEFAULT false
+  `);
+  await sql.query(`
     UPDATE pos.employees
     SET can_access_products = true,
         can_access_cashlogy = true,
-        can_access_supplier_payments = true
+        can_access_supplier_payments = true,
+        can_post_sale_lookup = true,
+        can_refund_sales = true
     WHERE role = 'admin'
   `);
 }
@@ -2373,7 +2607,8 @@ export async function listEmployees() {
     const weeklyHoursMap = await listEmployeeWeeklyHoursMap();
     const rows = await sql`
       SELECT id, name, role, active,
-             can_access_cashlogy, can_access_supplier_payments, can_access_products
+             can_access_cashlogy, can_access_supplier_payments, can_access_products,
+             can_post_sale_lookup, can_refund_sales
       FROM pos.employees
       WHERE active = TRUE
       ORDER BY name ASC
@@ -2392,6 +2627,8 @@ export async function listEmployees() {
       canAccessCashlogy: Boolean(row.can_access_cashlogy),
       canAccessSupplierPayments: Boolean(row.can_access_supplier_payments),
       canAccessProducts: Boolean(row.can_access_products),
+      canPostSaleLookup: Boolean(row.can_post_sale_lookup),
+      canRefundSales: Boolean(row.can_refund_sales),
     })) satisfies Employee[];
     return mergePendingEmployeeChanges(sql, employees);
   }
@@ -2450,6 +2687,8 @@ async function mergePendingEmployeeChanges(sql: ReturnType<typeof getSql>, emplo
         canAccessCashlogy: access.canAccessCashlogy,
         canAccessSupplierPayments: access.canAccessSupplierPayments,
         canAccessProducts: access.canAccessProducts,
+        canPostSaleLookup: access.canPostSaleLookup,
+        canRefundSales: access.canRefundSales,
         syncStatus: "pending",
         pendingAction: "create",
       });
@@ -2468,6 +2707,8 @@ async function mergePendingEmployeeChanges(sql: ReturnType<typeof getSql>, emplo
       canAccessCashlogy: currentAccess.canAccessCashlogy,
       canAccessSupplierPayments: currentAccess.canAccessSupplierPayments,
       canAccessProducts: currentAccess.canAccessProducts,
+      canPostSaleLookup: currentAccess.canPostSaleLookup,
+      canRefundSales: currentAccess.canRefundSales,
       syncStatus: "pending",
       pendingAction: action,
     });
@@ -2483,7 +2724,7 @@ async function mergePendingEmployeeChanges(sql: ReturnType<typeof getSql>, emplo
 function employeeAccessFromPayload(
   payload: Record<string, unknown>,
   role: "admin" | "employee",
-  fallback?: Pick<Employee, "canAccessCashlogy" | "canAccessSupplierPayments" | "canAccessProducts">,
+  fallback?: Pick<Employee, "canAccessCashlogy" | "canAccessSupplierPayments" | "canAccessProducts" | "canPostSaleLookup" | "canRefundSales">,
 ) {
   const isAdmin = role === "admin";
   return {
@@ -2499,6 +2740,14 @@ function employeeAccessFromPayload(
       payload.can_access_products == null
         ? fallback?.canAccessProducts ?? isAdmin
         : Boolean(payload.can_access_products),
+    canPostSaleLookup:
+      payload.can_post_sale_lookup == null
+        ? fallback?.canPostSaleLookup ?? true
+        : Boolean(payload.can_post_sale_lookup),
+    canRefundSales:
+      payload.can_refund_sales == null
+        ? fallback?.canRefundSales ?? isAdmin
+        : Boolean(payload.can_refund_sales),
   };
 }
 
@@ -2507,6 +2756,8 @@ function employeeAccessFromInput(
     canAccessCashlogy?: boolean;
     canAccessSupplierPayments?: boolean;
     canAccessProducts?: boolean;
+    canPostSaleLookup?: boolean;
+    canRefundSales?: boolean;
   },
   role: "admin" | "employee",
 ) {
@@ -2515,6 +2766,8 @@ function employeeAccessFromInput(
     canAccessCashlogy: input.canAccessCashlogy ?? isAdmin,
     canAccessSupplierPayments: input.canAccessSupplierPayments ?? isAdmin,
     canAccessProducts: input.canAccessProducts ?? isAdmin,
+    canPostSaleLookup: input.canPostSaleLookup ?? true,
+    canRefundSales: input.canRefundSales ?? isAdmin,
   };
 }
 
@@ -2529,6 +2782,8 @@ export async function createEmployee(input: {
   canAccessCashlogy?: boolean;
   canAccessSupplierPayments?: boolean;
   canAccessProducts?: boolean;
+  canPostSaleLookup?: boolean;
+  canRefundSales?: boolean;
 }) {
   const id = randomUUID();
 
@@ -2552,6 +2807,8 @@ export async function createEmployee(input: {
         can_access_cashlogy: access.canAccessCashlogy,
         can_access_supplier_payments: access.canAccessSupplierPayments,
         can_access_products: access.canAccessProducts,
+        can_post_sale_lookup: access.canPostSaleLookup,
+        can_refund_sales: access.canRefundSales,
       },
       requestedBy: "dashboard-empleados",
     });
@@ -2569,6 +2826,8 @@ export async function createEmployee(input: {
       canAccessCashlogy: access.canAccessCashlogy,
       canAccessSupplierPayments: access.canAccessSupplierPayments,
       canAccessProducts: access.canAccessProducts,
+      canPostSaleLookup: access.canPostSaleLookup,
+      canRefundSales: access.canRefundSales,
     } satisfies Employee;
   }
   assertLegacyWritable();
@@ -2595,6 +2854,8 @@ export async function updateEmployee(
     canAccessCashlogy?: boolean;
     canAccessSupplierPayments?: boolean;
     canAccessProducts?: boolean;
+    canPostSaleLookup?: boolean;
+    canRefundSales?: boolean;
   },
 ) {
   if (!hasDatabase()) return;
@@ -2611,6 +2872,8 @@ export async function updateEmployee(
       can_access_cashlogy: access.canAccessCashlogy,
       can_access_supplier_payments: access.canAccessSupplierPayments,
       can_access_products: access.canAccessProducts,
+      can_post_sale_lookup: access.canPostSaleLookup,
+      can_refund_sales: access.canRefundSales,
     };
     const pin = normalizeEmployeePin(input.pin);
     if (input.pin && !pin) throw new Error("El PIN ha de tenir 4 numeros.");

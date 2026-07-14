@@ -27,6 +27,8 @@ export async function POST(request: Request) {
       canAccessCashlogy: body.canAccessCashlogy == null ? undefined : Boolean(body.canAccessCashlogy),
       canAccessSupplierPayments: body.canAccessSupplierPayments == null ? undefined : Boolean(body.canAccessSupplierPayments),
       canAccessProducts: body.canAccessProducts == null ? undefined : Boolean(body.canAccessProducts),
+      canPostSaleLookup: body.canPostSaleLookup == null ? undefined : Boolean(body.canPostSaleLookup),
+      canRefundSales: body.canRefundSales == null ? undefined : Boolean(body.canRefundSales),
     });
 
     return NextResponse.json(employee, { status: 201 });
@@ -58,6 +60,8 @@ export async function PUT(request: Request) {
       canAccessCashlogy: body.canAccessCashlogy == null ? undefined : Boolean(body.canAccessCashlogy),
       canAccessSupplierPayments: body.canAccessSupplierPayments == null ? undefined : Boolean(body.canAccessSupplierPayments),
       canAccessProducts: body.canAccessProducts == null ? undefined : Boolean(body.canAccessProducts),
+      canPostSaleLookup: body.canPostSaleLookup == null ? undefined : Boolean(body.canPostSaleLookup),
+      canRefundSales: body.canRefundSales == null ? undefined : Boolean(body.canRefundSales),
     });
 
     return NextResponse.json({ ok: true });
