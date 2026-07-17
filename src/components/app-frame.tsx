@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { PullToRefresh } from "@/components/pull-to-refresh";
 
 const navItems = [
   { href: "/", label: "Dashboard", section: "General", icon: LayoutDashboard },
@@ -236,7 +237,7 @@ export function AppFrame({
         </header>
 
         {/* Page content */}
-        <div className="flex-1 overflow-y-auto px-4 py-6 lg:px-8">
+        <PullToRefresh className="flex-1 overflow-y-auto px-4 py-6 lg:px-8">
           <div className="mx-auto max-w-[1400px]">
             {/* Page title */}
             <div className="mb-6 animate-fade-in">
@@ -251,7 +252,7 @@ export function AppFrame({
             {/* Children */}
             <div className="space-y-5">{children}</div>
           </div>
-        </div>
+        </PullToRefresh>
       </div>
     </div>
   );
