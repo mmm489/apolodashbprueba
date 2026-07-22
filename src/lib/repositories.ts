@@ -975,8 +975,8 @@ export async function listCashClosings(from?: string, to?: string) {
   const rows = from && to
     ? await sql`
         SELECT c.id, c.z_number, c.z_label, c.opened_at, c.closed_at,
-               COALESCE(payment_totals.total_cash, c.total_cash) AS total_cash,
-               (COALESCE(payment_totals.total_card, c.total_card) - COALESCE(refund_totals.amount, 0)) AS total_card,
+               (COALESCE(payment_totals.total_cash, c.total_cash) - COALESCE(refund_totals.cash_amount, 0)) AS total_cash,
+               (COALESCE(payment_totals.total_card, c.total_card) - COALESCE(refund_totals.card_amount, 0)) AS total_card,
                (COALESCE(payment_totals.total_sales, c.total_sales) - COALESCE(refund_totals.amount, 0)) AS total_sales,
                COALESCE(payment_totals.ticket_count, c.ticket_count) AS ticket_count,
                COALESCE(payment_totals.cash_count, c.cash_count) AS cash_count,
@@ -1002,7 +1002,9 @@ export async function listCashClosings(from?: string, to?: string) {
             AND COALESCE(o.business_unit, 'hicream') = 'hicream'
         ) payment_totals ON TRUE
         LEFT JOIN LATERAL (
-          SELECT COALESCE(SUM(r.amount), 0)::float AS amount
+          SELECT COALESCE(SUM(r.amount), 0)::float AS amount,
+                 COALESCE(SUM(CASE WHEN ro.payment_method = 'cash' THEN r.amount ELSE 0 END), 0)::float AS cash_amount,
+                 COALESCE(SUM(CASE WHEN ro.payment_method IN ('card', 'manual') THEN r.amount ELSE 0 END), 0)::float AS card_amount
           FROM pos.refunds r
           JOIN pos.orders ro ON ro.id = r.order_id
           WHERE r.status = 'completed'
@@ -1016,8 +1018,8 @@ export async function listCashClosings(from?: string, to?: string) {
       `
     : await sql`
         SELECT c.id, c.z_number, c.z_label, c.opened_at, c.closed_at,
-               COALESCE(payment_totals.total_cash, c.total_cash) AS total_cash,
-               (COALESCE(payment_totals.total_card, c.total_card) - COALESCE(refund_totals.amount, 0)) AS total_card,
+               (COALESCE(payment_totals.total_cash, c.total_cash) - COALESCE(refund_totals.cash_amount, 0)) AS total_cash,
+               (COALESCE(payment_totals.total_card, c.total_card) - COALESCE(refund_totals.card_amount, 0)) AS total_card,
                (COALESCE(payment_totals.total_sales, c.total_sales) - COALESCE(refund_totals.amount, 0)) AS total_sales,
                COALESCE(payment_totals.ticket_count, c.ticket_count) AS ticket_count,
                COALESCE(payment_totals.cash_count, c.cash_count) AS cash_count,
@@ -1043,7 +1045,9 @@ export async function listCashClosings(from?: string, to?: string) {
             AND COALESCE(o.business_unit, 'hicream') = 'hicream'
         ) payment_totals ON TRUE
         LEFT JOIN LATERAL (
-          SELECT COALESCE(SUM(r.amount), 0)::float AS amount
+          SELECT COALESCE(SUM(r.amount), 0)::float AS amount,
+                 COALESCE(SUM(CASE WHEN ro.payment_method = 'cash' THEN r.amount ELSE 0 END), 0)::float AS cash_amount,
+                 COALESCE(SUM(CASE WHEN ro.payment_method IN ('card', 'manual') THEN r.amount ELSE 0 END), 0)::float AS card_amount
           FROM pos.refunds r
           JOIN pos.orders ro ON ro.id = r.order_id
           WHERE r.status = 'completed'
