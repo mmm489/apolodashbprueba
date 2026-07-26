@@ -237,20 +237,20 @@ export function AppFrame({
         </header>
 
         {/* Page content */}
-        <PullToRefresh className="flex-1 overflow-y-auto px-4 py-6 lg:px-8">
+        <PullToRefresh className="flex-1 overflow-y-auto px-3 py-4 sm:px-4 sm:py-6 lg:px-8">
           <div className="mx-auto max-w-[1400px]">
             {/* Page title */}
-            <div className="mb-6 animate-fade-in">
-              <h1 className="text-[28px] font-bold tracking-tight text-slate-900 lg:text-[32px]">
+            <div className="mb-4 animate-fade-in sm:mb-6">
+              <h1 className="text-[26px] font-bold tracking-tight text-slate-900 sm:text-[28px] lg:text-[32px]">
                 {title}
               </h1>
-              <p className="mt-1 max-w-2xl text-[14px] leading-relaxed text-slate-500">
+              <p className="mt-1 max-w-2xl text-[13px] leading-relaxed text-slate-500 sm:text-[14px]">
                 {description}
               </p>
             </div>
 
             {/* Children */}
-            <div className="space-y-5">{children}</div>
+            <div className="space-y-3 sm:space-y-5">{children}</div>
           </div>
         </PullToRefresh>
       </div>

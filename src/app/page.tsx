@@ -124,7 +124,7 @@ export default async function HomePage({
       />
 
       {/* KPI cards */}
-      <section className="stagger-children grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+      <section className="stagger-children grid grid-cols-2 gap-2 sm:gap-4 xl:grid-cols-6">
         <MiniStatCard
           icon={<TrendingUp className="size-4" />}
           label="Vendes s/IVA"
@@ -1040,19 +1040,19 @@ function MiniStatCard({
   const c = colorMap[color] ?? colorMap.indigo;
   const showDeltas = deltaPrev !== undefined || deltaYoY !== undefined;
   return (
-    <article className="group rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md">
-      <div className="flex items-center gap-2">
-        <span className={`flex size-8 items-center justify-center rounded-lg ${c.bg} ${c.icon}`}>{icon}</span>
-        <span className="text-[13px] font-medium text-slate-500">{label}</span>
+    <article className="group min-w-0 rounded-xl border border-[var(--line)] bg-white p-3 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md sm:rounded-2xl sm:p-5">
+      <div className="flex items-start gap-2">
+        <span className={`flex size-7 shrink-0 items-center justify-center rounded-lg sm:size-8 ${c.bg} ${c.icon}`}>{icon}</span>
+        <span className="min-w-0 text-[11px] font-medium leading-4 text-slate-500 sm:text-[13px] sm:leading-normal">{label}</span>
       </div>
-      <p className="mt-4 text-[26px] font-bold tracking-tight text-slate-900">{value}</p>
+      <p className="mt-2 break-words text-[19px] font-bold tracking-tight text-slate-900 sm:mt-4 sm:text-[26px]">{value}</p>
       {showDeltas ? (
         <div className="mt-1 flex flex-col gap-0.5">
           {deltaPrev !== undefined && <DeltaPill label="vs anterior" pct={deltaPrev} />}
           {deltaYoY !== undefined && <DeltaPill label="vs any passat" pct={deltaYoY} />}
         </div>
       ) : (
-        <p className={`mt-1 text-[13px] font-medium ${positive ? "text-emerald-600" : "text-slate-400"}`}>{delta}</p>
+        <p className={`mt-1 text-[11px] font-medium sm:text-[13px] ${positive ? "text-emerald-600" : "text-slate-400"}`}>{delta}</p>
       )}
     </article>
   );
@@ -1094,14 +1094,14 @@ function TodayDigest({ digest }: { digest: import("@/lib/types").DailyDigest }) 
     : undefined;
 
   return (
-    <section className="rounded-2xl border border-indigo-200 bg-gradient-to-br from-indigo-50/80 via-white to-white p-5 shadow-sm">
+    <section className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50/80 via-white to-white p-3 shadow-sm sm:rounded-2xl sm:p-5">
       {/* Header */}
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Eye className="size-5 text-indigo-600" />
+      <div className="mb-3 flex items-start justify-between sm:mb-4 sm:items-center">
+        <div className="flex min-w-0 items-start gap-2">
+          <Eye className="mt-0.5 size-4 shrink-0 text-indigo-600 sm:size-5" />
           <div>
-            <p className="text-[18px] font-bold tracking-tight text-slate-900">Què vigilar avui</p>
-            <p className="text-[12px] text-slate-500">Resum del dia més recent — {date}</p>
+            <p className="text-[16px] font-bold tracking-tight text-slate-900 sm:text-[18px]">Què vigilar avui</p>
+            <p className="text-[11px] leading-4 text-slate-500 sm:text-[12px]">Resum del dia més recent — {date}</p>
           </div>
         </div>
         {digest.forecastTomorrow && <ForecastTomorrowBlock forecast={digest.forecastTomorrow} />}
@@ -1118,10 +1118,10 @@ function TodayDigest({ digest }: { digest: import("@/lib/types").DailyDigest }) 
       )}
 
       {/* Main metrics: 3 cards (Vendes, Comandes, Tiquet mitjà) — all today-specific */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <SalesCardWithSparkline
-          digest={digest}
-        />
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-5">
+        <div className="col-span-2 xl:col-span-1">
+          <SalesCardWithSparkline digest={digest} />
+        </div>
         <DigestCard
           label="Comandes"
           value={digest.orders > 0 ? String(digest.orders) : "--"}
@@ -1196,9 +1196,9 @@ function SalesCardWithSparkline({ digest }: { digest: import("@/lib/types").Dail
   const ring = status === "good" ? "ring-emerald-200 bg-emerald-50/50" : status === "bad" ? "ring-rose-200 bg-rose-50/50" : "ring-slate-200 bg-white";
   const color = status === "good" ? "text-emerald-700" : status === "bad" ? "text-rose-700" : "text-slate-900";
   return (
-    <div className={`rounded-xl ring-1 ${ring} p-3`}>
+    <div className={`rounded-lg ring-1 sm:rounded-xl ${ring} p-2.5 sm:p-3`}>
       <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">Vendes</p>
-      <p className={`mt-1 text-[22px] font-bold tracking-tight ${color}`}>{euro(digest.sales)}</p>
+      <p className={`mt-1 text-[20px] font-bold tracking-tight sm:text-[22px] ${color}`}>{euro(digest.sales)}</p>
       {delta !== undefined && (
         <p className={`mt-0.5 text-[11px] font-medium ${status === "good" ? "text-emerald-600" : status === "bad" ? "text-rose-600" : "text-slate-400"}`}>
           {delta > 0 ? "+" : ""}{delta.toFixed(1)}% vs setmana passada
@@ -1237,9 +1237,9 @@ function SameTimeSalesCard({
     : "text-rose-700";
 
   return (
-    <div className={`rounded-xl ring-1 ${surface} p-3`}>
-      <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">{label}</p>
-      <p className={`mt-1 text-[22px] font-bold tracking-tight ${valueColor}`}>
+    <div className={`min-w-0 rounded-lg ring-1 sm:rounded-xl ${surface} p-2.5 sm:p-3`}>
+      <p className="text-[10px] font-medium uppercase leading-4 tracking-wider text-slate-500 sm:text-[11px]">{label}</p>
+      <p className={`mt-1 break-words text-[18px] font-bold tracking-tight sm:text-[22px] ${valueColor}`}>
         {comparison ? euro(comparison.sales) : "--"}
       </p>
       {comparison && (
@@ -1406,7 +1406,7 @@ function PeriodMetrics({
 }) {
   const coverageOk = productCostCoverage >= 0.8;
   return (
-    <section className="grid gap-3 sm:grid-cols-3">
+    <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3">
       <DigestCard
         label="Food cost"
         value={`${foodCostPct.toFixed(1)}%`}
@@ -1430,6 +1430,7 @@ function PeriodMetrics({
         label="Hora pic"
         value={bestHourLabel || "--"}
         hint="del període"
+        className="col-span-2 sm:col-span-1"
       />
     </section>
   );
@@ -1641,6 +1642,7 @@ function DigestCard({
   lowerIsBetter,
   hint,
   warning,
+  className = "",
 }: {
   label: string;
   value: string;
@@ -1650,6 +1652,7 @@ function DigestCard({
   currentForTarget?: number;
   lowerIsBetter?: boolean;
   hint?: string;
+  className?: string;
   /** If set, the card renders in amber with this text instead of marking
    * "good" or "bad" based on target. Used when the underlying data is
    * unreliable (e.g. food cost with low product-cost coverage). */
@@ -1677,9 +1680,9 @@ function DigestCard({
     : "text-slate-900";
 
   return (
-    <div className={`rounded-xl ring-1 ${ringColor} p-3`}>
-      <p className="text-[11px] font-medium uppercase tracking-wider text-slate-500">{label}</p>
-      <p className={`mt-1 text-[20px] font-bold tracking-tight ${valueColor}`}>{value}</p>
+    <div className={`min-w-0 rounded-lg ring-1 sm:rounded-xl ${ringColor} p-2.5 sm:p-3 ${className}`}>
+      <p className="text-[10px] font-medium uppercase leading-4 tracking-wider text-slate-500 sm:text-[11px]">{label}</p>
+      <p className={`mt-1 break-words text-[18px] font-bold tracking-tight sm:text-[20px] ${valueColor}`}>{value}</p>
       {warning ? (
         <p className="mt-0.5 text-[11px] font-medium text-amber-700">⚠️ {warning}</p>
       ) : (

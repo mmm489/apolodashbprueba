@@ -51,12 +51,38 @@ export function DateFilterBar({
 
   const fromLabel = formatDateLabel(from);
   const toLabel = formatDateLabel(to);
+  const fromCompactLabel = formatCompactDateLabel(from);
+  const toCompactLabel = formatCompactDateLabel(to);
+  const selectedPreset = showCustom || preset === "custom" ? "custom" : preset;
 
   return (
-    <section className="rounded-2xl border border-[var(--line)] bg-white shadow-sm">
-      <div className="flex flex-col gap-3 p-3 xl:flex-row xl:items-center xl:justify-between">
-        {/* Presets */}
-        <div className="flex items-center gap-1">
+    <section className="rounded-xl border border-[var(--line)] bg-white shadow-sm sm:rounded-2xl">
+      <div className="flex flex-col gap-2 p-2.5 sm:gap-3 sm:p-3 xl:flex-row xl:items-center xl:justify-between">
+        {/* Compact mobile selector */}
+        <label className="relative flex items-center lg:hidden">
+          <Calendar className="pointer-events-none absolute left-3 size-4 text-indigo-500" />
+          <select
+            value={selectedPreset}
+            onChange={(event) => {
+              if (event.target.value === "custom") {
+                setShowCustom(true);
+              } else {
+                selectPreset(event.target.value);
+              }
+            }}
+            aria-label="Seleccionar periode"
+            className="h-10 w-full appearance-none rounded-lg border border-[var(--line)] bg-white pl-9 pr-9 text-[13px] font-semibold text-slate-700 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-500/10"
+          >
+            {presets.map((item) => (
+              <option key={item.value} value={item.value}>{item.label}</option>
+            ))}
+            <option value="custom">Personalitzat</option>
+          </select>
+          <span className="pointer-events-none absolute right-3 text-[11px] text-slate-400">▼</span>
+        </label>
+
+        {/* Desktop presets */}
+        <div className="hidden items-center gap-1 lg:flex">
           <Calendar className="mr-1.5 size-4 text-indigo-500" />
           {presets.map((item) => (
             <button
@@ -86,10 +112,12 @@ export function DateFilterBar({
         </div>
 
         {/* Date range display */}
-        <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-1.5">
-          <span className="text-[13px] font-medium text-slate-600">{fromLabel}</span>
-          <ChevronRight className="size-3 text-slate-400" />
-          <span className="text-[13px] font-medium text-slate-600">{toLabel}</span>
+        <div className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-50 px-3 py-2 sm:w-auto sm:rounded-xl sm:py-1.5">
+          <span className="whitespace-nowrap text-[12px] font-semibold text-slate-600 sm:hidden">{fromCompactLabel}</span>
+          <span className="hidden text-[13px] font-medium text-slate-600 sm:inline">{fromLabel}</span>
+          <ChevronRight className="size-3 shrink-0 text-slate-400" />
+          <span className="whitespace-nowrap text-[12px] font-semibold text-slate-600 sm:hidden">{toCompactLabel}</span>
+          <span className="hidden text-[13px] font-medium text-slate-600 sm:inline">{toLabel}</span>
         </div>
       </div>
 
@@ -133,4 +161,8 @@ export function DateFilterBar({
 
 function formatDateLabel(dateStr: string) {
   return formatDashboardDate(dateStr, "ca-ES", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function formatCompactDateLabel(dateStr: string) {
+  return formatDashboardDate(dateStr, "ca-ES", { day: "2-digit", month: "2-digit", year: "2-digit" });
 }
