@@ -6,6 +6,7 @@ import { OneDrivePanel } from "@/components/onedrive-panel";
 import { SectionCard } from "@/components/section-card";
 import { UploadPanel } from "@/components/upload-panel";
 import { getExpensesWorkspace } from "@/lib/analytics";
+import { buildCanonicalSupplierNames, normalizeSupplierKey } from "@/lib/supplier-names";
 
 export const dynamic = "force-dynamic";
 
@@ -113,15 +114,18 @@ function SupplierAnalysis({
 }) {
   // Aggregate per supplier
   type SupplierAgg = { name: string; total: number; count: number; lastDate: string };
+  const canonicalNames = buildCanonicalSupplierNames(invoices.map((invoice) => invoice.supplierName));
   const map = new Map<string, SupplierAgg>();
   for (const inv of invoices) {
-    const existing = map.get(inv.supplierName);
+    const supplierKey = normalizeSupplierKey(inv.supplierName);
+    const supplierName = canonicalNames.get(supplierKey) ?? inv.supplierName.trim();
+    const existing = map.get(supplierKey);
     if (existing) {
       existing.total += inv.totalAmount;
       existing.count += 1;
       if (inv.issueDate > existing.lastDate) existing.lastDate = inv.issueDate;
     } else {
-      map.set(inv.supplierName, { name: inv.supplierName, total: inv.totalAmount, count: 1, lastDate: inv.issueDate });
+      map.set(supplierKey, { name: supplierName, total: inv.totalAmount, count: 1, lastDate: inv.issueDate });
     }
   }
   const ranked = [...map.values()].sort((a, b) => b.total - a.total);

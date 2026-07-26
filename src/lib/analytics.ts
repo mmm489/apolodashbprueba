@@ -21,6 +21,7 @@ import {
 } from "@/lib/repositories";
 import { describeCalendarContext, getCalendarContext } from "@/lib/calendar";
 import { classifyFamily } from "@/lib/product-families";
+import { buildCanonicalSupplierNames, normalizeSupplierKey } from "@/lib/supplier-names";
 import { DASHBOARD_TIME_ZONE, toDashboardDateOnly } from "@/lib/timezone";
 import type { ChatAnswer, DailyCalendarNote, DailyDigest as DailyDigestType, DateFilter, DatePreset, DocumentRecord, Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleShift, FamilyMovement, FinancialWorkspace, HistoricalWeather, HourlyProductSale, HourlyProfitabilityProduct, HourlyProfitabilitySlot, HourlyProfitabilitySummary, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, PlannedLaborRecord, ProductCost, ProductCostHistoryEntry, ProductSaleRecord, SalesReport, SalesToTimeComparison } from "@/lib/types";
 
@@ -238,7 +239,7 @@ export async function getFinancialWorkspace(input?: {
         bestHourLabel: bestHour.hour,
         bestHourSales: bestHour.sales,
         estimatedMargin,
-        activeSuppliers: new Set(scopedInvoices.map((item) => item.supplierName)).size,
+        activeSuppliers: new Set(scopedInvoices.map((item) => normalizeSupplierKey(item.supplierName))).size,
         totalHoursWorked,
         productivityPerHour,
         plannedLaborHours,
@@ -615,18 +616,19 @@ export async function getExpensesWorkspace(input?: {
   }
 
   // Apply filters
-  const supplierFilter = input?.supplier?.toLowerCase().trim() ?? "";
+  const supplierFilter = input?.supplier ? normalizeSupplierKey(input.supplier) : "";
   const productFilter = input?.product?.toLowerCase().trim() ?? "";
   const categoryFilter = input?.category?.toLowerCase().trim() ?? "";
 
-  if (supplierFilter) rows = rows.filter((r) => r.supplierName.toLowerCase().includes(supplierFilter));
+  if (supplierFilter) rows = rows.filter((r) => normalizeSupplierKey(r.supplierName).includes(supplierFilter));
   if (productFilter) rows = rows.filter((r) => r.lineDescription.toLowerCase().includes(productFilter));
   if (categoryFilter) rows = rows.filter((r) => r.category.toLowerCase() === categoryFilter);
 
   // Sort by date desc then supplier
   rows.sort((a, b) => b.issueDate.localeCompare(a.issueDate) || a.supplierName.localeCompare(b.supplierName));
 
-  const allSuppliers = [...new Set(scopedInvoices.map((inv) => inv.supplierName))].sort();
+  const canonicalSuppliers = buildCanonicalSupplierNames(scopedInvoices.map((invoice) => invoice.supplierName));
+  const allSuppliers = [...canonicalSuppliers.values()].sort((a, b) => a.localeCompare(b, "es"));
   const allCategories = [...new Set(scopedInvoices.map((inv) => inv.category))].sort();
 
   const totalGross = rows.reduce((sum, r) => sum + r.lineAmount, 0);
