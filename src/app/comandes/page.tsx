@@ -73,64 +73,67 @@ export default async function ComandesPage({
     >
       <DateFilterBar preset={filter.preset} from={filter.from} to={filter.to} />
 
-      <section className="flex flex-col gap-4 rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+      <section className="flex flex-col gap-3 rounded-xl border border-[var(--line)] bg-white p-3 shadow-sm sm:gap-4 sm:rounded-2xl sm:p-5 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h2 className="text-lg font-bold tracking-tight text-slate-950">
+          <h2 className="text-[15px] font-bold tracking-tight text-slate-950 sm:text-lg">
             Exportar facturas simplificadas
           </h2>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-[11px] leading-4 text-slate-500 sm:text-sm">
             Descarga el detalle por lineas o el resumen IVA diario del periodo seleccionado. El resumen excluye anuladas, Cookies y aparcados.
           </p>
         </div>
-        <div className="flex flex-wrap gap-3">
+        <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:gap-3">
           <a
             href={exportHref("xlsx")}
-            className="inline-flex items-center justify-center rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800"
+            className="inline-flex min-h-10 items-center justify-center rounded-lg bg-slate-950 px-2 py-2 text-center text-[11px] font-bold leading-4 text-white shadow-sm transition hover:bg-slate-800 sm:rounded-xl sm:px-4 sm:text-sm"
           >
-            Descargar Excel detallado
+            <span className="sm:hidden">Excel</span>
+            <span className="hidden sm:inline">Descargar Excel detallado</span>
           </a>
           <a
             href={exportHref("csv")}
-            className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            className="inline-flex min-h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-2 py-2 text-center text-[11px] font-bold leading-4 text-slate-700 shadow-sm transition hover:bg-slate-50 sm:rounded-xl sm:px-4 sm:text-sm"
           >
-            Descargar CSV detallado
+            <span className="sm:hidden">CSV</span>
+            <span className="hidden sm:inline">Descargar CSV detallado</span>
           </a>
           <a
             href={exportHref("xlsx", "iva-summary")}
-            className="inline-flex items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700"
+            className="inline-flex min-h-10 items-center justify-center rounded-lg bg-emerald-600 px-2 py-2 text-center text-[11px] font-bold leading-4 text-white shadow-sm transition hover:bg-emerald-700 sm:rounded-xl sm:px-4 sm:text-sm"
           >
-            Descargar resumen IVA
+            <span className="sm:hidden">Resumen IVA</span>
+            <span className="hidden sm:inline">Descargar resumen IVA</span>
           </a>
         </div>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <section className="grid grid-cols-2 gap-2 sm:gap-4 xl:grid-cols-5">
         <Metric label="Comandes" value={fmtNum(activeOrders.length)} color="indigo" />
         <Metric label="Rectificatives" value={fmtNum(completedRefunds.length)} color="slate" />
         <Metric label="Vendes s/IVA" value={euro(totalBase)} color="emerald" />
         <Metric label="Vendes amb IVA" value={euro(totalWithVat)} color="amber" />
-        <Metric label="Tiquet mitjà s/IVA" value={euro(averageTicket)} color="violet" />
+        <Metric label="Tiquet mitjà s/IVA" value={euro(averageTicket)} color="violet" className="col-span-2 xl:col-span-1" />
       </section>
 
       {cancelledOrders > 0 && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-[12px] font-medium leading-4 text-rose-700 sm:rounded-2xl sm:px-4 sm:py-3 sm:text-sm">
           Hi ha {cancelledOrders} comanda{cancelledOrders === 1 ? "" : "s"} cancel·lada
           {cancelledOrders === 1 ? "" : "s"} en aquest període. Es mostren a la llista, però no compten als totals.
         </div>
       )}
 
       {parkedOrders > 0 && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-700">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[12px] font-medium leading-4 text-amber-700 sm:rounded-2xl sm:px-4 sm:py-3 sm:text-sm">
           Hi ha {parkedOrders} comanda{parkedOrders === 1 ? "" : "s"} aparcada
           {parkedOrders === 1 ? "" : "s"} en aquest període. Es mostren a la llista, però no compten com a venda fins que es cobrin.
         </div>
       )}
 
       {refunds.length > 0 && (
-        <section className="overflow-hidden rounded-2xl border border-rose-200 bg-white shadow-sm">
-          <div className="border-b border-rose-100 bg-rose-50 px-5 py-4">
-            <h2 className="text-lg font-bold tracking-tight text-rose-950">Factures rectificatives</h2>
-            <p className="mt-1 text-sm text-rose-700">
+        <section className="overflow-hidden rounded-xl border border-rose-200 bg-white shadow-sm sm:rounded-2xl">
+          <div className="border-b border-rose-100 bg-rose-50 px-3 py-3 sm:px-5 sm:py-4">
+            <h2 className="text-[16px] font-bold tracking-tight text-rose-950 sm:text-lg">Factures rectificatives</h2>
+            <p className="mt-1 text-[11px] leading-4 text-rose-700 sm:text-sm">
               Es resten en la data de la devolucio. La factura original es conserva intacta.
             </p>
           </div>
@@ -143,22 +146,119 @@ export default async function ComandesPage({
       )}
 
       {orders.length === 0 ? (
-        <section className="rounded-2xl border border-[var(--line)] bg-white p-8 text-center shadow-sm">
-          <p className="text-lg font-semibold text-slate-900">No hi ha comandes en aquest període</p>
-          <p className="mt-2 text-sm text-slate-500">
+        <section className="rounded-xl border border-[var(--line)] bg-white p-5 text-center shadow-sm sm:rounded-2xl sm:p-8">
+          <p className="text-[16px] font-semibold text-slate-900 sm:text-lg">No hi ha comandes en aquest període</p>
+          <p className="mt-1.5 text-[12px] text-slate-500 sm:mt-2 sm:text-sm">
             Quan el POS sincronitzi vendes, apareixeran aquí amb les seves línies.
           </p>
         </section>
       ) : (
-        <section className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-sm">
-          <div className="border-b border-[var(--line)] px-5 py-4">
-            <h2 className="text-lg font-bold tracking-tight text-slate-950">Historial de comandes</h2>
-            <p className="mt-1 text-sm text-slate-500">
+        <section className="overflow-hidden rounded-xl border border-[var(--line)] bg-white shadow-sm sm:rounded-2xl">
+          <div className="border-b border-[var(--line)] px-3 py-3 sm:px-5 sm:py-4">
+            <h2 className="text-[16px] font-bold tracking-tight text-slate-950 sm:text-lg">Historial de comandes</h2>
+            <p className="mt-1 text-[11px] leading-4 text-slate-500 sm:text-sm">
               Cada comanda surt en una línia. Obre-la per revisar productes, sabors i complements.
             </p>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="divide-y divide-slate-100 lg:hidden">
+            {orders.slice(0, 160).map((order) => (
+              <details key={order.id} className="group bg-white open:bg-slate-50/60">
+                <summary className="cursor-pointer list-none px-3 py-3 [&::-webkit-details-marker]:hidden">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[17px] font-black tracking-tight text-slate-950">
+                          {order.orderNumber}
+                        </span>
+                        <StatusBadge status={order.status} />
+                      </div>
+                      {order.invoiceNumber && (
+                        <p className="mt-0.5 truncate text-[10px] font-semibold text-slate-500">
+                          {order.invoiceNumber}
+                        </p>
+                      )}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-[18px] font-black tabular-nums text-slate-950">{euro(order.total)}</p>
+                      <p className="text-[10px] font-semibold text-slate-500">{euro(order.base)} s/IVA</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-slate-600">
+                    <span>{formatDate(order.businessDate)} · {order.orderTime}</span>
+                    <span className="text-slate-300">·</span>
+                    <PaymentBadge method={order.paymentMethod} />
+                  </div>
+
+                  <div className="mt-2 flex items-start justify-between gap-3 text-[11px] text-slate-500">
+                    <span className="font-semibold">
+                      {orderItemLabel(order)}
+                      {modifierLabel(order) !== "Sense complements" ? ` · ${modifierLabel(order)}` : ""}
+                    </span>
+                    <span className="max-w-[48%] text-right">
+                      {order.employeeName || "Sense empleat"} · {serviceLabel(order.serviceType)}
+                      {order.tableNumber ? ` · T${order.tableNumber}` : ""}
+                    </span>
+                  </div>
+
+                  <div className="mt-2.5 flex items-center justify-center rounded-lg bg-slate-100 py-1.5 text-[11px] font-bold text-slate-600 group-open:bg-slate-900 group-open:text-white">
+                    <span className="group-open:hidden">Veure productes</span>
+                    <span className="hidden group-open:inline">Ocultar productes</span>
+                  </div>
+                </summary>
+
+                <div className="border-t border-slate-100 bg-slate-50 px-3 py-3">
+                  <div className="space-y-2">
+                    {order.lines.map((line) => (
+                      <div key={line.id} className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-[13px] font-bold leading-4 text-slate-950">{line.displayName}</p>
+                            <p className="mt-1 text-[10px] font-semibold text-slate-500">
+                              {fmtQty(line.qty)}x · {line.categoryName || "Sense categoria"} · IVA {fmtNum(line.vatRate)}%
+                            </p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="text-[13px] font-black tabular-nums text-slate-950">{euro(line.lineTotal)}</p>
+                            <p className="text-[10px] tabular-nums text-slate-500">{euro(line.lineBase)} s/IVA</p>
+                          </div>
+                        </div>
+
+                        {line.visibleNote && (
+                          <p className="mt-2 rounded-md bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700">
+                            Nota: {line.visibleNote}
+                          </p>
+                        )}
+
+                        {line.modifiers.length > 0 && (
+                          <div className="mt-2 border-l-2 border-indigo-200 pl-2">
+                            <p className="mb-1 text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                              Complements
+                            </p>
+                            <div className="space-y-1">
+                              {line.modifiers.map((modifier) => (
+                                <div key={modifier.id} className="flex items-start justify-between gap-2 text-[11px]">
+                                  <span className="min-w-0 font-semibold leading-4 text-slate-700">
+                                    + {fmtQty(modifier.qty)}x {modifier.displayName}
+                                  </span>
+                                  <span className="shrink-0 font-bold tabular-nums text-slate-700">
+                                    {euro(modifier.lineTotal)}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </details>
+            ))}
+          </div>
+
+          <div className="hidden overflow-x-auto lg:block">
             <div className="min-w-[980px]">
               <div className="grid grid-cols-[1.25fr_1.25fr_0.9fr_1fr_1fr_170px] gap-4 border-b border-[var(--line)] bg-slate-50 px-5 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
                 <div>Comanda</div>
@@ -304,8 +404,8 @@ function RefundRow({ refund }: { refund: PosRefundRecord }) {
   const completed = refund.status === "completed";
   return (
     <details className="group">
-      <summary className="grid cursor-pointer list-none gap-3 px-5 py-4 md:grid-cols-[1fr_1.2fr_1fr_150px] md:items-center [&::-webkit-details-marker]:hidden">
-        <div>
+      <summary className="grid cursor-pointer list-none grid-cols-[1fr_auto] gap-2 px-3 py-3 sm:px-5 sm:py-4 md:grid-cols-[1fr_1.2fr_1fr_150px] md:items-center [&::-webkit-details-marker]:hidden">
+        <div className="col-span-2 md:col-span-1">
           <p className="font-black text-slate-950">
             {refund.rectifyingInvoiceNumber || "Pendent de verificar"}
           </p>
@@ -313,7 +413,7 @@ function RefundRow({ refund }: { refund: PosRefundRecord }) {
             Original {refund.originalInvoiceNumber || refund.orderNumber}
           </p>
         </div>
-        <div>
+        <div className="col-span-2 md:col-span-1">
           <p className="font-bold text-slate-900">
             {formatDate(refund.businessDate)} · {refund.refundTime}
           </p>
@@ -326,17 +426,19 @@ function RefundRow({ refund }: { refund: PosRefundRecord }) {
             {completed ? "Rectificada" : refund.status === "pending_verification" ? "Pendent verificar" : refund.status}
           </span>
         </div>
-        <p className="text-right text-xl font-black tabular-nums text-rose-700">
+        <p className="text-right text-[18px] font-black tabular-nums text-rose-700 sm:text-xl">
           {completed ? "-" : ""}{euro(refund.amount)}
         </p>
       </summary>
-      <div className="border-t border-slate-100 bg-slate-50 px-5 py-4">
+      <div className="border-t border-slate-100 bg-slate-50 px-3 py-3 sm:px-5 sm:py-4">
         <div className="space-y-2">
           {refund.items.map((item) => (
-            <div key={item.id} className="grid grid-cols-[1fr_80px_120px] gap-3 rounded-xl bg-white px-4 py-3 text-sm">
-              <span className="font-semibold text-slate-800">{item.productName}</span>
-              <span className="text-right tabular-nums text-slate-600">-{fmtQty(item.qty)}x</span>
-              <span className="text-right font-bold tabular-nums text-rose-700">-{euro(item.lineTotal)}</span>
+            <div key={item.id} className="flex items-start justify-between gap-3 rounded-lg bg-white px-3 py-2.5 text-[12px] sm:rounded-xl sm:px-4 sm:py-3 sm:text-sm">
+              <div className="min-w-0">
+                <p className="font-semibold text-slate-800">{item.productName}</p>
+                <p className="mt-0.5 tabular-nums text-slate-500">-{fmtQty(item.qty)}x</p>
+              </div>
+              <span className="shrink-0 text-right font-bold tabular-nums text-rose-700">-{euro(item.lineTotal)}</span>
             </div>
           ))}
         </div>
@@ -492,7 +594,7 @@ function StatusBadge({ status }: { status: string }) {
           ? "bg-blue-100 text-blue-700"
           : "bg-amber-100 text-amber-700";
   return (
-    <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${classes}`}>
+    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold sm:px-2.5 sm:py-1 sm:text-xs ${classes}`}>
       {statusLabel(status)}
     </span>
   );
@@ -500,13 +602,23 @@ function StatusBadge({ status }: { status: string }) {
 
 function PaymentBadge({ method }: { method: string }) {
   return (
-    <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-700">
+    <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700 sm:px-2.5 sm:py-1 sm:text-xs">
       {paymentLabel(method)}
     </span>
   );
 }
 
-function Metric({ label, value, color = "indigo" }: { label: string; value: string; color?: string }) {
+function Metric({
+  label,
+  value,
+  color = "indigo",
+  className = "",
+}: {
+  label: string;
+  value: string;
+  color?: string;
+  className?: string;
+}) {
   const colors: Record<string, string> = {
     emerald: "border-l-emerald-500",
     amber: "border-l-amber-500",
@@ -515,9 +627,9 @@ function Metric({ label, value, color = "indigo" }: { label: string; value: stri
     violet: "border-l-violet-500",
   };
   return (
-    <div className={`rounded-xl border border-[var(--line)] border-l-[3px] ${colors[color] ?? colors.indigo} bg-white p-4 shadow-sm`}>
-      <p className="text-[12px] font-medium text-slate-500">{label}</p>
-      <p className="mt-2 text-[22px] font-bold tracking-tight text-slate-900">{value}</p>
+    <div className={`min-w-0 rounded-lg border border-[var(--line)] border-l-[3px] ${colors[color] ?? colors.indigo} bg-white p-3 shadow-sm sm:rounded-xl sm:p-4 ${className}`}>
+      <p className="text-[10px] font-medium leading-4 text-slate-500 sm:text-[12px]">{label}</p>
+      <p className="mt-1 break-words text-[18px] font-bold tracking-tight text-slate-900 sm:mt-2 sm:text-[22px]">{value}</p>
     </div>
   );
 }
