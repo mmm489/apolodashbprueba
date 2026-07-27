@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 
 import { formatDashboardDate } from "@/lib/timezone";
-import type { Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleShare, EmployeeScheduleShift, EmployeeScheduleWeekPublication, TimeClockSessionRecord } from "@/lib/types";
+import type { Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleKind, EmployeeScheduleShare, EmployeeScheduleShift, EmployeeScheduleWeekPublication, TimeClockSessionRecord } from "@/lib/types";
 
 const DEFAULT_HORARI_PUBLIC_BASE_URL = "https://horari-brown.vercel.app";
 const HORARI_PUBLIC_BASE_URL = (process.env.NEXT_PUBLIC_HORARI_BASE_URL || DEFAULT_HORARI_PUBLIC_BASE_URL).replace(/\/+$/, "");
@@ -32,6 +32,7 @@ type EditorState = {
   businessDate: string;
   shiftStart: string;
   shiftEnd: string;
+  scheduleKind: EmployeeScheduleKind;
   existing: boolean;
 };
 
@@ -56,6 +57,7 @@ export function PlanificacionPanel({
 }) {
   const router = useRouter();
   const [shifts, setShifts] = useState(initialShifts);
+  const [activeKind, setActiveKind] = useState<EmployeeScheduleKind>("operational");
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,9 +75,13 @@ export function PlanificacionPanel({
     () => Array.from({ length: 7 }, (_, index) => addDaysIso(weekStart, index)),
     [weekStart],
   );
+  const visibleShifts = useMemo(
+    () => shifts.filter((shift) => shift.scheduleKind === activeKind),
+    [activeKind, shifts],
+  );
   const shiftGroups = useMemo(() => {
     const map = new Map<string, EmployeeScheduleShift[]>();
-    for (const shift of shifts) {
+    for (const shift of visibleShifts) {
       const key = shiftKey(shift.employeeId, shift.businessDate);
       const group = map.get(key) ?? [];
       group.push(shift);
@@ -85,7 +91,7 @@ export function PlanificacionPanel({
       group.sort((a, b) => a.shiftStart.localeCompare(b.shiftStart) || a.shiftEnd.localeCompare(b.shiftEnd));
     }
     return map;
-  }, [shifts]);
+  }, [visibleShifts]);
   const employeeMap = useMemo(() => new Map(employees.map((employee) => [employee.id, employee])), [employees]);
   const costHistoryByEmployee = useMemo(() => buildCostHistoryByEmployee(employeeCostHistory), [employeeCostHistory]);
   const shareMap = useMemo(
@@ -101,27 +107,60 @@ export function PlanificacionPanel({
   }, [timeClockSessions]);
 
   const stats = useMemo(() => {
-    const plannedMinutes = shifts.reduce((sum, shift) => sum + shiftMinutes(shift.shiftStart, shift.shiftEnd), 0);
+    const operationalShifts = shifts.filter((shift) => shift.scheduleKind === "operational");
+    const contractualShifts = shifts.filter((shift) => shift.scheduleKind === "contractual");
+    const operationalMinutes = operationalShifts.reduce((sum, shift) => sum + shiftMinutes(shift.shiftStart, shift.shiftEnd), 0);
+    const contractualMinutes = contractualShifts.reduce((sum, shift) => sum + shiftMinutes(shift.shiftStart, shift.shiftEnd), 0);
     const targetMinutes = employees.reduce((sum, employee) => sum + Math.round((employee.weeklyHours ?? 0) * 60), 0);
     const realMinutes = timeClockSessions.reduce((sum, session) => sum + (session.durationMinutes ?? 0), 0);
-    const plannedCost = shifts.reduce((sum, shift) => {
+    let overtimeMinutes = 0;
+    let plannedCost = 0;
+    let missingOvertimeRates = 0;
+    for (const shift of operationalShifts) {
       const employee = employeeMap.get(shift.employeeId);
-      const hourlyCost = resolveEmployeeCostForDate(costHistoryByEmployee, shift.employeeId, shift.businessDate, employee?.hourlyCost ?? 0);
-      return sum + (shiftMinutes(shift.shiftStart, shift.shiftEnd) / 60) * hourlyCost;
-    }, 0);
-    const missingCosts = shifts.filter((shift) => {
+      const profile = resolveEmployeeCostForDate(costHistoryByEmployee, shift.employeeId, shift.businessDate, {
+        hourlyCost: employee?.hourlyCost ?? 0,
+        overtimeHourlyCost: employee?.overtimeHourlyCost ?? null,
+      });
+      const employeeContractual = contractualShifts.filter((item) =>
+        item.employeeId === shift.employeeId
+      );
+      const hasContractualWeek = contractualShifts.some((item) =>
+        item.employeeId === shift.employeeId && sameMondayWeek(item.businessDate, shift.businessDate)
+      );
+      const split = hasContractualWeek
+        ? splitShiftMinutes(shift, employeeContractual)
+        : { regularMinutes: shiftMinutes(shift.shiftStart, shift.shiftEnd), overtimeMinutes: 0 };
+      overtimeMinutes += split.overtimeMinutes;
+      plannedCost += (split.regularMinutes / 60) * profile.hourlyCost;
+      plannedCost += (split.overtimeMinutes / 60) * (profile.overtimeHourlyCost ?? profile.hourlyCost);
+      if (split.overtimeMinutes > 0 && profile.overtimeHourlyCost == null) missingOvertimeRates += 1;
+    }
+    const missingCosts = operationalShifts.filter((shift) => {
       const employee = employeeMap.get(shift.employeeId);
-      return resolveEmployeeCostForDate(costHistoryByEmployee, shift.employeeId, shift.businessDate, employee?.hourlyCost ?? 0) <= 0;
+      return resolveEmployeeCostForDate(costHistoryByEmployee, shift.employeeId, shift.businessDate, {
+        hourlyCost: employee?.hourlyCost ?? 0,
+        overtimeHourlyCost: employee?.overtimeHourlyCost ?? null,
+      }).hourlyCost <= 0;
     }).length;
+    const employeesWithoutContract = employees.filter((employee) =>
+      operationalShifts.some((shift) => shift.employeeId === employee.id) &&
+      !contractualShifts.some((shift) => shift.employeeId === employee.id)
+    ).length;
 
     return {
       employees: employees.length,
-      shifts: shifts.length,
-      plannedMinutes,
+      operationalShifts: operationalShifts.length,
+      contractualShifts: contractualShifts.length,
+      operationalMinutes,
+      contractualMinutes,
+      overtimeMinutes,
       targetMinutes,
       realMinutes,
       plannedCost,
       missingCosts,
+      missingOvertimeRates,
+      employeesWithoutContract,
       openSessions: timeClockSessions.filter((session) => session.status === "open").length,
     };
   }, [costHistoryByEmployee, employeeMap, employees, shifts, timeClockSessions]);
@@ -140,6 +179,7 @@ export function PlanificacionPanel({
       businessDate,
       shiftStart: shift?.shiftStart ?? defaultStart(employee),
       shiftEnd: shift?.shiftEnd ?? defaultEnd(employee),
+      scheduleKind: shift?.scheduleKind ?? activeKind,
       existing: Boolean(shift),
     });
   }
@@ -175,6 +215,7 @@ export function PlanificacionPanel({
         businessDate: editor.businessDate,
         shiftStart: editor.shiftStart,
         shiftEnd: editor.shiftEnd,
+        scheduleKind: editor.scheduleKind,
         createdAt: now,
         updatedAt: now,
       };
@@ -195,7 +236,12 @@ export function PlanificacionPanel({
       const res = await fetch("/api/scheduling", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: editor.id, employeeId: editor.employeeId, businessDate: editor.businessDate }),
+        body: JSON.stringify({
+          id: editor.id,
+          employeeId: editor.employeeId,
+          businessDate: editor.businessDate,
+          scheduleKind: editor.scheduleKind,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -205,7 +251,10 @@ export function PlanificacionPanel({
 
       setShifts((current) => editor.id
         ? current.filter((shift) => shift.id !== editor.id)
-        : current.filter((shift) => shiftKey(shift.employeeId, shift.businessDate) !== shiftKey(editor.employeeId, editor.businessDate)));
+        : current.filter((shift) =>
+          shift.scheduleKind !== editor.scheduleKind ||
+          shiftKey(shift.employeeId, shift.businessDate) !== shiftKey(editor.employeeId, editor.businessDate)
+        ));
       setEditor(null);
       setMessage("Turno eliminado.");
       router.refresh();
@@ -215,12 +264,12 @@ export function PlanificacionPanel({
   async function copyPreviousWeek() {
     setMessage(null);
     setError(null);
-    if (shifts.length > 0 && !confirm("Esta semana ya tiene turnos. ¿Quieres sobrescribir los dias que coincidan?")) {
+    if (visibleShifts.length > 0 && !confirm("Esta semana ya tiene turnos. ¿Quieres sobrescribir los dias que coincidan?")) {
       return;
     }
 
     startTransition(async () => {
-      const res = await fetch(`/api/scheduling?from=${previousWeek}&to=${previousWeekEnd}`);
+      const res = await fetch(`/api/scheduling?from=${previousWeek}&to=${previousWeekEnd}&kind=${activeKind}`);
       const previous = await res.json().catch(() => []) as EmployeeScheduleShift[];
       if (!res.ok || !Array.isArray(previous)) {
         setError("No se ha podido cargar la semana anterior.");
@@ -239,6 +288,7 @@ export function PlanificacionPanel({
           businessDate: addDaysIso(shift.businessDate, 7),
           shiftStart: shift.shiftStart,
           shiftEnd: shift.shiftEnd,
+          scheduleKind: activeKind,
         }));
 
       if (copied.length === 0) {
@@ -265,10 +315,11 @@ export function PlanificacionPanel({
         businessDate: shift.businessDate,
         shiftStart: shift.shiftStart,
         shiftEnd: shift.shiftEnd,
+        scheduleKind: activeKind,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       }))));
-      setMessage(`Semana anterior copiada: ${copied.length} turno${copied.length === 1 ? "" : "s"}.`);
+      setMessage(`Semana anterior copiada al horario ${activeKind === "operational" ? "operativo" : "contractual"}: ${copied.length} turno${copied.length === 1 ? "" : "s"}.`);
       router.refresh();
     });
   }
@@ -277,13 +328,13 @@ export function PlanificacionPanel({
     setMessage(null);
     setError(null);
 
-    if (shifts.length === 0) {
+    if (visibleShifts.length === 0) {
       setMessage("Esta semana no tiene turnos para limpiar.");
       return;
     }
 
     const confirmed = confirm(
-      `Vas a borrar ${shifts.length} turno${shifts.length === 1 ? "" : "s"} de la semana ${formatDate(weekStart)} - ${formatDate(weekEnd)}. Esta accion no se puede deshacer.`
+      `Vas a borrar ${visibleShifts.length} turno${visibleShifts.length === 1 ? "" : "s"} del horario ${activeKind === "operational" ? "operativo" : "contractual"}. Esta accion no se puede deshacer.`
     );
     if (!confirmed) return;
 
@@ -291,7 +342,7 @@ export function PlanificacionPanel({
       const res = await fetch("/api/scheduling", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ from: weekStart, to: weekEnd }),
+        body: JSON.stringify({ from: weekStart, to: weekEnd, scheduleKind: activeKind }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -299,9 +350,71 @@ export function PlanificacionPanel({
         return;
       }
 
-      const deleted = typeof data.deleted === "number" ? data.deleted : shifts.length;
-      setShifts((current) => current.filter((shift) => shift.businessDate < weekStart || shift.businessDate > weekEnd));
-      setMessage(`Semana limpiada: ${deleted} turno${deleted === 1 ? "" : "s"} eliminado${deleted === 1 ? "" : "s"}.`);
+      const deleted = typeof data.deleted === "number" ? data.deleted : visibleShifts.length;
+      setShifts((current) => current.filter((shift) =>
+        shift.scheduleKind !== activeKind || shift.businessDate < weekStart || shift.businessDate > weekEnd
+      ));
+      setMessage(`Horario ${activeKind === "operational" ? "operativo" : "contractual"} limpiado: ${deleted} turno${deleted === 1 ? "" : "s"}.`);
+      router.refresh();
+    });
+  }
+
+  async function copyContractualToOperational() {
+    setMessage(null);
+    setError(null);
+    const contractual = shifts.filter((shift) => shift.scheduleKind === "contractual");
+    if (contractual.length === 0) {
+      setError("Primero debes crear el horario contractual de esta semana.");
+      return;
+    }
+    const operational = shifts.filter((shift) => shift.scheduleKind === "operational");
+    if (operational.length > 0 && !confirm("El horario operativo actual se sustituira por una copia del contractual. ¿Continuar?")) {
+      return;
+    }
+
+    startTransition(async () => {
+      const items = contractual.map((shift) => ({
+        employeeId: shift.employeeId,
+        businessDate: shift.businessDate,
+        shiftStart: shift.shiftStart,
+        shiftEnd: shift.shiftEnd,
+        scheduleKind: "operational" as const,
+      }));
+      const response = await fetch("/api/scheduling", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items, replaceExisting: true }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setError(data.error || "No se ha podido copiar el horario contractual.");
+        return;
+      }
+
+      const copiedPairs = new Set(
+        contractual.map((shift) => `${shift.employeeId}|${shift.businessDate}`),
+      );
+      const obsoleteOperational = operational.filter(
+        (shift) => !copiedPairs.has(`${shift.employeeId}|${shift.businessDate}`),
+      );
+      const deleteResults = await Promise.all(obsoleteOperational.map((shift) => fetch("/api/scheduling", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: shift.id, scheduleKind: "operational" }),
+      })));
+      if (deleteResults.some((result) => !result.ok)) {
+        setError("El horario se ha copiado, pero no se han podido retirar todos los turnos operativos anteriores. Revisa la semana antes de publicarla.");
+        router.refresh();
+        return;
+      }
+
+      const saved = Array.isArray(data.shifts) ? data.shifts as EmployeeScheduleShift[] : [];
+      setShifts((current) => [
+        ...current.filter((shift) => shift.scheduleKind !== "operational"),
+        ...saved,
+      ]);
+      setActiveKind("operational");
+      setMessage("Horario contractual copiado al operativo. Ya puedes añadir las horas extra.");
       router.refresh();
     });
   }
@@ -446,10 +559,21 @@ export function PlanificacionPanel({
               <Copy className="size-4" />
               Copiar semana anterior
             </button>
+            {activeKind === "operational" && (
+              <button
+                type="button"
+                onClick={copyContractualToOperational}
+                disabled={isPending || stats.contractualShifts === 0}
+                className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-bold text-indigo-700 shadow-sm transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <Copy className="size-4" />
+                Copiar contractual
+              </button>
+            )}
             <button
               type="button"
               onClick={clearCurrentWeek}
-              disabled={isPending || shifts.length === 0}
+              disabled={isPending || visibleShifts.length === 0}
               className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700 shadow-sm transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-45"
             >
               <Trash2 className="size-4" />
@@ -459,13 +583,44 @@ export function PlanificacionPanel({
         </div>
       </section>
 
+      <section className="grid grid-cols-2 gap-2 rounded-2xl border border-[var(--line)] bg-white p-2 shadow-sm">
+        <button
+          type="button"
+          onClick={() => setActiveKind("operational")}
+          className={`rounded-xl px-4 py-3 text-left transition ${
+            activeKind === "operational"
+              ? "bg-indigo-600 text-white shadow-sm"
+              : "text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          <span className="block text-sm font-black">Operativo y costes</span>
+          <span className={`mt-1 block text-xs font-semibold ${activeKind === "operational" ? "text-indigo-100" : "text-slate-400"}`}>
+            Horario real previsto, incluidas horas extra
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveKind("contractual")}
+          className={`rounded-xl px-4 py-3 text-left transition ${
+            activeKind === "contractual"
+              ? "bg-emerald-600 text-white shadow-sm"
+              : "text-slate-600 hover:bg-slate-50"
+          }`}
+        >
+          <span className="block text-sm font-black">Contractual y fichajes</span>
+          <span className={`mt-1 block text-xs font-semibold ${activeKind === "contractual" ? "text-emerald-100" : "text-slate-400"}`}>
+            Distribución de las horas contratadas
+          </span>
+        </button>
+      </section>
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <Metric icon={<Users className="size-5" />} label="Empleados activos" value={fmtNum(stats.employees)} />
-        <Metric icon={<CalendarDays className="size-5" />} label="Turnos" value={fmtNum(stats.shifts)} />
-        <Metric icon={<Clock className="size-5" />} label="Horas previstas" value={formatDuration(stats.plannedMinutes)} />
-        <Metric icon={<Clock className="size-5" />} label="Objetivo semanal" value={formatDuration(stats.targetMinutes)} />
-        <Metric icon={<Clock className="size-5" />} label="Horas reales" value={formatDuration(stats.realMinutes)} />
-        <Metric icon={<Euro className="size-5" />} label="Coste previsto" value={formatMoney(stats.plannedCost)} />
+        <Metric icon={<CalendarDays className="size-5" />} label="Turnos operativos" value={fmtNum(stats.operationalShifts)} />
+        <Metric icon={<Clock className="size-5" />} label="Horas operativas" value={formatDuration(stats.operationalMinutes)} />
+        <Metric icon={<Clock className="size-5" />} label="Horas contractuales" value={formatDuration(stats.contractualMinutes)} />
+        <Metric icon={<Clock className="size-5" />} label="Horas extra previstas" value={formatDuration(stats.overtimeMinutes)} />
+        <Metric icon={<Euro className="size-5" />} label="Coste operativo" value={formatMoney(stats.plannedCost)} />
       </section>
 
       {(message || error) && (
@@ -485,12 +640,24 @@ export function PlanificacionPanel({
           Hay {stats.missingCosts} turno{stats.missingCosts === 1 ? "" : "s"} sin coste/hora configurado. No contaran en el coste previsto hasta que lo asignes en Empleats.
         </section>
       )}
+      {stats.missingOvertimeRates > 0 && (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm font-bold text-amber-800">
+          Hay horas extra sin tarifa específica en {stats.missingOvertimeRates} turno{stats.missingOvertimeRates === 1 ? "" : "s"}.
+          Se está usando temporalmente el coste/hora normal.
+        </section>
+      )}
+      {stats.employeesWithoutContract > 0 && (
+        <section className="rounded-2xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm font-bold text-blue-800">
+          {stats.employeesWithoutContract} empleado{stats.employeesWithoutContract === 1 ? "" : "s"} tiene horario operativo pero no contractual.
+          Sus horas se calculan como ordinarias hasta completar el calendario contractual.
+        </section>
+      )}
 
       <section className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-sm">
         <div className="border-b border-[var(--line)] px-5 py-4">
           <h2 className="text-lg font-black tracking-tight text-slate-950">Parrilla semanal</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Cada celda puede tener varios turnos partidos. Toca un turno para editarlo o + Turno para aÃ±adir otro.
+            Cada celda puede tener varios turnos partidos. Toca un turno para editarlo o + Turno para anadir otro.
           </p>
         </div>
 
@@ -510,7 +677,9 @@ export function PlanificacionPanel({
                     <div className="mt-1 text-[11px] font-bold text-slate-400">{formatShortDate(day)}</div>
                   </div>
                 ))}
-                <div className="px-4 py-3 text-right">Real</div>
+                <div className="px-4 py-3 text-right">
+                  {activeKind === "contractual" ? "Fichado" : "Extra"}
+                </div>
               </div>
 
               <div className="divide-y divide-slate-100">
@@ -520,14 +689,42 @@ export function PlanificacionPanel({
                     return sum + dayShifts.reduce((daySum, shift) => daySum + shiftMinutes(shift.shiftStart, shift.shiftEnd), 0);
                   }, 0);
                   const plannedCost = days.reduce((sum, day) => {
-                    const hourlyCost = resolveEmployeeCostForDate(costHistoryByEmployee, employee.id, day, employee.hourlyCost);
+                    const profile = resolveEmployeeCostForDate(costHistoryByEmployee, employee.id, day, {
+                      hourlyCost: employee.hourlyCost,
+                      overtimeHourlyCost: employee.overtimeHourlyCost,
+                    });
                     const dayShifts = shiftGroups.get(shiftKey(employee.id, day)) ?? [];
-                    return sum + dayShifts.reduce((daySum, shift) => daySum + (shiftMinutes(shift.shiftStart, shift.shiftEnd) / 60) * hourlyCost, 0);
+                    if (activeKind === "contractual") return sum;
+                    const dayContractual = shifts.filter((shift) =>
+                      shift.scheduleKind === "contractual" &&
+                      shift.employeeId === employee.id &&
+                      shift.businessDate === day
+                    );
+                    const hasContractualWeek = shifts.some((shift) =>
+                      shift.scheduleKind === "contractual" &&
+                      shift.employeeId === employee.id &&
+                      sameMondayWeek(shift.businessDate, day)
+                    );
+                    return sum + dayShifts.reduce((daySum, shift) => {
+                      const split = hasContractualWeek
+                        ? splitShiftMinutes(shift, dayContractual)
+                        : { regularMinutes: shiftMinutes(shift.shiftStart, shift.shiftEnd), overtimeMinutes: 0 };
+                      return daySum +
+                        (split.regularMinutes / 60) * profile.hourlyCost +
+                        (split.overtimeMinutes / 60) * (profile.overtimeHourlyCost ?? profile.hourlyCost);
+                    }, 0);
                   }, 0);
                   const real = realMinutesByEmployee.get(employee.id) ?? 0;
                   const diff = real - planned;
                   const weeklyTargetMinutes = Math.round((employee.weeklyHours ?? 0) * 60);
                   const contractDiff = planned - weeklyTargetMinutes;
+                  const employeeOperational = shifts.filter((shift) =>
+                    shift.scheduleKind === "operational" && shift.employeeId === employee.id
+                  );
+                  const employeeContractual = shifts.filter((shift) =>
+                    shift.scheduleKind === "contractual" && shift.employeeId === employee.id
+                  );
+                  const overtimeMinutes = calculateOvertimeMinutes(employeeOperational, employeeContractual);
 
                   return (
                     <div
@@ -537,12 +734,14 @@ export function PlanificacionPanel({
                       <div className="flex flex-col justify-center px-4 py-3">
                         <p className="truncate text-sm font-black text-slate-950">{employee.name}</p>
                         <p className="mt-1 text-xs font-bold text-slate-400">
-                          {formatDuration(planned)} previstos
+                          {formatDuration(planned)} {activeKind === "operational" ? "operativas" : "contractuales"}
                         </p>
-                        <p className={`mt-1 text-xs font-bold ${plannedCost > 0 ? "text-emerald-600" : "text-amber-600"}`}>
-                          {plannedCost > 0 ? formatMoney(plannedCost) : "Sin coste/hora"}
-                        </p>
-                        {weeklyTargetMinutes > 0 ? (
+                        {activeKind === "operational" && (
+                          <p className={`mt-1 text-xs font-bold ${plannedCost > 0 ? "text-emerald-600" : "text-amber-600"}`}>
+                            {plannedCost > 0 ? formatMoney(plannedCost) : "Sin coste/hora"}
+                          </p>
+                        )}
+                        {activeKind === "contractual" && weeklyTargetMinutes > 0 ? (
                           <p className={`mt-1 text-xs font-black ${Math.abs(contractDiff) <= 5 ? "text-emerald-600" : contractDiff > 0 ? "text-rose-600" : "text-amber-600"}`}>
                             {Math.abs(contractDiff) <= 5
                               ? "Horas completas"
@@ -550,8 +749,12 @@ export function PlanificacionPanel({
                                 ? `Sobra ${formatDuration(contractDiff)}`
                                 : `Falta ${formatDuration(Math.abs(contractDiff))}`}
                           </p>
-                        ) : (
+                        ) : activeKind === "contractual" ? (
                           <p className="mt-1 text-xs font-bold text-slate-400">Sin horas semanales</p>
+                        ) : (
+                          <p className={`mt-1 text-xs font-black ${overtimeMinutes > 0 ? "text-amber-600" : "text-slate-400"}`}>
+                            {overtimeMinutes > 0 ? `${formatDuration(overtimeMinutes)} extra` : "Sin horas extra"}
+                          </p>
                         )}
                         <div className="mt-3 flex flex-wrap gap-1.5">
                           <button
@@ -567,7 +770,19 @@ export function PlanificacionPanel({
 
                       {days.map((day) => {
                         const dayShifts = shiftGroups.get(shiftKey(employee.id, day)) ?? [];
-                        const hourlyCost = resolveEmployeeCostForDate(costHistoryByEmployee, employee.id, day, employee.hourlyCost);
+                        const profile = resolveEmployeeCostForDate(costHistoryByEmployee, employee.id, day, {
+                          hourlyCost: employee.hourlyCost,
+                          overtimeHourlyCost: employee.overtimeHourlyCost,
+                        });
+                        const employeeContractual = shifts.filter((shift) =>
+                          shift.scheduleKind === "contractual" &&
+                          shift.employeeId === employee.id
+                        );
+                        const hasContractualWeek = shifts.some((shift) =>
+                          shift.scheduleKind === "contractual" &&
+                          shift.employeeId === employee.id &&
+                          sameMondayWeek(shift.businessDate, day)
+                        );
                         return (
                           <div
                             key={`${employee.id}-${day}`}
@@ -591,8 +806,10 @@ export function PlanificacionPanel({
                                   <p className="mt-0.5 text-[11px] font-bold text-indigo-500">
                                     {formatDuration(shiftMinutes(shift.shiftStart, shift.shiftEnd))}
                                   </p>
-                                  <p className={`mt-0.5 text-[10px] font-black ${hourlyCost > 0 ? "text-emerald-600" : "text-amber-600"}`}>
-                                    {hourlyCost > 0 ? `${hourlyCost.toFixed(2)} EUR/h` : "Sin coste"}
+                                  <p className={`mt-0.5 text-[10px] font-black ${profile.hourlyCost > 0 ? "text-emerald-600" : "text-amber-600"}`}>
+                                    {activeKind === "contractual"
+                                      ? "Base contractual"
+                                      : formatShiftCostLabel(shift, employeeContractual, hasContractualWeek, profile)}
                                   </p>
                                 </button>
                               ))}
@@ -609,10 +826,19 @@ export function PlanificacionPanel({
                       })}
 
                       <div className="flex flex-col justify-center px-4 py-3 text-right">
-                        <p className="text-sm font-black text-slate-950">{formatDuration(real)}</p>
-                        <p className={`mt-1 text-xs font-bold ${diff >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                          {diff === 0 ? "Sin diferencia" : `${diff > 0 ? "+" : "-"}${formatDuration(Math.abs(diff))}`}
-                        </p>
+                        {activeKind === "contractual" ? (
+                          <>
+                            <p className="text-sm font-black text-slate-950">{formatDuration(real)}</p>
+                            <p className={`mt-1 text-xs font-bold ${diff >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                              {diff === 0 ? "Sin diferencia" : `${diff > 0 ? "+" : "-"}${formatDuration(Math.abs(diff))}`}
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-sm font-black text-amber-700">{formatDuration(overtimeMinutes)}</p>
+                            <p className="mt-1 text-xs font-bold text-slate-400">sobre contractual</p>
+                          </>
+                        )}
                       </div>
                     </div>
                   );
@@ -727,9 +953,9 @@ function upsertLocalShift(items: EmployeeScheduleShift[], nextShift: EmployeeSch
 }
 
 function replaceLocalShiftsForDays(items: EmployeeScheduleShift[], nextShifts: EmployeeScheduleShift[]) {
-  const replacedDays = new Set(nextShifts.map((shift) => shiftKey(shift.employeeId, shift.businessDate)));
+  const replacedDays = new Set(nextShifts.map((shift) => `${shift.scheduleKind}|${shiftKey(shift.employeeId, shift.businessDate)}`));
   return [
-    ...items.filter((shift) => !replacedDays.has(shiftKey(shift.employeeId, shift.businessDate))),
+    ...items.filter((shift) => !replacedDays.has(`${shift.scheduleKind}|${shiftKey(shift.employeeId, shift.businessDate)}`)),
     ...nextShifts,
   ].sort((a, b) =>
     a.businessDate.localeCompare(b.businessDate) ||
@@ -785,17 +1011,99 @@ function resolveEmployeeCostForDate(
   historyByEmployee: Map<string, EmployeeHourlyCostHistoryEntry[]>,
   employeeId: string,
   businessDate: string,
-  fallback: number,
+  fallback: { hourlyCost: number; overtimeHourlyCost: number | null },
 ) {
   const list = historyByEmployee.get(employeeId) ?? [];
   const match = list.find((entry) =>
     entry.validFrom <= businessDate && (!entry.validUntil || entry.validUntil > businessDate)
   );
-  return match ? entryCost(match) : fallback;
+  return match
+    ? {
+        hourlyCost: entryCost(match),
+        overtimeHourlyCost: match.overtimeHourlyCost,
+      }
+    : fallback;
 }
 
 function entryCost(entry: EmployeeHourlyCostHistoryEntry) {
   return Number.isFinite(entry.hourlyCost) ? entry.hourlyCost : 0;
+}
+
+function splitShiftMinutes(
+  operational: EmployeeScheduleShift,
+  contractual: EmployeeScheduleShift[],
+) {
+  const operationalInterval = toAbsoluteInterval(operational);
+  const boundaries = new Set([operationalInterval.start, operationalInterval.end]);
+  const contractualIntervals = contractual.map(toAbsoluteInterval);
+  for (const interval of contractualIntervals) {
+    const start = Math.max(operationalInterval.start, interval.start);
+    const end = Math.min(operationalInterval.end, interval.end);
+    if (start < end) {
+      boundaries.add(start);
+      boundaries.add(end);
+    }
+  }
+  const sorted = [...boundaries].sort((a, b) => a - b);
+  let regularMinutes = 0;
+  let overtimeMinutes = 0;
+  for (let index = 0; index < sorted.length - 1; index += 1) {
+    const start = sorted[index];
+    const end = sorted[index + 1];
+    const covered = contractualIntervals.some((interval) => interval.start < end && interval.end > start);
+    if (covered) regularMinutes += end - start;
+    else overtimeMinutes += end - start;
+  }
+  return { regularMinutes, overtimeMinutes };
+}
+
+function calculateOvertimeMinutes(
+  operational: EmployeeScheduleShift[],
+  contractual: EmployeeScheduleShift[],
+) {
+  if (contractual.length === 0) return 0;
+  return operational.reduce((total, shift) => {
+    return total + splitShiftMinutes(shift, contractual).overtimeMinutes;
+  }, 0);
+}
+
+function formatShiftCostLabel(
+  shift: EmployeeScheduleShift,
+  contractual: EmployeeScheduleShift[],
+  hasContractualWeek: boolean,
+  profile: { hourlyCost: number; overtimeHourlyCost: number | null },
+) {
+  if (!hasContractualWeek) {
+    return profile.hourlyCost > 0 ? `${profile.hourlyCost.toFixed(2)} EUR/h · contractual pendiente` : "Sin coste";
+  }
+  const split = splitShiftMinutes(shift, contractual);
+  if (split.overtimeMinutes === 0) return `${profile.hourlyCost.toFixed(2)} EUR/h ordinaria`;
+  if (split.regularMinutes === 0) {
+    const rate = profile.overtimeHourlyCost ?? profile.hourlyCost;
+    return `${rate.toFixed(2)} EUR/h extra${profile.overtimeHourlyCost == null ? " (provisional)" : ""}`;
+  }
+  return `${formatDuration(split.regularMinutes)} normal · ${formatDuration(split.overtimeMinutes)} extra`;
+}
+
+function toAbsoluteInterval(shift: EmployeeScheduleShift) {
+  const dayStart = Date.parse(`${shift.businessDate}T00:00:00Z`) / 60000;
+  const startInDay = parseTime(shift.shiftStart) ?? 0;
+  let endInDay = parseTime(shift.shiftEnd) ?? startInDay;
+  if (endInDay <= startInDay) endInDay += 24 * 60;
+  const start = dayStart + startInDay;
+  const end = dayStart + endInDay;
+  return { start, end };
+}
+
+function sameMondayWeek(left: string, right: string) {
+  return mondayOf(left) === mondayOf(right);
+}
+
+function mondayOf(value: string) {
+  const date = new Date(`${value}T12:00:00`);
+  const distance = (date.getDay() + 6) % 7;
+  date.setDate(date.getDate() - distance);
+  return isoDate(date);
 }
 
 function addDaysIso(value: string, days: number) {

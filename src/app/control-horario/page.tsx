@@ -20,7 +20,7 @@ export default async function ControlHorarioPage({
   });
   const [sessions, plannedShifts] = await Promise.all([
     listTimeClockSessions(filter.from, filter.to),
-    listEmployeeScheduleShifts(filter.from, filter.to),
+    listEmployeeScheduleShifts(filter.from, filter.to, "contractual"),
   ]);
   const plannedByEmployee = buildPlannedByEmployee(plannedShifts);
   const stats = buildStats(sessions, plannedShifts);
@@ -41,7 +41,7 @@ export default async function ControlHorarioPage({
         <Metric label="Jornadas" value={fmtNum(stats.sessions)} color="indigo" />
         <Metric label="Trabajando ahora" value={fmtNum(stats.open)} color="emerald" />
         <Metric label="Horas periodo" value={formatDuration(stats.totalMinutes)} color="amber" />
-        <Metric label="Horas previstas" value={formatDuration(stats.plannedMinutes)} color="indigo" />
+        <Metric label="Horas contractuales" value={formatDuration(stats.plannedMinutes)} color="indigo" />
         <Metric label="Diferencia" value={formatSignedDuration(stats.totalMinutes - stats.plannedMinutes)} color={stats.totalMinutes >= stats.plannedMinutes ? "emerald" : "rose"} />
         <Metric label="Empleados" value={fmtNum(byEmployee.length)} color="slate" />
         <Metric label="Incidencias" value={fmtNum(stats.incidents)} color={stats.incidents ? "rose" : "emerald"} />
@@ -88,7 +88,7 @@ export default async function ControlHorarioPage({
                   <div>
                     <h3 className="text-lg font-black text-slate-950">{employee.employeeName}</h3>
                     <p className="text-sm font-semibold text-slate-500">
-                      {employee.sessions} jornada{employee.sessions === 1 ? "" : "s"} · previsto {formatDuration(employee.plannedMinutes)}
+                      {employee.sessions} jornada{employee.sessions === 1 ? "" : "s"} · contractual {formatDuration(employee.plannedMinutes)}
                     </p>
                   </div>
                   <div className="text-right">

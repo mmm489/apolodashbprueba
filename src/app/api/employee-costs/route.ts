@@ -17,6 +17,9 @@ export async function POST(request: Request) {
   const body = await request.json();
   const employeeId = String(body.employeeId ?? "");
   const hourlyCost = Number(body.hourlyCost ?? 0);
+  const overtimeHourlyCost = body.overtimeHourlyCost == null || body.overtimeHourlyCost === ""
+    ? null
+    : Number(body.overtimeHourlyCost);
   const weeklyHours = Number(body.weeklyHours ?? 0);
   const validFrom = String(body.validFrom ?? "");
   const employeeName = body.employeeName == null ? undefined : String(body.employeeName);
@@ -25,6 +28,7 @@ export async function POST(request: Request) {
     await upsertEmployeeHourlyCost({
       employeeId,
       hourlyCost,
+      overtimeHourlyCost,
       validFrom,
       employeeName,
     });

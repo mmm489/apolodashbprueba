@@ -228,6 +228,7 @@ export interface Employee {
   shiftEnd: string;
   workingDaysPerMonth: number;
   hourlyCost: number;
+  overtimeHourlyCost: number | null;
   weeklyHours: number;
   isActive: boolean;
   createdAt: string;
@@ -246,6 +247,7 @@ export interface EmployeeHourlyCostHistoryEntry {
   employeeId: string;
   employeeNameSnapshot: string;
   hourlyCost: number;
+  overtimeHourlyCost: number | null;
   validFrom: string;
   validUntil: string | null;
   createdAt: string;
@@ -261,6 +263,8 @@ export interface EmployeeShift {
   shiftEnd: string;
 }
 
+export type EmployeeScheduleKind = "operational" | "contractual";
+
 export interface EmployeeScheduleShift {
   id: string;
   employeeId: string;
@@ -268,6 +272,7 @@ export interface EmployeeScheduleShift {
   businessDate: string;
   shiftStart: string;
   shiftEnd: string;
+  scheduleKind: EmployeeScheduleKind;
   createdAt: string;
   updatedAt: string;
 }
@@ -292,10 +297,12 @@ export interface PlannedLaborRecord {
   businessDate: string;
   shiftStart: string;
   shiftEnd: string;
+  laborType: "regular" | "overtime";
   hours: number;
   hourlyCost: number;
   totalCost: number;
   costMissing: boolean;
+  overtimeCostMissing: boolean;
 }
 
 export interface TimeClockSessionRecord {

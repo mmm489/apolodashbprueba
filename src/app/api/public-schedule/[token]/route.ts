@@ -29,14 +29,17 @@ export async function GET(
     },
     isPublished: data.isPublished,
     publication: data.publication,
-    shifts: data.shifts.map((shift) => ({
+    shifts: data.operationalShifts.map((shift) => ({
       id: shift.id,
       employeeId: shift.employeeId,
       employeeName: shift.employeeName,
       businessDate: shift.businessDate,
       shiftStart: shift.shiftStart,
       shiftEnd: shift.shiftEnd,
+      scheduleKind: shift.scheduleKind,
     })),
+    operationalShifts: data.operationalShifts,
+    contractualShifts: data.contractualShifts,
   });
 }
 

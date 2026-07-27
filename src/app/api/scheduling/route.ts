@@ -7,6 +7,7 @@ import {
   replaceEmployeeScheduleShiftsForDays,
   upsertEmployeeScheduleShift,
 } from "@/lib/repositories";
+import type { EmployeeScheduleKind } from "@/lib/types";
 
 type SchedulingInput = {
   id?: unknown;
@@ -14,14 +15,16 @@ type SchedulingInput = {
   businessDate?: unknown;
   shiftStart?: unknown;
   shiftEnd?: unknown;
+  scheduleKind?: unknown;
 };
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const from = searchParams.get("from") ?? undefined;
   const to = searchParams.get("to") ?? undefined;
+  const scheduleKind = parseScheduleKind(searchParams.get("kind"));
 
-  const shifts = await listEmployeeScheduleShifts(from, to);
+  const shifts = await listEmployeeScheduleShifts(from, to, scheduleKind);
   return NextResponse.json(shifts);
 }
 
@@ -36,6 +39,7 @@ export async function POST(request: Request) {
       businessDate: String(item.businessDate ?? ""),
       shiftStart: String(item.shiftStart ?? ""),
       shiftEnd: String(item.shiftEnd ?? ""),
+      scheduleKind: parseScheduleKind(item.scheduleKind) ?? "operational",
     }));
     const saved = body.replaceExisting
       ? await replaceEmployeeScheduleShiftsForDays(items)
@@ -45,6 +49,7 @@ export async function POST(request: Request) {
         businessDate: String(item.businessDate ?? ""),
         shiftStart: String(item.shiftStart ?? ""),
         shiftEnd: String(item.shiftEnd ?? ""),
+        scheduleKind: parseScheduleKind(item.scheduleKind) ?? "operational",
       })));
 
     return NextResponse.json({ ok: true, count: rawItems.length, shifts: saved.filter(Boolean) }, { status: 201 });
@@ -63,10 +68,11 @@ export async function DELETE(request: Request) {
   const id = String(body.id ?? body.shiftId ?? "");
   const employeeId = String(body.employeeId ?? "");
   const businessDate = String(body.businessDate ?? "");
+  const scheduleKind = parseScheduleKind(body.scheduleKind ?? body.kind) ?? "operational";
 
   if (from && to) {
     try {
-      const deleted = await deleteEmployeeScheduleShiftsInRange(from, to);
+      const deleted = await deleteEmployeeScheduleShiftsInRange(from, to, scheduleKind);
       return NextResponse.json({ ok: true, deleted });
     } catch (error) {
       return NextResponse.json(
@@ -80,6 +86,11 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Faltan campos obligatorios." }, { status: 400 });
   }
 
-  await deleteEmployeeScheduleShift({ id, employeeId, businessDate });
+  await deleteEmployeeScheduleShift({ id, employeeId, businessDate, scheduleKind });
   return NextResponse.json({ ok: true });
+}
+
+function parseScheduleKind(value: unknown): EmployeeScheduleKind | undefined {
+  if (value === "operational" || value === "contractual") return value;
+  return undefined;
 }

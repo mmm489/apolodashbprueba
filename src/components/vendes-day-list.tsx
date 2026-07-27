@@ -142,6 +142,7 @@ function DayRow({
   const laborCost = dayLabor.reduce((sum, row) => sum + row.totalCost, 0);
   const laborHours = dayLabor.reduce((sum, row) => sum + row.hours, 0);
   const missingLaborCost = dayLabor.some((row) => row.costMissing);
+  const missingOvertimeCost = dayLabor.some((row) => row.overtimeCostMissing);
   return (
     <>
       <tr
@@ -184,6 +185,9 @@ function DayRow({
                 {euro(laborCost)}
               </p>
               <p className="text-[11px] font-semibold text-slate-400">{laborHours.toFixed(1)} h</p>
+              {missingOvertimeCost && (
+                <p className="text-[10px] font-bold text-amber-600">Extra con tarifa normal</p>
+              )}
             </div>
           ) : (
             <span className="text-slate-300">--</span>
@@ -556,14 +560,35 @@ function HourlyDetail({
 function PlannedLaborDetail({ labor }: { labor: PlannedLaborRecord[] }) {
   const totalHours = labor.reduce((sum, row) => sum + row.hours, 0);
   const totalCost = labor.reduce((sum, row) => sum + row.totalCost, 0);
+  const regularHours = labor
+    .filter((row) => row.laborType === "regular")
+    .reduce((sum, row) => sum + row.hours, 0);
+  const overtimeHours = labor
+    .filter((row) => row.laborType === "overtime")
+    .reduce((sum, row) => sum + row.hours, 0);
+  const missingOvertimeCost = labor.some((row) => row.overtimeCostMissing);
   return (
     <div>
       <p className="mb-3 text-[12px] font-semibold uppercase tracking-wider text-slate-500">Personal planificat</p>
+      <div className="mb-2 flex flex-wrap gap-2 text-[11px] font-bold">
+        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">
+          Ordinarias {regularHours.toFixed(1)} h
+        </span>
+        <span className="rounded-full bg-amber-100 px-2.5 py-1 text-amber-700">
+          Extra {overtimeHours.toFixed(1)} h
+        </span>
+        {missingOvertimeCost && (
+          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">
+            Tarifa extra pendiente: se usa la ordinaria
+          </span>
+        )}
+      </div>
       <div className="overflow-hidden rounded-lg border border-[var(--line)] bg-white">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[var(--line)] bg-slate-50 text-[11px] font-medium uppercase tracking-wider text-slate-400">
               <th className="px-3 py-2 text-left">Empleado</th>
+              <th className="px-3 py-2 text-center">Tipo</th>
               <th className="px-3 py-2 text-center">Turno</th>
               <th className="px-3 py-2 text-right">Horas</th>
               <th className="px-3 py-2 text-right">EUR/h</th>
@@ -574,10 +599,22 @@ function PlannedLaborDetail({ labor }: { labor: PlannedLaborRecord[] }) {
             {labor.map((row) => (
               <tr key={row.id} className="border-b border-[var(--line)]/40">
                 <td className="px-3 py-2 text-[12px] font-bold text-slate-800">{row.employeeName}</td>
+                <td className="px-3 py-2 text-center">
+                  <span className={`rounded-full px-2 py-1 text-[10px] font-black ${
+                    row.laborType === "overtime"
+                      ? "bg-amber-100 text-amber-700"
+                      : "bg-slate-100 text-slate-600"
+                  }`}>
+                    {row.laborType === "overtime" ? "Extra" : "Ordinaria"}
+                  </span>
+                </td>
                 <td className="px-3 py-2 text-center text-[12px] text-slate-500">{row.shiftStart} - {row.shiftEnd}</td>
                 <td className="px-3 py-2 text-right text-[12px] text-slate-600">{row.hours.toFixed(1)} h</td>
                 <td className={`px-3 py-2 text-right text-[12px] font-semibold ${row.costMissing ? "text-amber-600" : "text-violet-700"}`}>
                   {row.costMissing ? "Sin coste" : `${row.hourlyCost.toFixed(2)} EUR`}
+                  {row.overtimeCostMissing && (
+                    <span className="block text-[9px] font-bold text-amber-600">provisional</span>
+                  )}
                 </td>
                 <td className={`px-3 py-2 text-right text-[12px] font-black ${row.costMissing ? "text-amber-600" : "text-slate-950"}`}>
                   {row.costMissing ? "--" : euro(row.totalCost)}
@@ -588,6 +625,7 @@ function PlannedLaborDetail({ labor }: { labor: PlannedLaborRecord[] }) {
           <tfoot>
             <tr className="bg-slate-50 font-black text-slate-950">
               <td className="px-3 py-2 text-[12px]">Total</td>
+              <td />
               <td />
               <td className="px-3 py-2 text-right text-[12px]">{totalHours.toFixed(1)} h</td>
               <td />

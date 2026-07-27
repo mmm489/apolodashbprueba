@@ -126,6 +126,7 @@ async function main() {
       businessDate: shift.businessDate,
       shiftStart: shift.shiftStart,
       shiftEnd: shift.shiftEnd,
+      scheduleKind: "operational" as const,
     };
   });
 

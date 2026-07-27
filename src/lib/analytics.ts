@@ -1443,7 +1443,7 @@ async function fetchWeatherForDigest(reports: SalesReport[]): Promise<Map<string
 
 /** Computes hours between two "HH:MM" times. If end < start, assumes the shift
  * crosses midnight (e.g. 22:00–02:00 = 4 h), adding 24 h to the end. */
-function buildPlannedLaborRecords(
+export function buildPlannedLaborRecords(
   shifts: EmployeeScheduleShift[],
   costHistory: EmployeeHourlyCostHistoryEntry[],
   employees: Employee[],
@@ -1459,41 +1459,131 @@ function buildPlannedLaborRecords(
     list.sort((a, b) => b.validFrom.localeCompare(a.validFrom));
   }
 
-  return shifts.map((shift) => {
+  const contractualByEmployee = new Map<string, Array<{ start: number; end: number }>>();
+  const contractualWeeks = new Set<string>();
+  for (const shift of shifts.filter((item) => item.scheduleKind === "contractual")) {
+    const intervals = contractualByEmployee.get(shift.employeeId) ?? [];
+    intervals.push(toAbsoluteMinuteInterval(shift.businessDate, shift.shiftStart, shift.shiftEnd));
+    contractualByEmployee.set(shift.employeeId, intervals);
+    contractualWeeks.add(employeeWeekKey(shift.employeeId, shift.businessDate));
+  }
+
+  const records: PlannedLaborRecord[] = [];
+  for (const shift of shifts.filter((item) => item.scheduleKind === "operational")) {
     const employee = employeeById.get(shift.employeeId);
-    const hours = computeShiftHours(shift.shiftStart, shift.shiftEnd);
-    const hourlyCost = resolveEmployeeCostForDate(
+    const costProfile = resolveEmployeeCostForDate(
       historyByEmployee,
       shift.employeeId,
       shift.businessDate,
-      employee?.hourlyCost ?? 0,
+      {
+        hourlyCost: employee?.hourlyCost ?? 0,
+        overtimeHourlyCost: employee?.overtimeHourlyCost ?? null,
+      },
     );
-    return {
-      id: shift.id,
-      employeeId: shift.employeeId,
-      employeeName: shift.employeeName,
-      businessDate: shift.businessDate,
-      shiftStart: shift.shiftStart,
-      shiftEnd: shift.shiftEnd,
-      hours,
-      hourlyCost,
-      totalCost: hours * hourlyCost,
-      costMissing: hourlyCost <= 0,
-    } satisfies PlannedLaborRecord;
-  });
+    const hasContractualWeek = contractualWeeks.has(employeeWeekKey(shift.employeeId, shift.businessDate));
+    const contractualIntervals = hasContractualWeek
+      ? contractualByEmployee.get(shift.employeeId) ?? []
+      : [];
+    const operationalInterval = toAbsoluteMinuteInterval(
+      shift.businessDate,
+      shift.shiftStart,
+      shift.shiftEnd,
+    );
+    const segments = hasContractualWeek
+      ? splitOperationalInterval(operationalInterval, contractualIntervals)
+      : [{ ...operationalInterval, laborType: "regular" as const }];
+
+    segments.forEach((segment, index) => {
+      const isOvertime = segment.laborType === "overtime";
+      const overtimeCostMissing = isOvertime && costProfile.overtimeHourlyCost == null;
+      const hourlyCost = isOvertime
+        ? costProfile.overtimeHourlyCost ?? costProfile.hourlyCost
+        : costProfile.hourlyCost;
+      const hours = (segment.end - segment.start) / 60;
+      records.push({
+        id: `${shift.id}:${segment.laborType}:${index}`,
+        employeeId: shift.employeeId,
+        employeeName: shift.employeeName,
+        businessDate: shift.businessDate,
+        shiftStart: minuteToTime(segment.start),
+        shiftEnd: minuteToTime(segment.end),
+        laborType: segment.laborType,
+        hours,
+        hourlyCost,
+        totalCost: hours * hourlyCost,
+        costMissing: hourlyCost <= 0,
+        overtimeCostMissing,
+      });
+    });
+  }
+  return records;
 }
 
 function resolveEmployeeCostForDate(
   historyByEmployee: Map<string, EmployeeHourlyCostHistoryEntry[]>,
   employeeId: string,
   businessDate: string,
-  fallback: number,
+  fallback: { hourlyCost: number; overtimeHourlyCost: number | null },
 ) {
   const list = historyByEmployee.get(employeeId) ?? [];
   const match = list.find((entry) =>
     entry.validFrom <= businessDate && (!entry.validUntil || entry.validUntil > businessDate)
   );
-  return match ? match.hourlyCost : fallback;
+  return match
+    ? { hourlyCost: match.hourlyCost, overtimeHourlyCost: match.overtimeHourlyCost }
+    : fallback;
+}
+
+function employeeWeekKey(employeeId: string, businessDate: string) {
+  const date = parseISO(businessDate);
+  const daysSinceMonday = (date.getDay() + 6) % 7;
+  return `${employeeId}|${formatISO(subDays(date, daysSinceMonday), { representation: "date" })}`;
+}
+
+function toAbsoluteMinuteInterval(businessDate: string, startValue: string, endValue: string) {
+  const dayStart = Date.parse(`${businessDate}T00:00:00Z`) / 60000;
+  const [startHour, startMinute] = startValue.split(":").map(Number);
+  const [endHour, endMinute] = endValue.split(":").map(Number);
+  const start = dayStart + startHour * 60 + startMinute;
+  let end = endHour * 60 + endMinute;
+  if (end <= startHour * 60 + startMinute) end += 24 * 60;
+  end += dayStart;
+  return { start, end };
+}
+
+function splitOperationalInterval(
+  operational: { start: number; end: number },
+  contractual: Array<{ start: number; end: number }>,
+) {
+  const boundaries = new Set([operational.start, operational.end]);
+  for (const interval of contractual) {
+    const start = Math.max(operational.start, interval.start);
+    const end = Math.min(operational.end, interval.end);
+    if (start < end) {
+      boundaries.add(start);
+      boundaries.add(end);
+    }
+  }
+  const sorted = [...boundaries].sort((a, b) => a - b);
+  const raw = sorted.slice(0, -1).map((start, index) => {
+    const end = sorted[index + 1];
+    const covered = contractual.some((interval) => interval.start < end && interval.end > start);
+    return { start, end, laborType: covered ? "regular" as const : "overtime" as const };
+  });
+  return raw.reduce<typeof raw>((segments, segment) => {
+    const previous = segments.at(-1);
+    if (previous && previous.laborType === segment.laborType && previous.end === segment.start) {
+      previous.end = segment.end;
+    } else {
+      segments.push({ ...segment });
+    }
+    return segments;
+  }, []);
+}
+
+function minuteToTime(value: number) {
+  const normalized = ((value % (24 * 60)) + 24 * 60) % (24 * 60);
+  return `${String(Math.floor(normalized / 60)).padStart(2, "0")}:${String(normalized % 60).padStart(2, "0")}`;
 }
 
 function computeShiftHours(start: string, end: string): number {

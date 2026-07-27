@@ -212,12 +212,16 @@ CREATE TABLE IF NOT EXISTS employee_schedule_shifts (
   business_date DATE NOT NULL,
   shift_start TEXT NOT NULL,
   shift_end TEXT NOT NULL,
+  schedule_kind TEXT NOT NULL DEFAULT 'operational',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_employee_schedule_shifts_business_date
   ON employee_schedule_shifts(business_date DESC);
+
+CREATE INDEX IF NOT EXISTS idx_employee_schedule_shifts_kind_date
+  ON employee_schedule_shifts(schedule_kind, business_date DESC);
 
 CREATE TABLE IF NOT EXISTS employee_schedule_links (
   employee_id TEXT PRIMARY KEY,

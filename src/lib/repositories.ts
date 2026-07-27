@@ -24,6 +24,7 @@ import type {
   DocumentRecord,
   Employee,
   EmployeeHourlyCostHistoryEntry,
+  EmployeeScheduleKind,
   EmployeeScheduleShare,
   EmployeeScheduleShift,
   EmployeeShift,
@@ -2423,12 +2424,17 @@ async function ensureEmployeeCostTables() {
       employee_id TEXT NOT NULL,
       employee_name_snapshot TEXT NOT NULL,
       hourly_cost NUMERIC(10,2) NOT NULL DEFAULT 0,
+      overtime_hourly_cost NUMERIC(10,2),
       valid_from DATE NOT NULL,
       valid_until DATE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(employee_id, valid_from)
     )
+  `);
+  await sql.query(`
+    ALTER TABLE employee_hourly_cost_history
+      ADD COLUMN IF NOT EXISTS overtime_hourly_cost NUMERIC(10,2)
   `);
   await sql.query(`
     CREATE INDEX IF NOT EXISTS idx_employee_hourly_cost_history_employee_date
@@ -2447,17 +2453,23 @@ async function ensureEmployeeCostTables() {
 }
 
 async function listEmployeeCurrentCostMap(atDate = todayIsoLocal()) {
-  if (!hasDatabase()) return new Map<string, number>();
+  if (!hasDatabase()) return new Map<string, { hourlyCost: number; overtimeHourlyCost: number | null }>();
   await ensureEmployeeCostTables();
   const sql = getSql();
   const rows = await sql`
-    SELECT DISTINCT ON (employee_id) employee_id, hourly_cost
+    SELECT DISTINCT ON (employee_id) employee_id, hourly_cost, overtime_hourly_cost
     FROM employee_hourly_cost_history
     WHERE valid_from <= ${atDate}::date
       AND (valid_until IS NULL OR valid_until > ${atDate}::date)
     ORDER BY employee_id, valid_from DESC
   `;
-  return new Map(rows.map((row) => [String(row.employee_id), toNumber(row.hourly_cost)]));
+  return new Map(rows.map((row) => [
+    String(row.employee_id),
+    {
+      hourlyCost: toNumber(row.hourly_cost),
+      overtimeHourlyCost: row.overtime_hourly_cost == null ? null : toNumber(row.overtime_hourly_cost),
+    },
+  ]));
 }
 
 async function listEmployeeWeeklyHoursMap() {
@@ -2504,14 +2516,14 @@ export async function listEmployeeHourlyCostHistory(employeeId?: string) {
   const sql = getSql();
   const rows = employeeId
     ? await sql`
-        SELECT id, employee_id, employee_name_snapshot, hourly_cost,
+        SELECT id, employee_id, employee_name_snapshot, hourly_cost, overtime_hourly_cost,
                valid_from, valid_until, created_at, updated_at
         FROM employee_hourly_cost_history
         WHERE employee_id = ${employeeId}
         ORDER BY valid_from DESC, created_at DESC
       `
     : await sql`
-        SELECT id, employee_id, employee_name_snapshot, hourly_cost,
+        SELECT id, employee_id, employee_name_snapshot, hourly_cost, overtime_hourly_cost,
                valid_from, valid_until, created_at, updated_at
         FROM employee_hourly_cost_history
         ORDER BY employee_id ASC, valid_from DESC
@@ -2526,6 +2538,7 @@ export async function listAllEmployeeHourlyCostHistory() {
 export async function upsertEmployeeHourlyCost(input: {
   employeeId: string;
   hourlyCost: number;
+  overtimeHourlyCost?: number | null;
   validFrom: string;
   employeeName?: string;
 }) {
@@ -2534,9 +2547,15 @@ export async function upsertEmployeeHourlyCost(input: {
 
   const employeeId = String(input.employeeId ?? "").trim();
   const hourlyCost = Number(input.hourlyCost);
+  const overtimeHourlyCost = input.overtimeHourlyCost == null
+    ? null
+    : Number(input.overtimeHourlyCost);
   const validFrom = String(input.validFrom ?? "").trim();
   if (!employeeId) throw new Error("Falta el empleado.");
   if (!Number.isFinite(hourlyCost) || hourlyCost < 0) throw new Error("Coste/hora no valido.");
+  if (overtimeHourlyCost != null && (!Number.isFinite(overtimeHourlyCost) || overtimeHourlyCost < 0)) {
+    throw new Error("Coste/hora extra no valido.");
+  }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(validFrom)) throw new Error("Fecha de vigencia no valida.");
 
   const sql = getSql();
@@ -2562,13 +2581,14 @@ export async function upsertEmployeeHourlyCost(input: {
 
   await sql`
     INSERT INTO employee_hourly_cost_history
-      (id, employee_id, employee_name_snapshot, hourly_cost, valid_from, valid_until)
+      (id, employee_id, employee_name_snapshot, hourly_cost, overtime_hourly_cost, valid_from, valid_until)
     VALUES
-      (${randomUUID()}, ${employeeId}, ${employeeName}, ${hourlyCost}, ${validFrom}, ${nextValidUntil})
+      (${randomUUID()}, ${employeeId}, ${employeeName}, ${hourlyCost}, ${overtimeHourlyCost}, ${validFrom}, ${nextValidUntil})
     ON CONFLICT (employee_id, valid_from)
     DO UPDATE SET
       employee_name_snapshot = EXCLUDED.employee_name_snapshot,
       hourly_cost = EXCLUDED.hourly_cost,
+      overtime_hourly_cost = EXCLUDED.overtime_hourly_cost,
       valid_until = EXCLUDED.valid_until,
       updated_at = NOW()
   `;
@@ -2592,6 +2612,7 @@ function mapEmployeeHourlyCostHistoryEntry(row: Record<string, unknown>) {
     employeeId: String(row.employee_id),
     employeeNameSnapshot: String(row.employee_name_snapshot),
     hourlyCost: toNumber(row.hourly_cost),
+    overtimeHourlyCost: row.overtime_hourly_cost == null ? null : toNumber(row.overtime_hourly_cost),
     validFrom: normalizeDate(row.valid_from),
     validUntil: row.valid_until ? normalizeDate(row.valid_until) : null,
     createdAt: normalizeDateTime(row.created_at),
@@ -2617,13 +2638,16 @@ export async function listEmployees() {
       WHERE active = TRUE
       ORDER BY name ASC
     `;
-    const employees = rows.map((row) => ({
+    const employees = rows.map((row) => {
+      const costProfile = currentCostMap.get(String(row.id));
+      return {
       id: String(row.id),
       name: String(row.name),
       shiftStart: "00:00",
       shiftEnd: "00:00",
       workingDaysPerMonth: 0,
-      hourlyCost: currentCostMap.get(String(row.id)) ?? 0,
+      hourlyCost: costProfile?.hourlyCost ?? 0,
+      overtimeHourlyCost: costProfile?.overtimeHourlyCost ?? null,
       weeklyHours: weeklyHoursMap.get(String(row.id)) ?? 0,
       isActive: Boolean(row.active),
       createdAt: "1970-01-01T00:00:00.000Z",
@@ -2633,24 +2657,29 @@ export async function listEmployees() {
       canAccessProducts: Boolean(row.can_access_products),
       canPostSaleLookup: Boolean(row.can_post_sale_lookup),
       canRefundSales: Boolean(row.can_refund_sales),
-    })) satisfies Employee[];
+      };
+    }) satisfies Employee[];
     return mergePendingEmployeeChanges(sql, employees);
   }
 
   const currentCostMap = await listEmployeeCurrentCostMap();
   const weeklyHoursMap = await listEmployeeWeeklyHoursMap();
   const rows = await sql`SELECT id, name, shift_start, shift_end, working_days_per_month, hourly_cost, is_active, created_at FROM employees WHERE is_active = TRUE ORDER BY name ASC`;
-  return rows.map((row) => ({
+  return rows.map((row) => {
+    const costProfile = currentCostMap.get(String(row.id));
+    return {
     id: String(row.id),
     name: String(row.name),
     shiftStart: String(row.shift_start),
     shiftEnd: String(row.shift_end),
     workingDaysPerMonth: Number(row.working_days_per_month),
-    hourlyCost: currentCostMap.get(String(row.id)) ?? toNumber(row.hourly_cost),
+    hourlyCost: costProfile?.hourlyCost ?? toNumber(row.hourly_cost),
+    overtimeHourlyCost: costProfile?.overtimeHourlyCost ?? null,
     weeklyHours: weeklyHoursMap.get(String(row.id)) ?? 0,
     isActive: Boolean(row.is_active),
     createdAt: new Date(String(row.created_at)).toISOString(),
-  })) satisfies Employee[];
+    };
+  }) satisfies Employee[];
 }
 
 async function mergePendingEmployeeChanges(sql: ReturnType<typeof getSql>, employees: Employee[]) {
@@ -2684,6 +2713,7 @@ async function mergePendingEmployeeChanges(sql: ReturnType<typeof getSql>, emplo
         shiftEnd: "00:00",
         workingDaysPerMonth: 0,
         hourlyCost: 0,
+        overtimeHourlyCost: null,
         weeklyHours: 0,
         isActive: true,
         createdAt: requestedAt,
@@ -2792,7 +2822,7 @@ export async function createEmployee(input: {
   const id = randomUUID();
 
   if (!hasDatabase()) {
-    return { id, ...input, weeklyHours: 0, isActive: true, createdAt: new Date().toISOString() } satisfies Employee;
+    return { id, ...input, overtimeHourlyCost: null, weeklyHours: 0, isActive: true, createdAt: new Date().toISOString() } satisfies Employee;
   }
   if (isPosDataSource()) {
     const name = input.name.trim();
@@ -2823,6 +2853,7 @@ export async function createEmployee(input: {
       shiftEnd: "00:00",
       workingDaysPerMonth: 0,
       hourlyCost: 0,
+      overtimeHourlyCost: null,
       weeklyHours: 0,
       isActive: true,
       createdAt: new Date().toISOString(),
@@ -2842,7 +2873,7 @@ export async function createEmployee(input: {
     VALUES (${id}, ${input.name}, ${input.shiftStart}, ${input.shiftEnd}, ${input.workingDaysPerMonth}, ${input.hourlyCost})
   `;
 
-  return { id, ...input, weeklyHours: 0, isActive: true, createdAt: new Date().toISOString() } satisfies Employee;
+  return { id, ...input, overtimeHourlyCost: null, weeklyHours: 0, isActive: true, createdAt: new Date().toISOString() } satisfies Employee;
 }
 
 export async function updateEmployee(
@@ -2956,9 +2987,14 @@ async function ensureEmployeeScheduleTables() {
       business_date DATE NOT NULL,
       shift_start TEXT NOT NULL,
       shift_end TEXT NOT NULL,
+      schedule_kind TEXT NOT NULL DEFAULT 'operational',
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `);
+  await sql.query(`
+    ALTER TABLE employee_schedule_shifts
+      ADD COLUMN IF NOT EXISTS schedule_kind TEXT NOT NULL DEFAULT 'operational'
   `);
   await sql.query(`
     DO $$
@@ -2986,6 +3022,10 @@ async function ensureEmployeeScheduleTables() {
       ON employee_schedule_shifts(business_date DESC)
   `);
   await sql.query(`
+    CREATE INDEX IF NOT EXISTS idx_employee_schedule_shifts_kind_date
+      ON employee_schedule_shifts(schedule_kind, business_date DESC)
+  `);
+  await sql.query(`
     CREATE TABLE IF NOT EXISTS employee_schedule_links (
       employee_id TEXT PRIMARY KEY,
       token TEXT NOT NULL UNIQUE,
@@ -3003,7 +3043,11 @@ async function ensureEmployeeScheduleTables() {
   employeeScheduleTablesEnsured = true;
 }
 
-export async function listEmployeeScheduleShifts(from?: string, to?: string) {
+export async function listEmployeeScheduleShifts(
+  from?: string,
+  to?: string,
+  scheduleKind?: EmployeeScheduleKind,
+) {
   if (!hasDatabase()) return [] satisfies EmployeeScheduleShift[];
 
   await ensureEmployeeScheduleTables();
@@ -3019,13 +3063,22 @@ export async function listEmployeeScheduleShifts(from?: string, to?: string) {
     : canJoinLegacyEmployees
       ? "LEFT JOIN employees e ON e.id = s.employee_id"
       : "";
-  const where = from && to ? "WHERE s.business_date >= $1::date AND s.business_date <= $2::date" : "";
-  const params = from && to ? [from, to] : [];
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  if (from && to) {
+    params.push(from, to);
+    clauses.push(`s.business_date >= $1::date AND s.business_date <= $2::date`);
+  }
+  if (scheduleKind) {
+    params.push(scheduleKind);
+    clauses.push(`s.schedule_kind = $${params.length}`);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
 
   const rows = await sql.query(
     `
       SELECT s.id, s.employee_id, ${employeeNameSelect} AS employee_name,
-             s.business_date, s.shift_start, s.shift_end, s.created_at, s.updated_at
+             s.business_date, s.shift_start, s.shift_end, s.schedule_kind, s.created_at, s.updated_at
       FROM employee_schedule_shifts s
       ${employeeJoin}
       ${where}
@@ -3091,6 +3144,8 @@ export async function getEmployeeScheduleByToken(token: string, from: string, to
   const publication = await getEmployeeScheduleWeekPublication(from);
   const shifts = (await listEmployeeScheduleShifts(from, to))
     .filter((shift) => shift.employeeId === employeeId);
+  const operationalShifts = shifts.filter((shift) => shift.scheduleKind === "operational");
+  const contractualShifts = shifts.filter((shift) => shift.scheduleKind === "contractual");
 
   return {
     employee,
@@ -3101,7 +3156,9 @@ export async function getEmployeeScheduleByToken(token: string, from: string, to
     } satisfies EmployeeScheduleShare,
     publication,
     isPublished: publication.isVisible,
-    shifts: publication.isVisible ? shifts : [],
+    shifts: publication.isVisible ? operationalShifts : [],
+    operationalShifts: publication.isVisible ? operationalShifts : [],
+    contractualShifts: publication.isVisible ? contractualShifts : [],
   };
 }
 
@@ -3180,6 +3237,7 @@ export async function upsertEmployeeScheduleShift(input: {
   businessDate: string;
   shiftStart: string;
   shiftEnd: string;
+  scheduleKind: EmployeeScheduleKind;
 }) {
   if (!hasDatabase()) return null;
   validateScheduleShiftInput(input);
@@ -3187,17 +3245,37 @@ export async function upsertEmployeeScheduleShift(input: {
 
   const sql = getSql();
   const id = input.id || randomUUID();
+  const overlapping = await sql`
+    SELECT id, business_date, shift_start, shift_end
+    FROM employee_schedule_shifts
+    WHERE employee_id = ${input.employeeId}
+      AND business_date >= ${input.businessDate}::date - INTERVAL '1 day'
+      AND business_date <= ${input.businessDate}::date + INTERVAL '1 day'
+      AND schedule_kind = ${input.scheduleKind}
+      AND id <> ${id}
+  `;
+  if (overlapping.some((row) => scheduleIntervalsOverlapAcrossDates(
+    input.businessDate,
+    input.shiftStart,
+    input.shiftEnd,
+    normalizeDate(row.business_date),
+    String(row.shift_start),
+    String(row.shift_end),
+  ))) {
+    throw new Error("El turno se solapa con otro turno del mismo calendario.");
+  }
   const rows = await sql`
-    INSERT INTO employee_schedule_shifts (id, employee_id, business_date, shift_start, shift_end)
-    VALUES (${id}, ${input.employeeId}, ${input.businessDate}, ${input.shiftStart}, ${input.shiftEnd})
+    INSERT INTO employee_schedule_shifts (id, employee_id, business_date, shift_start, shift_end, schedule_kind)
+    VALUES (${id}, ${input.employeeId}, ${input.businessDate}, ${input.shiftStart}, ${input.shiftEnd}, ${input.scheduleKind})
     ON CONFLICT (id)
     DO UPDATE SET
       employee_id = EXCLUDED.employee_id,
       business_date = EXCLUDED.business_date,
       shift_start = EXCLUDED.shift_start,
       shift_end = EXCLUDED.shift_end,
+      schedule_kind = EXCLUDED.schedule_kind,
       updated_at = NOW()
-    RETURNING id, employee_id, employee_id AS employee_name, business_date, shift_start, shift_end, created_at, updated_at
+    RETURNING id, employee_id, employee_id AS employee_name, business_date, shift_start, shift_end, schedule_kind, created_at, updated_at
   `;
   return mapEmployeeScheduleShift(rows[0]);
 }
@@ -3207,15 +3285,17 @@ export async function replaceEmployeeScheduleShiftsForDays(items: Array<{
   businessDate: string;
   shiftStart: string;
   shiftEnd: string;
+  scheduleKind: EmployeeScheduleKind;
 }>) {
   if (!hasDatabase() || items.length === 0) return [] satisfies EmployeeScheduleShift[];
   for (const item of items) validateScheduleShiftInput(item);
+  validateScheduleShiftBatch(items);
   await ensureEmployeeScheduleTables();
 
   const sql = getSql();
-  const pairs = [...new Set(items.map((item) => `${item.employeeId}|${item.businessDate}`))].map((pair) => {
-    const [employeeId, businessDate] = pair.split("|");
-    return { employeeId, businessDate };
+  const pairs = [...new Set(items.map((item) => `${item.employeeId}|${item.businessDate}|${item.scheduleKind}`))].map((pair) => {
+    const [employeeId, businessDate, scheduleKind] = pair.split("|");
+    return { employeeId, businessDate, scheduleKind: normalizeScheduleKind(scheduleKind) };
   });
 
   for (const pair of pairs) {
@@ -3223,6 +3303,7 @@ export async function replaceEmployeeScheduleShiftsForDays(items: Array<{
       DELETE FROM employee_schedule_shifts
       WHERE employee_id = ${pair.employeeId}
         AND business_date = ${pair.businessDate}
+        AND schedule_kind = ${pair.scheduleKind}
     `;
   }
 
@@ -3234,7 +3315,12 @@ export async function replaceEmployeeScheduleShiftsForDays(items: Array<{
   return saved;
 }
 
-export async function deleteEmployeeScheduleShift(input: { id?: string; employeeId?: string; businessDate?: string }) {
+export async function deleteEmployeeScheduleShift(input: {
+  id?: string;
+  employeeId?: string;
+  businessDate?: string;
+  scheduleKind?: EmployeeScheduleKind;
+}) {
   if (!hasDatabase()) return;
   await ensureEmployeeScheduleTables();
 
@@ -3247,15 +3333,21 @@ export async function deleteEmployeeScheduleShift(input: { id?: string; employee
     return;
   }
   if (input.employeeId && input.businessDate) {
+    const scheduleKind = input.scheduleKind ?? "operational";
     await sql`
       DELETE FROM employee_schedule_shifts
       WHERE employee_id = ${input.employeeId}
         AND business_date = ${input.businessDate}
+        AND schedule_kind = ${scheduleKind}
     `;
   }
 }
 
-export async function deleteEmployeeScheduleShiftsInRange(from: string, to: string) {
+export async function deleteEmployeeScheduleShiftsInRange(
+  from: string,
+  to: string,
+  scheduleKind: EmployeeScheduleKind,
+) {
   if (!hasDatabase()) return 0;
   if (!isValidDateOnly(from) || !isValidDateOnly(to)) {
     throw new Error("Rango de fechas no valido.");
@@ -3268,9 +3360,10 @@ export async function deleteEmployeeScheduleShiftsInRange(from: string, to: stri
       DELETE FROM employee_schedule_shifts
       WHERE business_date >= $1::date
         AND business_date <= $2::date
+        AND schedule_kind = $3
       RETURNING id
     `,
-    [from, to],
+    [from, to, scheduleKind],
   );
   return rows.length;
 }
@@ -3283,6 +3376,7 @@ function mapEmployeeScheduleShift(row: Record<string, unknown>) {
     businessDate: normalizeDate(row.business_date),
     shiftStart: String(row.shift_start),
     shiftEnd: String(row.shift_end),
+    scheduleKind: normalizeScheduleKind(row.schedule_kind),
     createdAt: normalizeDateTime(row.created_at),
     updatedAt: normalizeDateTime(row.updated_at),
   } satisfies EmployeeScheduleShift;
@@ -3306,9 +3400,13 @@ function validateScheduleShiftInput(input: {
   businessDate: string;
   shiftStart: string;
   shiftEnd: string;
+  scheduleKind: EmployeeScheduleKind;
 }) {
   if (!input.employeeId || !input.businessDate || !input.shiftStart || !input.shiftEnd) {
     throw new Error("Faltan campos obligatorios.");
+  }
+  if (input.scheduleKind !== "operational" && input.scheduleKind !== "contractual") {
+    throw new Error("Tipo de horario no valido.");
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.businessDate)) {
     throw new Error("Fecha no valida.");
@@ -3347,6 +3445,63 @@ function scheduleShiftMinutes(startValue: string, endValue: string) {
   let effectiveEnd = end;
   if (effectiveEnd <= start) effectiveEnd += 24 * 60;
   return effectiveEnd - start;
+}
+
+function normalizeScheduleKind(value: unknown): EmployeeScheduleKind {
+  return value === "contractual" ? "contractual" : "operational";
+}
+
+function validateScheduleShiftBatch(items: Array<{
+  employeeId: string;
+  businessDate: string;
+  shiftStart: string;
+  shiftEnd: string;
+  scheduleKind: EmployeeScheduleKind;
+}>) {
+  for (let index = 0; index < items.length; index += 1) {
+    const current = items[index];
+    for (let candidateIndex = index + 1; candidateIndex < items.length; candidateIndex += 1) {
+      const candidate = items[candidateIndex];
+      if (
+        current.employeeId === candidate.employeeId
+        && current.scheduleKind === candidate.scheduleKind
+        && scheduleIntervalsOverlapAcrossDates(
+          current.businessDate,
+          current.shiftStart,
+          current.shiftEnd,
+          candidate.businessDate,
+          candidate.shiftStart,
+          candidate.shiftEnd,
+        )
+      ) {
+        throw new Error("La semana contiene turnos solapados dentro del mismo calendario.");
+      }
+    }
+  }
+}
+
+function scheduleIntervalsOverlapAcrossDates(
+  firstDate: string,
+  firstStart: string,
+  firstEnd: string,
+  secondDate: string,
+  secondStart: string,
+  secondEnd: string,
+) {
+  const first = scheduleAbsoluteInterval(firstDate, firstStart, firstEnd);
+  const second = scheduleAbsoluteInterval(secondDate, secondStart, secondEnd);
+  return first.start < second.end && second.start < first.end;
+}
+
+function scheduleAbsoluteInterval(businessDate: string, startValue: string, endValue: string) {
+  const dayStart = Date.parse(`${businessDate}T00:00:00Z`) / 60000;
+  const start = parseTimeMinutes(startValue) ?? 0;
+  let end = parseTimeMinutes(endValue) ?? start;
+  if (end <= start) end += 24 * 60;
+  return {
+    start: dayStart + start,
+    end: dayStart + end,
+  };
 }
 
 /* ---------- Time Clock ---------- */
