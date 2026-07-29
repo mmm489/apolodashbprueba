@@ -54,8 +54,10 @@ import type {
   TimeClockCorrectionRequest,
   TimeClockCorrectionStatus,
   TimeClockCorrectionType,
+  TimeClockIncident,
   TimeClockSessionRecord,
 } from "@/lib/types";
+import { toDashboardDateOnly } from "@/lib/timezone";
 import { toNumber } from "@/lib/utils";
 
 const READ_ONLY_POS_MESSAGE = "Apolodashprueba esta conectado al POS en modo solo lectura.";
@@ -3664,6 +3666,7 @@ async function ensureTimeClockCorrectionTables() {
     CREATE TABLE IF NOT EXISTS time_clock_correction_requests (
       id TEXT PRIMARY KEY,
       employee_id TEXT NOT NULL,
+      schedule_shift_id TEXT,
       business_date DATE NOT NULL,
       request_type TEXT NOT NULL CHECK (request_type IN ('clock_in', 'clock_out', 'full_session')),
       requested_clock_in_at TIMESTAMPTZ,
@@ -3691,6 +3694,10 @@ async function ensureTimeClockCorrectionTables() {
     )
   `);
   await sql.query(`
+    ALTER TABLE time_clock_correction_requests
+      ADD COLUMN IF NOT EXISTS schedule_shift_id TEXT
+  `);
+  await sql.query(`
     CREATE INDEX IF NOT EXISTS idx_time_clock_corrections_status
       ON time_clock_correction_requests(status, created_at DESC)
   `);
@@ -3698,12 +3705,17 @@ async function ensureTimeClockCorrectionTables() {
     CREATE INDEX IF NOT EXISTS idx_time_clock_corrections_employee_date
       ON time_clock_correction_requests(employee_id, business_date DESC)
   `);
+  await sql.query(`
+    CREATE INDEX IF NOT EXISTS idx_time_clock_corrections_schedule_shift
+      ON time_clock_correction_requests(schedule_shift_id, status)
+  `);
   timeClockCorrectionTablesEnsured = true;
 }
 
 export async function createTimeClockCorrectionRequestByToken(input: {
   token: string;
   pin: string;
+  scheduleShiftId?: string | null;
   businessDate: string;
   requestType: TimeClockCorrectionType;
   clockInTime?: string | null;
@@ -3751,6 +3763,24 @@ export async function createTimeClockCorrectionRequestByToken(input: {
   const employee = employees[0];
   if (!employee) throw new Error("PIN incorrecto.");
 
+  const incidents = await listEmployeeTimeClockIncidentsByToken({
+    token: input.token,
+    from: input.businessDate,
+    to: input.businessDate,
+  });
+  const incident = input.scheduleShiftId
+    ? incidents.find((item) => (
+        item.scheduleShiftId === input.scheduleShiftId
+        && item.requestType === input.requestType
+      ))
+    : incidents.find((item) => (
+        item.businessDate === input.businessDate
+        && item.requestType === input.requestType
+      ));
+  if (!incident) {
+    throw new Error("Aquesta incidencia ja no esta pendent o no correspon al teu horari.");
+  }
+
   const dateCheck = await sql.query(
     `
       SELECT (
@@ -3770,12 +3800,23 @@ export async function createTimeClockCorrectionRequestByToken(input: {
       SELECT id
       FROM time_clock_correction_requests
       WHERE employee_id = $1
-        AND business_date = $2::date
-        AND request_type = $3
+        AND (
+          schedule_shift_id = $2
+          OR (
+            schedule_shift_id IS NULL
+            AND business_date = $3::date
+            AND request_type = $4
+          )
+        )
         AND status IN ('pending', 'approved')
       LIMIT 1
     `,
-    [String(employee.employee_id), input.businessDate, input.requestType],
+    [
+      String(employee.employee_id),
+      incident.scheduleShiftId,
+      incident.businessDate,
+      incident.requestType,
+    ],
   );
   if (duplicate[0]) {
     throw new Error("Ya existe una solicitud pendiente para este fichaje.");
@@ -3785,41 +3826,198 @@ export async function createTimeClockCorrectionRequestByToken(input: {
   const rows = await sql.query(
     `
       INSERT INTO time_clock_correction_requests (
-        id, employee_id, business_date, request_type,
+        id, employee_id, schedule_shift_id, business_date, request_type,
         requested_clock_in_at, requested_clock_out_at, reason
       )
       VALUES (
-        $1, $2, $3::date, $4,
-        CASE
-          WHEN $5::text IS NULL THEN NULL
-          ELSE ($3::date + $5::time) AT TIME ZONE 'Europe/Madrid'
-        END,
+        $1, $2, $3, $4::date, $5,
         CASE
           WHEN $6::text IS NULL THEN NULL
+          ELSE ($4::date + $6::time) AT TIME ZONE 'Europe/Madrid'
+        END,
+        CASE
+          WHEN $7::text IS NULL THEN NULL
           ELSE (
-            $3::date
-            + $6::time
+            $4::date
+            + $7::time
             + CASE
-                WHEN $5::text IS NOT NULL AND $6::time <= $5::time THEN INTERVAL '1 day'
+                WHEN $6::text IS NOT NULL AND $7::time <= $6::time THEN INTERVAL '1 day'
                 ELSE INTERVAL '0 days'
               END
           ) AT TIME ZONE 'Europe/Madrid'
         END,
-        $7
+        $8
       )
       RETURNING *
     `,
     [
       id,
       String(employee.employee_id),
-      input.businessDate,
-      input.requestType,
+      incident.scheduleShiftId,
+      incident.businessDate,
+      incident.requestType,
       input.clockInTime || null,
       input.clockOutTime || null,
       reason,
     ],
   );
   return mapTimeClockCorrectionRequest({ ...rows[0], employee_name: employee.name });
+}
+
+export async function listEmployeeTimeClockIncidentsByToken(input: {
+  token: string;
+  from: string;
+  to: string;
+}) {
+  if (
+    !hasDatabase()
+    || !/^[a-zA-Z0-9_-]{20,80}$/.test(input.token)
+    || !isValidDateOnly(input.from)
+    || !isValidDateOnly(input.to)
+  ) {
+    return [] satisfies TimeClockIncident[];
+  }
+
+  await ensureEmployeeScheduleTables();
+  await ensureTimeClockCorrectionTables();
+  const sql = getSql();
+  if (!(await hasPosTable(sql, "time_clock_sessions"))) {
+    return [] satisfies TimeClockIncident[];
+  }
+
+  const employeeRows = await sql.query(
+    `
+      SELECT l.employee_id
+      FROM employee_schedule_links l
+      JOIN pos.employees e ON e.id::text = l.employee_id
+      WHERE l.token = $1
+        AND e.active = TRUE
+      LIMIT 1
+    `,
+    [input.token],
+  );
+  const employeeId = employeeRows[0]?.employee_id == null
+    ? null
+    : String(employeeRows[0].employee_id);
+  if (!employeeId) return [] satisfies TimeClockIncident[];
+
+  const shiftRows = await sql.query(
+    `
+      SELECT s.id, s.business_date, s.shift_start, s.shift_end,
+             (
+               s.business_date + s.shift_start::time
+             ) AT TIME ZONE 'Europe/Madrid' AS starts_at,
+             (
+               s.business_date + s.shift_end::time
+               + CASE
+                   WHEN s.shift_end::time <= s.shift_start::time THEN INTERVAL '1 day'
+                   ELSE INTERVAL '0 days'
+                 END
+             ) AT TIME ZONE 'Europe/Madrid' AS ends_at
+      FROM employee_schedule_shifts s
+      JOIN employee_schedule_week_publications p
+        ON p.week_start = date_trunc('week', s.business_date)::date
+       AND p.is_visible = TRUE
+      WHERE s.employee_id = $1
+        AND s.business_date BETWEEN $2::date AND $3::date
+        AND s.schedule_kind = 'operational'
+      ORDER BY s.business_date ASC, s.shift_start ASC
+    `,
+    [employeeId, input.from, input.to],
+  );
+  const sessions = (await listTimeClockSessions(input.from, input.to))
+    .filter((session) => session.employeeId === employeeId);
+  const requests = await listTimeClockCorrectionRequests({
+    from: input.from,
+    to: input.to,
+    employeeId,
+    statuses: ["pending", "approved", "applied"],
+  });
+
+  const scheduleDays = new Map<string, {
+    firstShiftId: string;
+    businessDate: string;
+    shiftStart: string;
+    shiftEnd: string;
+    startsAt: Date;
+    endsAt: Date;
+  }>();
+  for (const row of shiftRows) {
+    const businessDate = normalizeDate(row.business_date);
+    const startsAt = new Date(normalizeDateTime(row.starts_at));
+    const endsAt = new Date(normalizeDateTime(row.ends_at));
+    const current = scheduleDays.get(businessDate);
+    if (!current) {
+      scheduleDays.set(businessDate, {
+        firstShiftId: String(row.id),
+        businessDate,
+        shiftStart: String(row.shift_start).slice(0, 5),
+        shiftEnd: String(row.shift_end).slice(0, 5),
+        startsAt,
+        endsAt,
+      });
+      continue;
+    }
+    if (startsAt.getTime() < current.startsAt.getTime()) {
+      current.firstShiftId = String(row.id);
+      current.shiftStart = String(row.shift_start).slice(0, 5);
+      current.startsAt = startsAt;
+    }
+    if (endsAt.getTime() > current.endsAt.getTime()) {
+      current.shiftEnd = String(row.shift_end).slice(0, 5);
+      current.endsAt = endsAt;
+    }
+  }
+
+  const now = Date.now();
+  const today = toDashboardDateOnly(new Date());
+  const oldestAllowed = addIsoDays(today, -31);
+  const graceMs = 20 * 60 * 1000;
+  const incidents: TimeClockIncident[] = [];
+
+  for (const scheduleDay of scheduleDays.values()) {
+    if (scheduleDay.businessDate < oldestAllowed || scheduleDay.businessDate > today) continue;
+    const daySessions = sessions.filter(
+      (session) => session.businessDate === scheduleDay.businessDate,
+    );
+    const openSession = daySessions.find(
+      (session) => session.status === "open" || session.clockOutAt == null,
+    );
+    let requestType: TimeClockCorrectionType | null = null;
+
+    if (daySessions.length === 0 && now > scheduleDay.startsAt.getTime() + graceMs) {
+      requestType = now > scheduleDay.endsAt.getTime() + graceMs ? "full_session" : "clock_in";
+    } else if (
+      openSession
+      && now > scheduleDay.endsAt.getTime() + graceMs
+    ) {
+      requestType = "clock_out";
+    }
+    if (!requestType) continue;
+
+    const alreadyRequested = requests.some((request) => (
+      request.scheduleShiftId === scheduleDay.firstShiftId
+      || (
+        request.scheduleShiftId == null
+        && request.businessDate === scheduleDay.businessDate
+        && request.requestType === requestType
+      )
+    ));
+    if (alreadyRequested) continue;
+
+    incidents.push({
+      id: `${scheduleDay.firstShiftId}:${requestType}`,
+      scheduleShiftId: scheduleDay.firstShiftId,
+      businessDate: scheduleDay.businessDate,
+      requestType,
+      shiftStart: scheduleDay.shiftStart,
+      shiftEnd: scheduleDay.shiftEnd,
+      suggestedClockInTime: requestType === "clock_out" ? null : scheduleDay.shiftStart,
+      suggestedClockOutTime: requestType === "clock_in" ? null : scheduleDay.shiftEnd,
+    });
+  }
+
+  return incidents;
 }
 
 export async function listTimeClockCorrectionRequests(input: {
@@ -4397,6 +4595,7 @@ function mapTimeClockCorrectionRequest(row: Record<string, unknown>): TimeClockC
     id: String(row.id),
     employeeId: String(row.employee_id),
     employeeName: String(row.employee_name ?? "Sense empleat"),
+    scheduleShiftId: row.schedule_shift_id == null ? null : String(row.schedule_shift_id),
     businessDate: normalizeDate(row.business_date),
     requestType: String(row.request_type) as TimeClockCorrectionType,
     requestedClockInAt: row.requested_clock_in_at == null ? null : normalizeDateTime(row.requested_clock_in_at),

@@ -335,6 +335,7 @@ export interface TimeClockCorrectionRequest {
   id: string;
   employeeId: string;
   employeeName: string;
+  scheduleShiftId: string | null;
   businessDate: string;
   requestType: TimeClockCorrectionType;
   requestedClockInAt: string | null;
@@ -348,6 +349,17 @@ export interface TimeClockCorrectionRequest {
   applyError: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TimeClockIncident {
+  id: string;
+  scheduleShiftId: string;
+  businessDate: string;
+  requestType: TimeClockCorrectionType;
+  shiftStart: string;
+  shiftEnd: string;
+  suggestedClockInTime: string | null;
+  suggestedClockOutTime: string | null;
 }
 
 export type AccountingAccountType = "asset" | "liability" | "equity" | "income" | "expense";

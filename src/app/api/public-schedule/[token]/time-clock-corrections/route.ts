@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   createTimeClockCorrectionRequestByToken,
   getEmployeeScheduleByToken,
+  listEmployeeTimeClockIncidentsByToken,
   listTimeClockCorrectionRequests,
 } from "@/lib/repositories";
 import type { TimeClockCorrectionType } from "@/lib/types";
@@ -26,12 +27,15 @@ export async function GET(
     if (!schedule) {
       return NextResponse.json({ error: "Enlace no encontrado." }, { status: 404 });
     }
-    const requests = await listTimeClockCorrectionRequests({
-      from,
-      to,
-      employeeId: schedule.employee.id,
-    });
-    return NextResponse.json({ requests });
+    const [requests, incidents] = await Promise.all([
+      listTimeClockCorrectionRequests({
+        from,
+        to,
+        employeeId: schedule.employee.id,
+      }),
+      listEmployeeTimeClockIncidentsByToken({ token, from, to }),
+    ]);
+    return NextResponse.json({ requests, incidents });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "No se han podido cargar las solicitudes." },
@@ -50,6 +54,7 @@ export async function POST(
     const correction = await createTimeClockCorrectionRequestByToken({
       token,
       pin: String(body.pin ?? ""),
+      scheduleShiftId: body.scheduleShiftId == null ? null : String(body.scheduleShiftId),
       businessDate: String(body.businessDate ?? ""),
       requestType: String(body.requestType ?? "") as TimeClockCorrectionType,
       clockInTime: body.clockInTime == null ? null : String(body.clockInTime),
