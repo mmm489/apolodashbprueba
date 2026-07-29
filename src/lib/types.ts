@@ -290,6 +290,14 @@ export interface EmployeeScheduleWeekPublication {
   updatedAt: string | null;
 }
 
+export interface EmployeeScheduleWeekSetting {
+  employeeId: string;
+  weekStart: string;
+  restDate: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PlannedLaborRecord {
   id: string;
   employeeId: string;

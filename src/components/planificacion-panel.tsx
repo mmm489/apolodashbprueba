@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 
 import { formatDashboardDate } from "@/lib/timezone";
-import type { Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleKind, EmployeeScheduleShare, EmployeeScheduleShift, EmployeeScheduleWeekPublication, TimeClockSessionRecord } from "@/lib/types";
+import type { Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleKind, EmployeeScheduleShare, EmployeeScheduleShift, EmployeeScheduleWeekPublication, EmployeeScheduleWeekSetting, TimeClockSessionRecord } from "@/lib/types";
 
 const DEFAULT_HORARI_PUBLIC_BASE_URL = "https://horari-brown.vercel.app";
 const HORARI_PUBLIC_BASE_URL = (process.env.NEXT_PUBLIC_HORARI_BASE_URL || DEFAULT_HORARI_PUBLIC_BASE_URL).replace(/\/+$/, "");
@@ -43,6 +43,7 @@ export function PlanificacionPanel({
   timeClockSessions,
   employeeCostHistory,
   weekPublication,
+  initialWeekSettings,
   weekStart,
   weekEnd,
 }: {
@@ -52,6 +53,7 @@ export function PlanificacionPanel({
   timeClockSessions: TimeClockSessionRecord[];
   employeeCostHistory: EmployeeHourlyCostHistoryEntry[];
   weekPublication: EmployeeScheduleWeekPublication;
+  initialWeekSettings: EmployeeScheduleWeekSetting[];
   weekStart: string;
   weekEnd: string;
 }) {
@@ -62,6 +64,9 @@ export function PlanificacionPanel({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isWeekVisible, setIsWeekVisible] = useState(weekPublication.isVisible);
+  const [restDates, setRestDates] = useState<Record<string, string>>(
+    Object.fromEntries(initialWeekSettings.map((setting) => [setting.employeeId, setting.restDate])),
+  );
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -70,6 +75,9 @@ export function PlanificacionPanel({
   useEffect(() => {
     setIsWeekVisible(weekPublication.isVisible);
   }, [weekPublication.isVisible, weekStart]);
+  useEffect(() => {
+    setRestDates(Object.fromEntries(initialWeekSettings.map((setting) => [setting.employeeId, setting.restDate])));
+  }, [initialWeekSettings, weekStart]);
 
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, index) => addDaysIso(weekStart, index)),
@@ -221,8 +229,22 @@ export function PlanificacionPanel({
       };
 
       setShifts((current) => upsertLocalShift(current, nextShift));
+      let generatedMessage = "";
+      const restDate = restDates[editor.employeeId];
+      if (editor.scheduleKind === "operational" && restDate) {
+        try {
+          const generation = await requestContractualGeneration(editor.employeeId, restDate);
+          generatedMessage = generation.summary.missingMinutes > 0
+            ? ` Contractual actualizado; faltan ${formatDuration(generation.summary.missingMinutes)} porque no hay suficientes horas operativas.`
+            : " Contractual actualizado automaticamente.";
+        } catch (generationError) {
+          generatedMessage = ` El turno se guardo, pero no se pudo actualizar el contractual: ${
+            generationError instanceof Error ? generationError.message : "error desconocido"
+          }.`;
+        }
+      }
       setEditor(null);
-      setMessage("Turno guardado.");
+      setMessage(`Turno guardado.${generatedMessage}`);
       router.refresh();
     });
   }
@@ -255,9 +277,82 @@ export function PlanificacionPanel({
           shift.scheduleKind !== editor.scheduleKind ||
           shiftKey(shift.employeeId, shift.businessDate) !== shiftKey(editor.employeeId, editor.businessDate)
         ));
+      let generatedMessage = "";
+      const restDate = restDates[editor.employeeId];
+      if (editor.scheduleKind === "operational" && restDate) {
+        try {
+          const generation = await requestContractualGeneration(editor.employeeId, restDate);
+          generatedMessage = generation.summary.missingMinutes > 0
+            ? ` Contractual actualizado; faltan ${formatDuration(generation.summary.missingMinutes)}.`
+            : " Contractual actualizado automaticamente.";
+        } catch (generationError) {
+          generatedMessage = ` Revisa el contractual: ${
+            generationError instanceof Error ? generationError.message : "no se pudo regenerar"
+          }.`;
+        }
+      }
       setEditor(null);
-      setMessage("Turno eliminado.");
+      setMessage(`Turno eliminado.${generatedMessage}`);
       router.refresh();
+    });
+  }
+
+  async function requestContractualGeneration(employeeId: string, restDate: string) {
+    const response = await fetch("/api/scheduling/contractual", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ employeeId, weekStart, restDate }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error || "No se ha podido generar el horario contractual.");
+    }
+    const contractual = Array.isArray(data.shifts) ? data.shifts as EmployeeScheduleShift[] : [];
+    setShifts((current) => [
+      ...current.filter((shift) =>
+        shift.scheduleKind !== "contractual"
+        || shift.employeeId !== employeeId
+        || shift.businessDate < weekStart
+        || shift.businessDate > weekEnd
+      ),
+      ...contractual,
+    ].sort((a, b) =>
+      a.businessDate.localeCompare(b.businessDate)
+      || a.employeeName.localeCompare(b.employeeName, "ca")
+      || a.shiftStart.localeCompare(b.shiftStart)
+    ));
+    setRestDates((current) => ({ ...current, [employeeId]: restDate }));
+    return data as {
+      summary: {
+        targetMinutes: number;
+        contractualMinutes: number;
+        missingMinutes: number;
+        restDayOperationalMinutes: number;
+      };
+    };
+  }
+
+  function saveRestDay(employee: Employee) {
+    const restDate = restDates[employee.id];
+    setMessage(null);
+    setError(null);
+    if (!restDate) {
+      setError(`Selecciona el dia de descanso de ${employee.name}.`);
+      return;
+    }
+    startTransition(async () => {
+      try {
+        const generation = await requestContractualGeneration(employee.id, restDate);
+        const extra = generation.summary.restDayOperationalMinutes > 0
+          ? ` Ese dia mantiene ${formatDuration(generation.summary.restDayOperationalMinutes)} operativas como horas fuera del contractual.`
+          : "";
+        setMessage(generation.summary.missingMinutes > 0
+          ? `Contractual de ${employee.name} creado con ${formatDuration(generation.summary.contractualMinutes)}. Faltan ${formatDuration(generation.summary.missingMinutes)} por repartir.${extra}`
+          : `Contractual de ${employee.name} creado: ${formatDuration(generation.summary.contractualMinutes)} y ${formatFullDate(restDate)} de descanso.${extra}`);
+        router.refresh();
+      } catch (generationError) {
+        setError(generationError instanceof Error ? generationError.message : "No se ha podido crear el contractual.");
+      }
     });
   }
 
@@ -657,7 +752,7 @@ export function PlanificacionPanel({
         <div className="border-b border-[var(--line)] px-5 py-4">
           <h2 className="text-lg font-black tracking-tight text-slate-950">Parrilla semanal</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Cada celda puede tener varios turnos partidos. Toca un turno para editarlo o + Turno para anadir otro.
+            Crea el operativo y elige un descanso por empleado. El contractual se repartira dentro de los demas turnos hasta completar sus horas semanales.
           </p>
         </div>
 
@@ -668,8 +763,8 @@ export function PlanificacionPanel({
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <div className="min-w-[1180px]">
-              <div className="grid grid-cols-[260px_repeat(7,minmax(120px,1fr))_130px] border-b border-[var(--line)] bg-slate-50 text-xs font-black uppercase tracking-wider text-slate-500">
+            <div className="min-w-[1210px]">
+              <div className="grid grid-cols-[290px_repeat(7,minmax(120px,1fr))_130px] border-b border-[var(--line)] bg-slate-50 text-xs font-black uppercase tracking-wider text-slate-500">
                 <div className="px-4 py-3">Empleado</div>
                 {days.map((day) => (
                   <div key={day} className="px-3 py-3 text-center">
@@ -729,7 +824,7 @@ export function PlanificacionPanel({
                   return (
                     <div
                       key={employee.id}
-                      className="grid grid-cols-[260px_repeat(7,minmax(120px,1fr))_130px] items-stretch"
+                      className="grid grid-cols-[290px_repeat(7,minmax(120px,1fr))_130px] items-stretch"
                     >
                       <div className="flex flex-col justify-center px-4 py-3">
                         <p className="truncate text-sm font-black text-slate-950">{employee.name}</p>
@@ -766,10 +861,45 @@ export function PlanificacionPanel({
                             Copiar
                           </button>
                         </div>
+                        {activeKind === "operational" && (
+                          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-2">
+                            <label className="text-[10px] font-black uppercase tracking-wider text-amber-700">
+                              Dia de descanso contractual
+                            </label>
+                            <div className="mt-1.5 flex gap-1.5">
+                              <select
+                                value={restDates[employee.id] ?? ""}
+                                onChange={(event) => setRestDates((current) => ({
+                                  ...current,
+                                  [employee.id]: event.target.value,
+                                }))}
+                                className="min-w-0 flex-1 rounded-lg border border-amber-200 bg-white px-2 py-1.5 text-xs font-black text-slate-800 outline-none focus:border-amber-400"
+                              >
+                                <option value="">Seleccionar...</option>
+                                {days.map((day) => (
+                                  <option key={day} value={day}>
+                                    {formatWeekday(day)} {formatShortDate(day)}
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                title="Guardar descanso y crear horario contractual"
+                                onClick={() => saveRestDay(employee)}
+                                disabled={isPending || !restDates[employee.id]}
+                                className="inline-flex items-center gap-1 rounded-lg bg-amber-500 px-2.5 py-1.5 text-xs font-black text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                <Save className="size-3.5" />
+                                Crear
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {days.map((day) => {
                         const dayShifts = shiftGroups.get(shiftKey(employee.id, day)) ?? [];
+                        const isRestDay = restDates[employee.id] === day;
                         const profile = resolveEmployeeCostForDate(costHistoryByEmployee, employee.id, day, {
                           hourlyCost: employee.hourlyCost,
                           overtimeHourlyCost: employee.overtimeHourlyCost,
@@ -787,12 +917,19 @@ export function PlanificacionPanel({
                           <div
                             key={`${employee.id}-${day}`}
                             className={`m-1 min-h-[92px] rounded-xl border px-2 py-2 ${
-                              dayShifts.length
+                              isRestDay && activeKind === "contractual"
+                                ? "border-amber-300 bg-amber-50"
+                                : dayShifts.length
                                 ? "border-indigo-100 bg-indigo-50/60"
                                 : "border-dashed border-slate-200 bg-white"
                             }`}
                           >
                             <div className="space-y-1.5">
+                              {isRestDay && (
+                                <div className="rounded-lg bg-amber-100 px-2 py-1.5 text-center text-[10px] font-black uppercase tracking-wide text-amber-800">
+                                  {activeKind === "contractual" ? "Dia de descanso" : "Descanso contractual"}
+                                </div>
+                              )}
                               {dayShifts.map((shift) => (
                                 <button
                                   key={shift.id}
@@ -813,13 +950,15 @@ export function PlanificacionPanel({
                                   </p>
                                 </button>
                               ))}
-                              <button
-                                type="button"
-                                onClick={() => openEditor(employee, day)}
-                                className="flex min-h-8 w-full items-center justify-center rounded-lg border border-dashed border-slate-200 bg-white/80 px-2 py-1 text-[11px] font-black text-slate-400 transition hover:border-slate-300 hover:text-slate-600"
-                              >
-                                + Turno
-                              </button>
+                              {!(isRestDay && activeKind === "contractual") && (
+                                <button
+                                  type="button"
+                                  onClick={() => openEditor(employee, day)}
+                                  className="flex min-h-8 w-full items-center justify-center rounded-lg border border-dashed border-slate-200 bg-white/80 px-2 py-1 text-[11px] font-black text-slate-400 transition hover:border-slate-300 hover:text-slate-600"
+                                >
+                                  + Turno
+                                </button>
+                              )}
                             </div>
                           </div>
                         );

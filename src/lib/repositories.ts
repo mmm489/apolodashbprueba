@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { generateContractualSchedule } from "@/lib/contractual-schedule";
 import { getSql, hasDatabase, isPosDataSource } from "@/lib/db";
 import {
   mockAlerts,
@@ -27,6 +28,7 @@ import type {
   EmployeeScheduleKind,
   EmployeeScheduleShare,
   EmployeeScheduleShift,
+  EmployeeScheduleWeekSetting,
   EmployeeShift,
   ExtractionResult,
   HourlyProductSale,
@@ -3040,6 +3042,20 @@ async function ensureEmployeeScheduleTables() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await sql.query(`
+    CREATE TABLE IF NOT EXISTS employee_schedule_week_settings (
+      employee_id TEXT NOT NULL,
+      week_start DATE NOT NULL,
+      rest_date DATE NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (employee_id, week_start)
+    )
+  `);
+  await sql.query(`
+    CREATE INDEX IF NOT EXISTS idx_employee_schedule_week_settings_rest_date
+      ON employee_schedule_week_settings(rest_date)
+  `);
   employeeScheduleTablesEnsured = true;
 }
 
@@ -3146,6 +3162,10 @@ export async function getEmployeeScheduleByToken(token: string, from: string, to
     .filter((shift) => shift.employeeId === employeeId);
   const operationalShifts = shifts.filter((shift) => shift.scheduleKind === "operational");
   const contractualShifts = shifts.filter((shift) => shift.scheduleKind === "contractual");
+  const weekSettings = await listEmployeeScheduleWeekSettings(from);
+  const restDays = weekSettings
+    .filter((setting) => setting.employeeId === employeeId)
+    .map((setting) => setting.restDate);
 
   return {
     employee,
@@ -3159,6 +3179,112 @@ export async function getEmployeeScheduleByToken(token: string, from: string, to
     shifts: publication.isVisible ? operationalShifts : [],
     operationalShifts: publication.isVisible ? operationalShifts : [],
     contractualShifts: publication.isVisible ? contractualShifts : [],
+    restDays: publication.isVisible ? restDays : [],
+  };
+}
+
+export async function listEmployeeScheduleWeekSettings(weekStart: string) {
+  if (!isValidDateOnly(weekStart)) {
+    throw new Error("Semana no valida.");
+  }
+  if (!hasDatabase()) return [] satisfies EmployeeScheduleWeekSetting[];
+
+  await ensureEmployeeScheduleTables();
+  const sql = getSql();
+  const rows = await sql.query(
+    `
+      SELECT employee_id, week_start, rest_date, created_at, updated_at
+      FROM employee_schedule_week_settings
+      WHERE week_start = $1::date
+      ORDER BY employee_id ASC
+    `,
+    [weekStart],
+  );
+  return rows.map(mapEmployeeScheduleWeekSetting);
+}
+
+export async function generateEmployeeContractualSchedule(input: {
+  employeeId: string;
+  weekStart: string;
+  restDate: string;
+}) {
+  if (!input.employeeId || !isValidDateOnly(input.weekStart) || !isValidDateOnly(input.restDate)) {
+    throw new Error("Empleado, semana o dia de descanso no validos.");
+  }
+  const weekEnd = addIsoDays(input.weekStart, 6);
+  if (input.restDate < input.weekStart || input.restDate > weekEnd) {
+    throw new Error("El dia de descanso debe pertenecer a la semana seleccionada.");
+  }
+  if (!hasDatabase()) {
+    throw new Error("La base de datos no esta configurada.");
+  }
+
+  await ensureEmployeeScheduleTables();
+  const employees = await listEmployees();
+  const employee = employees.find((item) => item.id === input.employeeId);
+  if (!employee) throw new Error("Empleado no encontrado.");
+
+  const operationalShifts = (await listEmployeeScheduleShifts(input.weekStart, weekEnd, "operational"))
+    .filter((shift) => shift.employeeId === input.employeeId);
+  const generation = generateContractualSchedule(
+    operationalShifts,
+    Math.round((employee.weeklyHours ?? 0) * 60),
+    input.restDate,
+  );
+  const { shifts: generatedShifts, ...generationSummary } = generation;
+  const sql = getSql();
+
+  await sql.query(
+    `
+      INSERT INTO employee_schedule_week_settings
+        (employee_id, week_start, rest_date, updated_at)
+      VALUES ($1, $2::date, $3::date, NOW())
+      ON CONFLICT (employee_id, week_start)
+      DO UPDATE SET rest_date = EXCLUDED.rest_date, updated_at = NOW()
+    `,
+    [input.employeeId, input.weekStart, input.restDate],
+  );
+  await sql.query(
+    `
+      DELETE FROM employee_schedule_shifts
+      WHERE employee_id = $1
+        AND business_date >= $2::date
+        AND business_date <= $3::date
+        AND schedule_kind = 'contractual'
+    `,
+    [input.employeeId, input.weekStart, weekEnd],
+  );
+
+  const saved: EmployeeScheduleShift[] = [];
+  for (const shift of generatedShifts) {
+    const result = await upsertEmployeeScheduleShift({
+      employeeId: input.employeeId,
+      businessDate: shift.businessDate,
+      shiftStart: shift.shiftStart,
+      shiftEnd: shift.shiftEnd,
+      scheduleKind: "contractual",
+    });
+    if (result) saved.push({ ...result, employeeName: employee.name });
+  }
+
+  const settingRows = await sql.query(
+    `
+      SELECT employee_id, week_start, rest_date, created_at, updated_at
+      FROM employee_schedule_week_settings
+      WHERE employee_id = $1 AND week_start = $2::date
+      LIMIT 1
+    `,
+    [input.employeeId, input.weekStart],
+  );
+
+  return {
+    setting: mapEmployeeScheduleWeekSetting(settingRows[0]),
+    shifts: saved,
+    summary: {
+      ...generationSummary,
+      employeeName: employee.name,
+      weeklyHours: employee.weeklyHours ?? 0,
+    },
   };
 }
 
@@ -3391,6 +3517,16 @@ function mapEmployeeScheduleWeekPublication(row: Record<string, unknown>) {
   };
 }
 
+function mapEmployeeScheduleWeekSetting(row: Record<string, unknown>) {
+  return {
+    employeeId: String(row.employee_id),
+    weekStart: normalizeDate(row.week_start),
+    restDate: normalizeDate(row.rest_date),
+    createdAt: normalizeDateTime(row.created_at),
+    updatedAt: normalizeDateTime(row.updated_at),
+  } satisfies EmployeeScheduleWeekSetting;
+}
+
 function createScheduleToken() {
   return randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "").slice(0, 12);
 }
@@ -3427,6 +3563,12 @@ function validateScheduleShiftInput(input: {
 
 function isValidDateOnly(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function addIsoDays(value: string, days: number) {
+  const date = new Date(`${value}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 function parseTimeMinutes(value: string) {

@@ -106,6 +106,7 @@ export default async function EmployeeSchedulePage({
             <ScheduleSection
               days={days}
               groups={contractualGroups}
+              restDays={data.restDays}
               title="Horari contractual"
               description={`Distribucio de les hores contractades: ${formatDuration(contractualMinutes)} aquesta setmana.`}
               accent="blue"
@@ -179,12 +180,14 @@ function ScheduleMetric({
 function ScheduleSection({
   days,
   groups,
+  restDays = [],
   title,
   description,
   accent,
 }: {
   days: string[];
   groups: Map<string, EmployeeScheduleShift[]>;
+  restDays?: string[];
   title: string;
   description: string;
   accent: "emerald" | "blue";
@@ -203,13 +206,18 @@ function ScheduleSection({
       <div className="divide-y divide-[#eee6dc]">
         {days.map((day) => {
           const shifts = groups.get(day) ?? [];
+          const isRestDay = restDays.includes(day);
           return (
             <div key={day} className="flex items-center justify-between gap-4 px-5 py-4">
               <div>
                 <p className="text-base font-black capitalize">{formatWeekday(day)}</p>
                 <p className="mt-1 text-sm font-bold text-slate-400">{formatDate(day)}</p>
               </div>
-              {shifts.length > 0 ? (
+              {isRestDay ? (
+                <div className="rounded-xl bg-amber-100 px-3 py-2 text-center text-xs font-black uppercase tracking-wide text-amber-800">
+                  Dia de descans
+                </div>
+              ) : shifts.length > 0 ? (
                 <div className="flex flex-col gap-2 text-right">
                   {shifts.map((shift) => (
                     <div key={shift.id} className={`rounded-2xl px-4 py-3 ${color.surface}`}>

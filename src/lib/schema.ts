@@ -236,6 +236,15 @@ CREATE TABLE IF NOT EXISTS employee_schedule_week_publications (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS employee_schedule_week_settings (
+  employee_id TEXT NOT NULL,
+  week_start DATE NOT NULL,
+  rest_date DATE NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (employee_id, week_start)
+);
+
 CREATE TABLE IF NOT EXISTS accounting_accounts (
   id TEXT PRIMARY KEY,
   code TEXT NOT NULL UNIQUE,

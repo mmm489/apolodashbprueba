@@ -6,6 +6,7 @@ import {
   listAllEmployeeHourlyCostHistory,
   listEmployees,
   listEmployeeScheduleShifts,
+  listEmployeeScheduleWeekSettings,
   listTimeClockSessions,
 } from "@/lib/repositories";
 
@@ -22,12 +23,13 @@ export default async function PlanificacionPage({
   const from = formatIsoDate(weekStart);
   const to = formatIsoDate(weekEnd);
 
-  const [employees, shifts, timeClockSessions, employeeCostHistory, weekPublication] = await Promise.all([
+  const [employees, shifts, timeClockSessions, employeeCostHistory, weekPublication, weekSettings] = await Promise.all([
     listEmployees(),
     listEmployeeScheduleShifts(from, to),
     listTimeClockSessions(from, to),
     listAllEmployeeHourlyCostHistory(),
     getEmployeeScheduleWeekPublication(from),
+    listEmployeeScheduleWeekSettings(from),
   ]);
   const activeEmployees = employees.filter((employee) => employee.isActive);
   const scheduleShares = await ensureEmployeeScheduleLinks(activeEmployees.map((employee) => employee.id));
@@ -44,6 +46,7 @@ export default async function PlanificacionPage({
         timeClockSessions={timeClockSessions}
         employeeCostHistory={employeeCostHistory}
         weekPublication={weekPublication}
+        initialWeekSettings={weekSettings}
         weekStart={from}
         weekEnd={to}
       />

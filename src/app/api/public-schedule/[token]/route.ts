@@ -40,6 +40,7 @@ export async function GET(
     })),
     operationalShifts: data.operationalShifts,
     contractualShifts: data.contractualShifts,
+    restDays: data.restDays,
   });
 }
 
