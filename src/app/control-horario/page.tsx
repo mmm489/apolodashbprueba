@@ -1,7 +1,12 @@
 import { AppFrame } from "@/components/app-frame";
 import { DateFilterBar } from "@/components/date-filter-bar";
+import { TimeClockCorrectionsPanel } from "@/components/time-clock-corrections-panel";
 import { resolveDateFilter } from "@/lib/analytics";
-import { listEmployeeScheduleShifts, listTimeClockSessions } from "@/lib/repositories";
+import {
+  listEmployeeScheduleShifts,
+  listTimeClockCorrectionRequests,
+  listTimeClockSessions,
+} from "@/lib/repositories";
 import { formatDashboardDate, formatDashboardTime } from "@/lib/timezone";
 import type { EmployeeScheduleShift, TimeClockSessionRecord } from "@/lib/types";
 
@@ -18,9 +23,10 @@ export default async function ControlHorarioPage({
     from: firstValue(params?.from),
     to: firstValue(params?.to),
   });
-  const [sessions, plannedShifts] = await Promise.all([
+  const [sessions, plannedShifts, correctionRequests] = await Promise.all([
     listTimeClockSessions(filter.from, filter.to),
     listEmployeeScheduleShifts(filter.from, filter.to, "contractual"),
+    listTimeClockCorrectionRequests({ from: filter.from, to: filter.to }),
   ]);
   const plannedByEmployee = buildPlannedByEmployee(plannedShifts);
   const stats = buildStats(sessions, plannedShifts);
@@ -36,6 +42,8 @@ export default async function ControlHorarioPage({
       description="Fichajes sincronizados desde el POS principal, sin cambiar el empleado de caja."
     >
       <DateFilterBar preset={filter.preset} from={filter.from} to={filter.to} />
+
+      <TimeClockCorrectionsPanel requests={correctionRequests} />
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
         <Metric label="Jornadas" value={fmtNum(stats.sessions)} color="indigo" />

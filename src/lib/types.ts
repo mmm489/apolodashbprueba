@@ -328,6 +328,28 @@ export interface TimeClockSessionRecord {
   updatedAt: string;
 }
 
+export type TimeClockCorrectionType = "clock_in" | "clock_out" | "full_session";
+export type TimeClockCorrectionStatus = "pending" | "approved" | "rejected" | "applied" | "failed";
+
+export interface TimeClockCorrectionRequest {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  businessDate: string;
+  requestType: TimeClockCorrectionType;
+  requestedClockInAt: string | null;
+  requestedClockOutAt: string | null;
+  reason: string;
+  status: TimeClockCorrectionStatus;
+  reviewNote: string | null;
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  appliedAt: string | null;
+  applyError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type AccountingAccountType = "asset" | "liability" | "equity" | "income" | "expense";
 export type AccountingEntryStatus = "draft" | "validated" | "locked";
 export type AccountingPeriodStatus = "open" | "closed";

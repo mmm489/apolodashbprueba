@@ -51,6 +51,9 @@ import type {
   TelegramMessage,
   TelegramUser,
   TimeClockAuditRecord,
+  TimeClockCorrectionRequest,
+  TimeClockCorrectionStatus,
+  TimeClockCorrectionType,
   TimeClockSessionRecord,
 } from "@/lib/types";
 import { toNumber } from "@/lib/utils";
@@ -3565,6 +3568,10 @@ function isValidDateOnly(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
+function isValidClockTime(value: string | null | undefined): value is string {
+  return typeof value === "string" && parseTimeMinutes(value) != null;
+}
+
 function addIsoDays(value: string, days: number) {
   const date = new Date(`${value}T12:00:00Z`);
   date.setUTCDate(date.getUTCDate() + days);
@@ -3647,6 +3654,253 @@ function scheduleAbsoluteInterval(businessDate: string, startValue: string, endV
 }
 
 /* ---------- Time Clock ---------- */
+
+let timeClockCorrectionTablesEnsured = false;
+
+async function ensureTimeClockCorrectionTables() {
+  if (timeClockCorrectionTablesEnsured || !hasDatabase()) return;
+  const sql = getSql();
+  await sql.query(`
+    CREATE TABLE IF NOT EXISTS time_clock_correction_requests (
+      id TEXT PRIMARY KEY,
+      employee_id TEXT NOT NULL,
+      business_date DATE NOT NULL,
+      request_type TEXT NOT NULL CHECK (request_type IN ('clock_in', 'clock_out', 'full_session')),
+      requested_clock_in_at TIMESTAMPTZ,
+      requested_clock_out_at TIMESTAMPTZ,
+      reason TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'approved', 'rejected', 'applied', 'failed')),
+      review_note TEXT,
+      reviewed_by TEXT,
+      reviewed_at TIMESTAMPTZ,
+      applied_at TIMESTAMPTZ,
+      apply_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (
+        (request_type = 'clock_in' AND requested_clock_in_at IS NOT NULL)
+        OR (request_type = 'clock_out' AND requested_clock_out_at IS NOT NULL)
+        OR (
+          request_type = 'full_session'
+          AND requested_clock_in_at IS NOT NULL
+          AND requested_clock_out_at IS NOT NULL
+          AND requested_clock_out_at > requested_clock_in_at
+        )
+      )
+    )
+  `);
+  await sql.query(`
+    CREATE INDEX IF NOT EXISTS idx_time_clock_corrections_status
+      ON time_clock_correction_requests(status, created_at DESC)
+  `);
+  await sql.query(`
+    CREATE INDEX IF NOT EXISTS idx_time_clock_corrections_employee_date
+      ON time_clock_correction_requests(employee_id, business_date DESC)
+  `);
+  timeClockCorrectionTablesEnsured = true;
+}
+
+export async function createTimeClockCorrectionRequestByToken(input: {
+  token: string;
+  pin: string;
+  businessDate: string;
+  requestType: TimeClockCorrectionType;
+  clockInTime?: string | null;
+  clockOutTime?: string | null;
+  reason: string;
+}) {
+  if (!hasDatabase()) throw new Error("La base de datos no esta configurada.");
+  if (!/^[a-zA-Z0-9_-]{20,80}$/.test(input.token)) throw new Error("Enlace no valido.");
+  if (!/^\d{4}$/.test(input.pin)) throw new Error("PIN no valido.");
+  if (!isValidDateOnly(input.businessDate)) throw new Error("Fecha no valida.");
+  if (!["clock_in", "clock_out", "full_session"].includes(input.requestType)) {
+    throw new Error("Tipo de correccion no valido.");
+  }
+  const reason = input.reason.trim();
+  if (reason.length < 5 || reason.length > 500) {
+    throw new Error("Explica brevemente el motivo de la correccion.");
+  }
+  if (
+    (input.requestType === "clock_in" || input.requestType === "full_session")
+    && !isValidClockTime(input.clockInTime)
+  ) {
+    throw new Error("Hora de entrada no valida.");
+  }
+  if (
+    (input.requestType === "clock_out" || input.requestType === "full_session")
+    && !isValidClockTime(input.clockOutTime)
+  ) {
+    throw new Error("Hora de salida no valida.");
+  }
+
+  await ensureTimeClockCorrectionTables();
+  const sql = getSql();
+  const employees = await sql.query(
+    `
+      SELECT e.id::text AS employee_id, e.name
+      FROM employee_schedule_links l
+      JOIN pos.employees e ON e.id::text = l.employee_id
+      WHERE l.token = $1
+        AND e.pin = $2
+        AND e.active = TRUE
+      LIMIT 1
+    `,
+    [input.token, input.pin],
+  );
+  const employee = employees[0];
+  if (!employee) throw new Error("PIN incorrecto.");
+
+  const dateCheck = await sql.query(
+    `
+      SELECT (
+        $1::date BETWEEN
+          ((NOW() AT TIME ZONE 'Europe/Madrid')::date - INTERVAL '31 days')::date
+          AND (NOW() AT TIME ZONE 'Europe/Madrid')::date
+      ) AS allowed
+    `,
+    [input.businessDate],
+  );
+  if (!dateCheck[0]?.allowed) {
+    throw new Error("Solo se pueden solicitar correcciones de los ultimos 31 dias.");
+  }
+
+  const duplicate = await sql.query(
+    `
+      SELECT id
+      FROM time_clock_correction_requests
+      WHERE employee_id = $1
+        AND business_date = $2::date
+        AND request_type = $3
+        AND status IN ('pending', 'approved')
+      LIMIT 1
+    `,
+    [String(employee.employee_id), input.businessDate, input.requestType],
+  );
+  if (duplicate[0]) {
+    throw new Error("Ya existe una solicitud pendiente para este fichaje.");
+  }
+
+  const id = randomUUID();
+  const rows = await sql.query(
+    `
+      INSERT INTO time_clock_correction_requests (
+        id, employee_id, business_date, request_type,
+        requested_clock_in_at, requested_clock_out_at, reason
+      )
+      VALUES (
+        $1, $2, $3::date, $4,
+        CASE
+          WHEN $5::text IS NULL THEN NULL
+          ELSE ($3::date + $5::time) AT TIME ZONE 'Europe/Madrid'
+        END,
+        CASE
+          WHEN $6::text IS NULL THEN NULL
+          ELSE (
+            $3::date
+            + $6::time
+            + CASE
+                WHEN $5::text IS NOT NULL AND $6::time <= $5::time THEN INTERVAL '1 day'
+                ELSE INTERVAL '0 days'
+              END
+          ) AT TIME ZONE 'Europe/Madrid'
+        END,
+        $7
+      )
+      RETURNING *
+    `,
+    [
+      id,
+      String(employee.employee_id),
+      input.businessDate,
+      input.requestType,
+      input.clockInTime || null,
+      input.clockOutTime || null,
+      reason,
+    ],
+  );
+  return mapTimeClockCorrectionRequest({ ...rows[0], employee_name: employee.name });
+}
+
+export async function listTimeClockCorrectionRequests(input: {
+  from?: string;
+  to?: string;
+  employeeId?: string;
+  statuses?: TimeClockCorrectionStatus[];
+} = {}) {
+  if (!hasDatabase()) return [] satisfies TimeClockCorrectionRequest[];
+  await ensureTimeClockCorrectionTables();
+  const sql = getSql();
+  const clauses: string[] = [];
+  const params: unknown[] = [];
+  if (input.from && input.to) {
+    params.push(input.from, input.to);
+    clauses.push(`r.business_date BETWEEN $1::date AND $2::date`);
+  }
+  if (input.employeeId) {
+    params.push(input.employeeId);
+    clauses.push(`r.employee_id = $${params.length}`);
+  }
+  if (input.statuses?.length) {
+    params.push(input.statuses);
+    clauses.push(`r.status = ANY($${params.length}::text[])`);
+  }
+  const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const rows = await sql.query(
+    `
+      SELECT r.*, COALESCE(e.name, r.employee_id) AS employee_name
+      FROM time_clock_correction_requests r
+      LEFT JOIN pos.employees e ON e.id::text = r.employee_id
+      ${where}
+      ORDER BY
+        CASE r.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,
+        r.created_at DESC
+      LIMIT 500
+    `,
+    params,
+  );
+  return rows.map(mapTimeClockCorrectionRequest);
+}
+
+export async function reviewTimeClockCorrectionRequest(input: {
+  id: string;
+  status: "approved" | "rejected";
+  reviewNote?: string | null;
+  reviewedBy?: string | null;
+}) {
+  if (!hasDatabase()) throw new Error("La base de datos no esta configurada.");
+  if (!input.id) throw new Error("Solicitud no valida.");
+  if (input.status !== "approved" && input.status !== "rejected") {
+    throw new Error("Decision no valida.");
+  }
+  await ensureTimeClockCorrectionTables();
+  const sql = getSql();
+  const rows = await sql.query(
+    `
+      UPDATE time_clock_correction_requests
+      SET status = $2,
+          review_note = NULLIF(BTRIM($3), ''),
+          reviewed_by = COALESCE(NULLIF(BTRIM($4), ''), 'dashboard-admin'),
+          reviewed_at = NOW(),
+          apply_error = NULL,
+          updated_at = NOW()
+      WHERE id = $1
+        AND status = 'pending'
+      RETURNING *
+    `,
+    [input.id, input.status, input.reviewNote || "", input.reviewedBy || ""],
+  );
+  if (!rows[0]) throw new Error("La solicitud ya no esta pendiente.");
+
+  const employees = await sql.query(
+    `SELECT name FROM pos.employees WHERE id::text = $1 LIMIT 1`,
+    [String(rows[0].employee_id)],
+  );
+  return mapTimeClockCorrectionRequest({
+    ...rows[0],
+    employee_name: employees[0]?.name ?? rows[0].employee_id,
+  });
+}
 
 export async function listTimeClockSessions(from?: string, to?: string) {
   if (!hasDatabase() || !isPosDataSource()) return [];
@@ -4133,6 +4387,27 @@ function mapTimeClockSession(row: Record<string, unknown>): TimeClockSessionReco
     source: String(row.source ?? "pos"),
     deviceName: row.device_name == null ? null : String(row.device_name),
     durationMinutes: row.duration_minutes == null ? null : Number(row.duration_minutes),
+    createdAt: normalizeDateTime(row.created_at),
+    updatedAt: normalizeDateTime(row.updated_at),
+  };
+}
+
+function mapTimeClockCorrectionRequest(row: Record<string, unknown>): TimeClockCorrectionRequest {
+  return {
+    id: String(row.id),
+    employeeId: String(row.employee_id),
+    employeeName: String(row.employee_name ?? "Sense empleat"),
+    businessDate: normalizeDate(row.business_date),
+    requestType: String(row.request_type) as TimeClockCorrectionType,
+    requestedClockInAt: row.requested_clock_in_at == null ? null : normalizeDateTime(row.requested_clock_in_at),
+    requestedClockOutAt: row.requested_clock_out_at == null ? null : normalizeDateTime(row.requested_clock_out_at),
+    reason: String(row.reason ?? ""),
+    status: String(row.status) as TimeClockCorrectionStatus,
+    reviewNote: row.review_note == null ? null : String(row.review_note),
+    reviewedBy: row.reviewed_by == null ? null : String(row.reviewed_by),
+    reviewedAt: row.reviewed_at == null ? null : normalizeDateTime(row.reviewed_at),
+    appliedAt: row.applied_at == null ? null : normalizeDateTime(row.applied_at),
+    applyError: row.apply_error == null ? null : String(row.apply_error),
     createdAt: normalizeDateTime(row.created_at),
     updatedAt: normalizeDateTime(row.updated_at),
   };
