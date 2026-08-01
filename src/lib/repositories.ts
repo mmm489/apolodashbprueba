@@ -1132,7 +1132,6 @@ export async function listPosOrderLines(from?: string, to?: string) {
           AND ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
           AND COALESCE(o.business_unit, 'hicream') = 'hicream'
         ORDER BY o.created_at DESC, oi.id ASC
-        LIMIT 10000
       `
     : await sql`
         SELECT oi.id,
