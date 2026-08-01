@@ -3780,6 +3780,9 @@ export async function createTimeClockCorrectionRequestByToken(input: {
     throw new Error("Aquesta incidencia ja no esta pendent o no correspon al teu horari.");
   }
 
+  const clockOutFallsOnNextDay = input.requestType === "clock_out"
+    && incident.shiftEnd <= incident.shiftStart;
+
   const dateCheck = await sql.query(
     `
       SELECT (
@@ -3840,6 +3843,7 @@ export async function createTimeClockCorrectionRequestByToken(input: {
             $4::date
             + $7::time
             + CASE
+                WHEN $9::boolean THEN INTERVAL '1 day'
                 WHEN $6::text IS NOT NULL AND $7::time <= $6::time THEN INTERVAL '1 day'
                 ELSE INTERVAL '0 days'
               END
@@ -3858,6 +3862,7 @@ export async function createTimeClockCorrectionRequestByToken(input: {
       input.clockInTime || null,
       input.clockOutTime || null,
       reason,
+      clockOutFallsOnNextDay,
     ],
   );
   return mapTimeClockCorrectionRequest({ ...rows[0], employee_name: employee.name });
