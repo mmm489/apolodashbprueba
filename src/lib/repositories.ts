@@ -3924,7 +3924,7 @@ export async function listEmployeeTimeClockIncidentsByToken(input: {
        AND p.is_visible = TRUE
       WHERE s.employee_id = $1
         AND s.business_date BETWEEN $2::date AND $3::date
-        AND s.schedule_kind = 'operational'
+        AND s.schedule_kind = 'contractual'
       ORDER BY s.business_date ASC, s.shift_start ASC
     `,
     [employeeId, input.from, input.to],
