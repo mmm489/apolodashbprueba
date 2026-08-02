@@ -3781,7 +3781,10 @@ export async function createTimeClockCorrectionRequestByToken(input: {
   }
 
   const clockOutFallsOnNextDay = input.requestType === "clock_out"
-    && incident.shiftEnd <= incident.shiftStart;
+    && (
+      incident.shiftEnd <= incident.shiftStart
+      || (input.clockOutTime != null && input.clockOutTime <= incident.shiftStart)
+    );
 
   const dateCheck = await sql.query(
     `
@@ -3999,6 +4002,15 @@ export async function listEmployeeTimeClockIncidentsByToken(input: {
     ));
     if (alreadyRequested) continue;
 
+    const suggestedClockInTime = addMinutesToClockTime(
+      shift.shiftStart,
+      stableSuggestedDelayMinutes(`${shift.scheduleShiftId}:clock_in`),
+    );
+    const suggestedClockOutTime = addMinutesToClockTime(
+      shift.shiftEnd,
+      stableSuggestedDelayMinutes(`${shift.scheduleShiftId}:clock_out`),
+    );
+
     incidents.push({
       id: `${shift.scheduleShiftId}:${requestType}`,
       scheduleShiftId: shift.scheduleShiftId,
@@ -4006,12 +4018,27 @@ export async function listEmployeeTimeClockIncidentsByToken(input: {
       requestType,
       shiftStart: shift.shiftStart,
       shiftEnd: shift.shiftEnd,
-      suggestedClockInTime: requestType === "clock_out" ? null : shift.shiftStart,
-      suggestedClockOutTime: requestType === "clock_in" ? null : shift.shiftEnd,
+      suggestedClockInTime: requestType === "clock_out" ? null : suggestedClockInTime,
+      suggestedClockOutTime: requestType === "clock_in" ? null : suggestedClockOutTime,
     });
   }
 
   return incidents;
+}
+
+function stableSuggestedDelayMinutes(seed: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return 5 + ((hash >>> 0) % 6);
+}
+
+function addMinutesToClockTime(value: string, minutes: number) {
+  const [hours, clockMinutes] = value.slice(0, 5).split(":").map(Number);
+  const totalMinutes = ((hours * 60 + clockMinutes + minutes) % (24 * 60) + (24 * 60)) % (24 * 60);
+  return `${String(Math.floor(totalMinutes / 60)).padStart(2, "0")}:${String(totalMinutes % 60).padStart(2, "0")}`;
 }
 
 export async function listTimeClockCorrectionRequests(input: {
