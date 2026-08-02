@@ -3938,38 +3938,36 @@ export async function listEmployeeTimeClockIncidentsByToken(input: {
     statuses: ["pending", "approved", "applied"],
   });
 
-  const scheduleDays = new Map<string, {
-    firstShiftId: string;
-    businessDate: string;
-    shiftStart: string;
-    shiftEnd: string;
-    startsAt: Date;
-    endsAt: Date;
-  }>();
-  for (const row of shiftRows) {
-    const businessDate = normalizeDate(row.business_date);
-    const startsAt = new Date(normalizeDateTime(row.starts_at));
-    const endsAt = new Date(normalizeDateTime(row.ends_at));
-    const current = scheduleDays.get(businessDate);
-    if (!current) {
-      scheduleDays.set(businessDate, {
-        firstShiftId: String(row.id),
-        businessDate,
-        shiftStart: String(row.shift_start).slice(0, 5),
-        shiftEnd: String(row.shift_end).slice(0, 5),
-        startsAt,
-        endsAt,
-      });
-      continue;
-    }
-    if (startsAt.getTime() < current.startsAt.getTime()) {
-      current.firstShiftId = String(row.id);
-      current.shiftStart = String(row.shift_start).slice(0, 5);
-      current.startsAt = startsAt;
-    }
-    if (endsAt.getTime() > current.endsAt.getTime()) {
-      current.shiftEnd = String(row.shift_end).slice(0, 5);
-      current.endsAt = endsAt;
+  const scheduleShifts = shiftRows.map((row) => ({
+    scheduleShiftId: String(row.id),
+    businessDate: normalizeDate(row.business_date),
+    shiftStart: String(row.shift_start).slice(0, 5),
+    shiftEnd: String(row.shift_end).slice(0, 5),
+    startsAt: new Date(normalizeDateTime(row.starts_at)),
+    endsAt: new Date(normalizeDateTime(row.ends_at)),
+  }));
+
+  const sessionsByDay = new Map<string, TimeClockSessionRecord[]>();
+  for (const session of sessions) {
+    const current = sessionsByDay.get(session.businessDate) ?? [];
+    current.push(session);
+    sessionsByDay.set(session.businessDate, current);
+  }
+
+  const shiftSessions = new Map<string, TimeClockSessionRecord>();
+  for (const [businessDate, daySessions] of sessionsByDay) {
+    const dayShifts = scheduleShifts.filter((shift) => shift.businessDate === businessDate);
+    for (const session of daySessions) {
+      const selected = dayShifts
+        .filter((shift) => !shiftSessions.has(shift.scheduleShiftId))
+        .map((shift) => ({
+          shift,
+          distance: Math.abs(new Date(session.clockInAt).getTime() - shift.startsAt.getTime()),
+        }))
+        .sort((a, b) => a.distance - b.distance)[0]?.shift;
+      if (selected) {
+        shiftSessions.set(selected.scheduleShiftId, session);
+      }
     }
   }
 
@@ -3979,45 +3977,37 @@ export async function listEmployeeTimeClockIncidentsByToken(input: {
   const graceMs = 20 * 60 * 1000;
   const incidents: TimeClockIncident[] = [];
 
-  for (const scheduleDay of scheduleDays.values()) {
-    if (scheduleDay.businessDate < oldestAllowed || scheduleDay.businessDate > today) continue;
-    const daySessions = sessions.filter(
-      (session) => session.businessDate === scheduleDay.businessDate,
-    );
-    const openSession = daySessions.find(
-      (session) => session.status === "open" || session.clockOutAt == null,
-    );
+  for (const shift of scheduleShifts) {
+    if (shift.businessDate < oldestAllowed || shift.businessDate > today) continue;
+    const session = shiftSessions.get(shift.scheduleShiftId);
     let requestType: TimeClockCorrectionType | null = null;
 
-    if (daySessions.length === 0 && now > scheduleDay.startsAt.getTime() + graceMs) {
-      requestType = now > scheduleDay.endsAt.getTime() + graceMs ? "full_session" : "clock_in";
+    if (!session && now > shift.startsAt.getTime() + graceMs) {
+      requestType = now > shift.endsAt.getTime() + graceMs ? "full_session" : "clock_in";
     } else if (
-      openSession
-      && now > scheduleDay.endsAt.getTime() + graceMs
+      session
+      && (session.status === "open" || session.clockOutAt == null)
+      && now > shift.endsAt.getTime() + graceMs
     ) {
       requestType = "clock_out";
     }
     if (!requestType) continue;
 
     const alreadyRequested = requests.some((request) => (
-      request.scheduleShiftId === scheduleDay.firstShiftId
-      || (
-        request.scheduleShiftId == null
-        && request.businessDate === scheduleDay.businessDate
-        && request.requestType === requestType
-      )
+      request.scheduleShiftId === shift.scheduleShiftId
+      && request.requestType === requestType
     ));
     if (alreadyRequested) continue;
 
     incidents.push({
-      id: `${scheduleDay.firstShiftId}:${requestType}`,
-      scheduleShiftId: scheduleDay.firstShiftId,
-      businessDate: scheduleDay.businessDate,
+      id: `${shift.scheduleShiftId}:${requestType}`,
+      scheduleShiftId: shift.scheduleShiftId,
+      businessDate: shift.businessDate,
       requestType,
-      shiftStart: scheduleDay.shiftStart,
-      shiftEnd: scheduleDay.shiftEnd,
-      suggestedClockInTime: requestType === "clock_out" ? null : scheduleDay.shiftStart,
-      suggestedClockOutTime: requestType === "clock_in" ? null : scheduleDay.shiftEnd,
+      shiftStart: shift.shiftStart,
+      shiftEnd: shift.shiftEnd,
+      suggestedClockInTime: requestType === "clock_out" ? null : shift.shiftStart,
+      suggestedClockOutTime: requestType === "clock_in" ? null : shift.shiftEnd,
     });
   }
 
