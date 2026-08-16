@@ -3989,7 +3989,11 @@ export async function listEmployeeTimeClockIncidentsByToken(input: {
       requestType = now > shift.endsAt.getTime() + graceMs ? "full_session" : "clock_in";
     } else if (
       session
-      && (session.status === "open" || session.clockOutAt == null)
+      && (
+        session.source === "auto_cutoff_pending"
+        || session.status === "open"
+        || session.clockOutAt == null
+      )
       && now > shift.endsAt.getTime() + graceMs
     ) {
       requestType = "clock_out";
@@ -4133,7 +4137,18 @@ export async function listTimeClockSessions(from?: string, to?: string) {
                s.clock_in_at, s.clock_out_at, s.status, s.source, s.device_name,
                s.created_at, s.updated_at,
                CASE
-                 WHEN s.clock_out_at IS NULL THEN FLOOR(EXTRACT(EPOCH FROM (NOW() - s.clock_in_at)) / 60)
+                 WHEN s.clock_out_at IS NULL THEN FLOOR(EXTRACT(EPOCH FROM (
+                   LEAST(
+                     NOW(),
+                     (
+                       (
+                         ((s.clock_in_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '2 hours')::date
+                         + 1
+                         + TIME '02:00'
+                       ) AT TIME ZONE 'Europe/Madrid'
+                     )
+                   ) - s.clock_in_at
+                 )) / 60)
                  ELSE FLOOR(EXTRACT(EPOCH FROM (s.clock_out_at - s.clock_in_at)) / 60)
                END::int AS duration_minutes
         FROM pos.time_clock_sessions s
@@ -4147,7 +4162,18 @@ export async function listTimeClockSessions(from?: string, to?: string) {
                s.clock_in_at, s.clock_out_at, s.status, s.source, s.device_name,
                s.created_at, s.updated_at,
                CASE
-                 WHEN s.clock_out_at IS NULL THEN FLOOR(EXTRACT(EPOCH FROM (NOW() - s.clock_in_at)) / 60)
+                 WHEN s.clock_out_at IS NULL THEN FLOOR(EXTRACT(EPOCH FROM (
+                   LEAST(
+                     NOW(),
+                     (
+                       (
+                         ((s.clock_in_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '2 hours')::date
+                         + 1
+                         + TIME '02:00'
+                       ) AT TIME ZONE 'Europe/Madrid'
+                     )
+                   ) - s.clock_in_at
+                 )) / 60)
                  ELSE FLOOR(EXTRACT(EPOCH FROM (s.clock_out_at - s.clock_in_at)) / 60)
                END::int AS duration_minutes
         FROM pos.time_clock_sessions s

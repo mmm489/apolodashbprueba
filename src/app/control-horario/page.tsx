@@ -121,7 +121,7 @@ export default async function ControlHorarioPage({
             <div className="border-b border-[var(--line)] px-5 py-4">
               <h2 className="text-lg font-bold tracking-tight text-slate-950">Detalle de fichajes</h2>
               <p className="mt-1 text-sm text-slate-500">
-                Una linea por jornada. Las jornadas abiertas quedan marcadas como incidencia.
+                Una linea por jornada. Las abiertas y las cerradas provisionalmente a las 02:00 quedan marcadas como incidencia.
               </p>
             </div>
 
@@ -173,13 +173,16 @@ export default async function ControlHorarioPage({
 
 function buildStats(sessions: TimeClockSessionRecord[], plannedShifts: EmployeeScheduleShift[]) {
   const open = sessions.filter((session) => session.status === "open").length;
-  const longOpen = sessions.filter((session) => (session.durationMinutes ?? 0) > 12 * 60).length;
   return {
     sessions: sessions.length,
     open,
     totalMinutes: sessions.reduce((sum, session) => sum + (session.durationMinutes ?? 0), 0),
     plannedMinutes: plannedShifts.reduce((sum, shift) => sum + shiftMinutes(shift.shiftStart, shift.shiftEnd), 0),
-    incidents: open + longOpen,
+    incidents: sessions.filter((session) => (
+      session.status === "open"
+      || session.source === "auto_cutoff_pending"
+      || (session.durationMinutes ?? 0) > 12 * 60
+    )).length,
   };
 }
 
@@ -244,6 +247,13 @@ function Metric({ label, value, color = "indigo" }: { label: string; value: stri
 
 function StatusBadge({ session }: { session: TimeClockSessionRecord }) {
   const longOpen = (session.durationMinutes ?? 0) > 12 * 60;
+  if (session.source === "auto_cutoff_pending") {
+    return (
+      <span className="inline-flex rounded-full bg-amber-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-amber-700">
+        Salida pendiente
+      </span>
+    );
+  }
   if (session.status === "open") {
     return (
       <span className="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-emerald-700">
