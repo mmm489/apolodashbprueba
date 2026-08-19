@@ -4,6 +4,7 @@ import {
   createSuggestedPurchaseOrders,
   deleteConsumableUsage,
   getProcurementWorkspace,
+  importInvoiceConsumables,
   updatePurchaseOrderStatus,
   upsertConsumable,
   upsertConsumableUsage,
@@ -43,6 +44,11 @@ export async function POST(request: Request) {
         active: body.active !== false,
       });
       return NextResponse.json({ ok: true, id }, { status: 201 });
+    }
+
+    if (action === "import-invoice-consumables") {
+      const result = await importInvoiceConsumables();
+      return NextResponse.json({ ok: true, ...result }, { status: 201 });
     }
 
     if (action === "save-usage") {

@@ -388,6 +388,23 @@ CREATE TABLE IF NOT EXISTS procurement_product_usage (
   UNIQUE(consumable_id, product_id)
 );
 
+CREATE TABLE IF NOT EXISTS procurement_invoice_consumable_sources (
+  id TEXT PRIMARY KEY,
+  source_key TEXT NOT NULL UNIQUE,
+  consumable_key TEXT NOT NULL,
+  consumable_id TEXT NOT NULL REFERENCES procurement_consumables(id) ON DELETE CASCADE,
+  supplier_key TEXT NOT NULL,
+  supplier_name TEXT NOT NULL,
+  source_description TEXT NOT NULL,
+  normalized_description TEXT NOT NULL,
+  first_seen_date DATE,
+  last_seen_date DATE,
+  last_invoice_line_id TEXT,
+  occurrences INTEGER NOT NULL DEFAULT 1 CHECK (occurrences > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS procurement_purchase_orders (
   id TEXT PRIMARY KEY,
   order_number TEXT NOT NULL UNIQUE,
@@ -419,6 +436,8 @@ CREATE TABLE IF NOT EXISTS procurement_purchase_order_items (
 
 CREATE INDEX IF NOT EXISTS idx_procurement_usage_consumable ON procurement_product_usage(consumable_id);
 CREATE INDEX IF NOT EXISTS idx_procurement_usage_product ON procurement_product_usage(product_id);
+CREATE INDEX IF NOT EXISTS idx_procurement_invoice_sources_key ON procurement_invoice_consumable_sources(consumable_key);
+CREATE INDEX IF NOT EXISTS idx_procurement_invoice_sources_consumable ON procurement_invoice_consumable_sources(consumable_id);
 CREATE INDEX IF NOT EXISTS idx_procurement_orders_created ON procurement_purchase_orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_procurement_orders_status ON procurement_purchase_orders(status, created_at DESC);
 `;

@@ -13,7 +13,9 @@
     "history:import:legacy": "tsx scripts/import-old-dashboard-history.ts",
     "schedule:import-square-week": "tsx scripts/import-square-schedule-week.ts",
     "ingest:onedrive": "tsx scripts/scan-onedrive.ts",
-    "ingest:graph": "tsx scripts/sync-microsoft-graph.ts"
+    "ingest:graph": "tsx scripts/sync-microsoft-graph.ts",
+    "procurement:import-invoices": "tsx scripts/import-invoice-consumables.ts",
+    "test:procurement-import": "tsx scripts/test-procurement-invoice-import.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.80.0",

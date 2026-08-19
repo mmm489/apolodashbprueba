@@ -719,6 +719,15 @@ export interface ProcurementWorkspace {
   orders: PurchaseOrder[];
 }
 
+export interface ProcurementInvoiceImportResult {
+  processed: number;
+  accepted: number;
+  created: number;
+  reused: number;
+  grouped: number;
+  discarded: number;
+}
+
 export interface KpiSnapshot {
   totalSales: number;
   totalExpenses: number;

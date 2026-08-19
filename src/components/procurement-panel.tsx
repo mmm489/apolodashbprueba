@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardList,
+  FileSearch,
   Link2,
   PackageCheck,
   Pencil,
@@ -22,6 +23,7 @@ import {
 import { formatDashboardDate, formatDashboardDateTime } from "@/lib/timezone";
 import type {
   ProcurementConsumable,
+  ProcurementInvoiceImportResult,
   ProcurementProduct,
   ProcurementSuggestion,
   ProcurementWorkspace,
@@ -120,6 +122,30 @@ export function ProcurementPanel({ initialWorkspace }: { initialWorkspace: Procu
     );
   }
 
+  function importFromInvoices() {
+    startTransition(async () => {
+      try {
+        setMessage(null);
+        const response = await fetch("/api/procurement", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "import-invoice-consumables" }),
+        });
+        const result = await parseResponse<ProcurementInvoiceImportResult & { ok: true }>(response);
+        const next = await fetch(`/api/procurement?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { cache: "no-store" });
+        const data = await parseResponse<ProcurementWorkspace>(next);
+        setWorkspace(data);
+        setPackOverrides(suggestionPacks(data));
+        setMessage({
+          tone: "ok",
+          text: `${result.created} creados · ${result.reused} ya existentes · ${result.grouped} variantes agrupadas · ${result.discarded} descartadas.`,
+        });
+      } catch (error) {
+        setMessage({ tone: "error", text: errorMessage(error) });
+      }
+    });
+  }
+
   return (
     <div className="space-y-4 sm:space-y-5">
       <ProcurementHeader
@@ -170,7 +196,9 @@ export function ProcurementPanel({ initialWorkspace }: { initialWorkspace: Procu
       {tab === "consumables" && (
         <ConsumablesView
           consumables={workspace.consumables}
+          isPending={isPending}
           onAdd={() => setEditingConsumable("new")}
+          onImport={importFromInvoices}
           onEdit={setEditingConsumable}
           onMappings={setMappingConsumableId}
         />
@@ -459,12 +487,16 @@ type SuggestionProps = {
 
 function ConsumablesView({
   consumables,
+  isPending,
   onAdd,
+  onImport,
   onEdit,
   onMappings,
 }: {
   consumables: ProcurementConsumable[];
+  isPending: boolean;
   onAdd: () => void;
+  onImport: () => void;
   onEdit: (item: ProcurementConsumable) => void;
   onMappings: (id: string) => void;
 }) {
@@ -477,9 +509,14 @@ function ConsumablesView({
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar consumible o proveedor" className="field pl-10" />
         </div>
-        <button type="button" onClick={onAdd} className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-bold text-white">
-          <Plus className="size-4" /> Añadir consumible
-        </button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button type="button" onClick={onImport} disabled={isPending} className="inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--line)] bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50">
+            <FileSearch className="size-4" /> Detectar nuevos en facturas
+          </button>
+          <button type="button" onClick={onAdd} className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-bold text-white">
+            <Plus className="size-4" /> Añadir consumible
+          </button>
+        </div>
       </div>
       {filtered.length === 0 ? (
         <div className="p-10 text-center text-sm font-semibold text-slate-400">No hay consumibles con este filtro.</div>

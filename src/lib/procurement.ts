@@ -1,10 +1,17 @@
 import { randomUUID } from "node:crypto";
 
 import { getSql, hasDatabase, isPosDataSource } from "@/lib/db";
+import {
+  detectInvoiceConsumables,
+  normalizeConsumableDescription,
+  type InvoiceConsumableDetection,
+  type InvoiceConsumableLine,
+} from "@/lib/procurement-invoice-import";
 import { toDashboardDateOnly } from "@/lib/timezone";
 import type {
   ConsumableProductUsage,
   ProcurementConsumable,
+  ProcurementInvoiceImportResult,
   ProcurementProduct,
   ProcurementSuggestion,
   ProcurementWorkspace,
@@ -46,6 +53,22 @@ export async function ensureProcurementSchema(sql: DashboardSql = getSql()) {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE(consumable_id, product_id)
     )`,
+    `CREATE TABLE IF NOT EXISTS procurement_invoice_consumable_sources (
+      id TEXT PRIMARY KEY,
+      source_key TEXT NOT NULL UNIQUE,
+      consumable_key TEXT NOT NULL,
+      consumable_id TEXT NOT NULL REFERENCES procurement_consumables(id) ON DELETE CASCADE,
+      supplier_key TEXT NOT NULL,
+      supplier_name TEXT NOT NULL,
+      source_description TEXT NOT NULL,
+      normalized_description TEXT NOT NULL,
+      first_seen_date DATE,
+      last_seen_date DATE,
+      last_invoice_line_id TEXT,
+      occurrences INTEGER NOT NULL DEFAULT 1 CHECK (occurrences > 0),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
     `CREATE TABLE IF NOT EXISTS procurement_purchase_orders (
       id TEXT PRIMARY KEY,
       order_number TEXT NOT NULL UNIQUE,
@@ -75,12 +98,122 @@ export async function ensureProcurementSchema(sql: DashboardSql = getSql()) {
     )`,
     `CREATE INDEX IF NOT EXISTS idx_procurement_usage_consumable ON procurement_product_usage(consumable_id)`,
     `CREATE INDEX IF NOT EXISTS idx_procurement_usage_product ON procurement_product_usage(product_id)`,
+    `CREATE INDEX IF NOT EXISTS idx_procurement_invoice_sources_key ON procurement_invoice_consumable_sources(consumable_key)`,
+    `CREATE INDEX IF NOT EXISTS idx_procurement_invoice_sources_consumable ON procurement_invoice_consumable_sources(consumable_id)`,
     `CREATE INDEX IF NOT EXISTS idx_procurement_orders_created ON procurement_purchase_orders(created_at DESC)`,
     `CREATE INDEX IF NOT EXISTS idx_procurement_orders_status ON procurement_purchase_orders(status, created_at DESC)`,
   ];
 
   for (const statement of statements) await sql.query(statement);
   procurementSchemaEnsured = true;
+}
+
+export async function importInvoiceConsumables(): Promise<ProcurementInvoiceImportResult> {
+  assertDatabase();
+  const sql = getSql();
+  await ensureProcurementSchema(sql);
+  const detection = await detectInvoiceConsumablesInDatabase(sql);
+
+  const sourceRows = await sql.query(`
+    SELECT source_key, consumable_key, consumable_id
+    FROM procurement_invoice_consumable_sources
+  `);
+  const consumableRows = await sql.query("SELECT id, name FROM procurement_consumables");
+  const sourceByKey = new Map(sourceRows.map((row) => [String(row.source_key), row]));
+  const consumableByDetectedKey = new Map<string, string>();
+  const consumableByName = new Map<string, string>();
+
+  for (const row of sourceRows) {
+    const key = String(row.consumable_key);
+    if (!consumableByDetectedKey.has(key)) consumableByDetectedKey.set(key, String(row.consumable_id));
+  }
+  for (const row of consumableRows) {
+    const key = normalizeConsumableDescription(String(row.name));
+    if (key && !consumableByName.has(key)) consumableByName.set(key, String(row.id));
+  }
+
+  let created = 0;
+  let reused = 0;
+  for (const candidate of detection.candidates) {
+    const sourceMatch = candidate.sources.map((source) => sourceByKey.get(source.sourceKey)).find(Boolean);
+    let consumableId = sourceMatch
+      ? String(sourceMatch.consumable_id)
+      : consumableByDetectedKey.get(candidate.consumableKey) ?? consumableByName.get(candidate.consumableKey);
+
+    if (!consumableId) {
+      consumableId = randomUUID();
+      await sql.query(`
+        INSERT INTO procurement_consumables
+          (id, name, supplier_name, unit, pack_size, pack_cost, current_stock, safety_stock, coverage_days, active)
+        VALUES ($1, $2, $3, $4, $5, $6, 0, 0, 7, TRUE)
+      `, [consumableId, candidate.name, candidate.supplierName, candidate.unit, candidate.packSize, candidate.packCost]);
+      created += 1;
+    } else {
+      reused += 1;
+    }
+    consumableByDetectedKey.set(candidate.consumableKey, consumableId);
+    consumableByName.set(candidate.consumableKey, consumableId);
+
+    for (const source of candidate.sources) {
+      await sql.query(`
+        INSERT INTO procurement_invoice_consumable_sources
+          (id, source_key, consumable_key, consumable_id, supplier_key, supplier_name,
+           source_description, normalized_description, first_seen_date, last_seen_date,
+           last_invoice_line_id, occurrences)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::date, $10::date, $11, $12)
+        ON CONFLICT (source_key) DO UPDATE SET
+          consumable_key = EXCLUDED.consumable_key,
+          supplier_key = EXCLUDED.supplier_key,
+          supplier_name = EXCLUDED.supplier_name,
+          source_description = EXCLUDED.source_description,
+          normalized_description = EXCLUDED.normalized_description,
+          first_seen_date = LEAST(procurement_invoice_consumable_sources.first_seen_date, EXCLUDED.first_seen_date),
+          last_seen_date = GREATEST(procurement_invoice_consumable_sources.last_seen_date, EXCLUDED.last_seen_date),
+          last_invoice_line_id = EXCLUDED.last_invoice_line_id,
+          occurrences = EXCLUDED.occurrences,
+          updated_at = NOW()
+      `, [
+        randomUUID(), source.sourceKey, source.consumableKey, consumableId, source.supplierKey,
+        source.supplierName, source.sourceDescription, source.normalizedDescription,
+        source.firstSeenDate, source.lastSeenDate, source.lastInvoiceLineId, source.occurrences,
+      ]);
+    }
+  }
+
+  return {
+    processed: detection.processed,
+    accepted: detection.accepted,
+    created,
+    reused,
+    grouped: detection.grouped,
+    discarded: detection.discarded,
+  };
+}
+
+export async function detectInvoiceConsumablesInDatabase(sql: DashboardSql = getSql()): Promise<InvoiceConsumableDetection> {
+  const tableRows = await sql.query("SELECT to_regclass('public.invoices') AS invoices, to_regclass('public.invoice_lines') AS invoice_lines");
+  if (!tableRows[0]?.invoices || !tableRows[0]?.invoice_lines) {
+    throw new Error("Todavía no hay facturas con líneas para analizar.");
+  }
+
+  const rows = await sql.query(`
+    SELECT il.id AS invoice_line_id, i.supplier_name, i.issue_date, i.category,
+           il.description, il.quantity, il.unit_price, il.amount
+    FROM invoice_lines il
+    JOIN invoices i ON i.id = il.invoice_id
+    ORDER BY i.issue_date ASC, il.id ASC
+  `);
+  const lines: InvoiceConsumableLine[] = rows.map((row) => ({
+    invoiceLineId: String(row.invoice_line_id),
+    supplierName: String(row.supplier_name || "Sin proveedor"),
+    issueDate: dateOnly(row.issue_date),
+    category: String(row.category || "").trim().toLowerCase().replace(/\s+/g, "_"),
+    description: String(row.description || ""),
+    quantity: toNumber(row.quantity),
+    unitPrice: toNumber(row.unit_price),
+    amount: toNumber(row.amount),
+  }));
+  return detectInvoiceConsumables(lines);
 }
 
 export function defaultProcurementRange() {
