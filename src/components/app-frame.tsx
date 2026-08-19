@@ -22,6 +22,7 @@ import {
   Search,
   Settings,
   ShoppingBag,
+  ShoppingCart,
   Users,
   X,
 } from "lucide-react";
@@ -43,6 +44,7 @@ const navItems = [
   { href: "/planificacion", label: "Planificació", section: "General", icon: CalendarDays },
   { href: "/productes", label: "Productes", section: "General", icon: Package },
   { href: "/coste-productos", label: "Coste productos", section: "General", icon: Calculator },
+  { href: "/compras", label: "Compras", section: "General", icon: ShoppingCart },
 ];
 
 export function AppFrame({

@@ -627,6 +627,98 @@ export interface PosCatalog {
   syncStatus: CatalogSyncStatus;
 }
 
+export type PurchaseOrderStatus = "draft" | "ordered" | "received" | "cancelled";
+
+export interface ProcurementProduct {
+  id: string;
+  name: string;
+  categoryName: string;
+  active: boolean;
+}
+
+export interface ConsumableProductUsage {
+  id: string;
+  consumableId: string;
+  productId: string;
+  productName: string;
+  categoryName: string;
+  quantityPerSale: number;
+}
+
+export interface ProcurementConsumable {
+  id: string;
+  name: string;
+  sku: string | null;
+  supplierName: string;
+  unit: string;
+  packSize: number;
+  packCost: number;
+  currentStock: number;
+  safetyStock: number;
+  coverageDays: number;
+  active: boolean;
+  stockUpdatedAt: string;
+  updatedAt: string;
+  mappings: ConsumableProductUsage[];
+}
+
+export interface ProcurementSuggestion {
+  consumableId: string;
+  name: string;
+  supplierName: string;
+  unit: string;
+  currentStock: number;
+  consumedInPeriod: number;
+  averageDailyUsage: number;
+  coverageDays: number;
+  currentCoverageDays: number | null;
+  safetyStock: number;
+  targetStock: number;
+  neededUnits: number;
+  packSize: number;
+  suggestedPacks: number;
+  packCost: number;
+  estimatedCost: number;
+  mappingCount: number;
+}
+
+export interface PurchaseOrderItem {
+  id: string;
+  consumableId: string;
+  consumableName: string;
+  unit: string;
+  packs: number;
+  packSize: number;
+  orderedUnits: number;
+  packCost: number;
+  lineTotal: number;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  orderNumber: string;
+  supplierName: string;
+  status: PurchaseOrderStatus;
+  analysisFrom: string | null;
+  analysisTo: string | null;
+  notes: string | null;
+  totalAmount: number;
+  createdAt: string;
+  orderedAt: string | null;
+  receivedAt: string | null;
+  items: PurchaseOrderItem[];
+}
+
+export interface ProcurementWorkspace {
+  from: string;
+  to: string;
+  analysisDays: number;
+  products: ProcurementProduct[];
+  consumables: ProcurementConsumable[];
+  suggestions: ProcurementSuggestion[];
+  orders: PurchaseOrder[];
+}
+
 export interface KpiSnapshot {
   totalSales: number;
   totalExpenses: number;

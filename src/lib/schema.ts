@@ -360,4 +360,65 @@ CREATE INDEX IF NOT EXISTS idx_accounting_entries_period ON accounting_journal_e
 CREATE INDEX IF NOT EXISTS idx_accounting_lines_entry ON accounting_journal_lines(entry_id);
 CREATE INDEX IF NOT EXISTS idx_bank_transactions_date ON bank_transactions(transaction_date DESC);
 CREATE INDEX IF NOT EXISTS idx_bank_transactions_status ON bank_transactions(status);
+
+CREATE TABLE IF NOT EXISTS procurement_consumables (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  sku TEXT,
+  supplier_name TEXT NOT NULL DEFAULT 'Sin proveedor',
+  unit TEXT NOT NULL DEFAULT 'ud',
+  pack_size NUMERIC(12,3) NOT NULL DEFAULT 1 CHECK (pack_size > 0),
+  pack_cost NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (pack_cost >= 0),
+  current_stock NUMERIC(12,3) NOT NULL DEFAULT 0 CHECK (current_stock >= 0),
+  safety_stock NUMERIC(12,3) NOT NULL DEFAULT 0 CHECK (safety_stock >= 0),
+  coverage_days INTEGER NOT NULL DEFAULT 7 CHECK (coverage_days BETWEEN 1 AND 90),
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  stock_updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS procurement_product_usage (
+  id TEXT PRIMARY KEY,
+  consumable_id TEXT NOT NULL REFERENCES procurement_consumables(id) ON DELETE CASCADE,
+  product_id TEXT NOT NULL,
+  quantity_per_sale NUMERIC(12,4) NOT NULL CHECK (quantity_per_sale > 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(consumable_id, product_id)
+);
+
+CREATE TABLE IF NOT EXISTS procurement_purchase_orders (
+  id TEXT PRIMARY KEY,
+  order_number TEXT NOT NULL UNIQUE,
+  supplier_name TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'ordered', 'received', 'cancelled')),
+  analysis_from DATE,
+  analysis_to DATE,
+  notes TEXT,
+  total_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ordered_at TIMESTAMPTZ,
+  received_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS procurement_purchase_order_items (
+  id TEXT PRIMARY KEY,
+  order_id TEXT NOT NULL REFERENCES procurement_purchase_orders(id) ON DELETE CASCADE,
+  consumable_id TEXT NOT NULL REFERENCES procurement_consumables(id),
+  consumable_name TEXT NOT NULL,
+  unit TEXT NOT NULL,
+  packs NUMERIC(12,2) NOT NULL CHECK (packs > 0),
+  pack_size NUMERIC(12,3) NOT NULL CHECK (pack_size > 0),
+  ordered_units NUMERIC(12,3) NOT NULL CHECK (ordered_units > 0),
+  pack_cost NUMERIC(12,2) NOT NULL DEFAULT 0,
+  line_total NUMERIC(12,2) NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_procurement_usage_consumable ON procurement_product_usage(consumable_id);
+CREATE INDEX IF NOT EXISTS idx_procurement_usage_product ON procurement_product_usage(product_id);
+CREATE INDEX IF NOT EXISTS idx_procurement_orders_created ON procurement_purchase_orders(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_procurement_orders_status ON procurement_purchase_orders(status, created_at DESC);
 `;
