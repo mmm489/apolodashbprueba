@@ -52,7 +52,12 @@ export default async function VentasPage({
       )}
 
       {productSalesSlices.length > 0 && (
-        <ProductSalesExplorer slices={productSalesSlices} combinations={productModifierCombinations} />
+        <ProductSalesExplorer
+          slices={productSalesSlices}
+          combinations={productModifierCombinations}
+          fromDate={filter.from}
+          toDate={filter.to}
+        />
       )}
 
       {/* Day-by-day list */}

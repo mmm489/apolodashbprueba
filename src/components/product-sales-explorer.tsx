@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { BarChart3, Clock3, Package, Search, Tag } from "lucide-react";
+import { BarChart3, Clock3, Download, FileSpreadsheet, Package, Search, Tag } from "lucide-react";
 
 import type {
   ProductModifierCombination,
@@ -65,9 +65,13 @@ const MODE_KIND: Record<Exclude<AnalysisMode, "products">, ProductSalesSliceKind
 export function ProductSalesExplorer({
   slices,
   combinations,
+  fromDate,
+  toDate,
 }: {
   slices: ProductSalesSlice[];
   combinations: ProductModifierCombination[];
+  fromDate: string;
+  toDate: string;
 }) {
   const [mode, setMode] = useState<AnalysisMode>("products");
   const [query, setQuery] = useState("");
@@ -77,6 +81,7 @@ export function ProductSalesExplorer({
   const [toSlot, setToSlot] = useState("03:30");
   const [grouping, setGrouping] = useState<TimeGrouping>("day");
   const [visibleRows, setVisibleRows] = useState(120);
+  const [exporting, setExporting] = useState<"csv" | "xlsx" | null>(null);
 
   const categories = useMemo(
     () => [...new Set(slices.map((slice) => slice.baseCategoryName))].sort((a, b) => a.localeCompare(b, "ca")),
@@ -134,6 +139,61 @@ export function ProductSalesExplorer({
   const paidSelections = contextSlices
     .filter((slice) => slice.kind !== "product")
     .reduce((total, slice) => total + slice.paidUnits, 0);
+
+  const exportTimeline = async (format: "csv" | "xlsx") => {
+    if (timeline.length === 0 || exporting) return;
+    setExporting(format);
+    try {
+      const rows = timeline.map((row) => ({
+        "Període": row.periodLabel,
+        "Tipus": modeLabel(mode),
+        [mode === "products" ? "Producte" : mode === "flavors" ? "Sabor" : "Topping / extra"]: row.name,
+        [mode === "products" ? "Categoria" : "Producte base"]: row.context,
+        "Unitats": roundExport(row.units),
+        "Comandes": roundExport(row.orderCount),
+        "Incloses gratis": roundExport(row.freeUnits),
+        "Seleccions de pagament": roundExport(row.paidUnits),
+        "Extres sense IVA": roundExport(row.extraAmount),
+        "Venda sense IVA": roundExport(row.amount),
+        "Venda amb IVA": roundExport(row.grossAmount),
+      }));
+      const filename = `vendes-franja-${mode}-${grouping}-${fromDate}_${toDate}`;
+
+      if (format === "csv") {
+        downloadBlob(toCsv(rows), `${filename}.csv`, "text/csv;charset=utf-8");
+        return;
+      }
+
+      const XLSX = await import("xlsx");
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      worksheet["!cols"] = [
+        { wch: 22 }, { wch: 18 }, { wch: 34 }, { wch: 30 },
+        { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 22 },
+        { wch: 18 }, { wch: 18 }, { wch: 18 },
+      ];
+      const filtersSheet = XLSX.utils.json_to_sheet([
+        {
+          "Data inicial": fromDate,
+          "Data final": toDate,
+          "Vista": modeLabel(mode),
+          "Categoria": category === "all" ? "Totes" : category,
+          "Producte": baseProduct === "all" ? "Tots" : products.find((product) => product.id === baseProduct)?.name ?? baseProduct,
+          "Hora inicial": fromSlot,
+          "Hora final": toSlot,
+          "Agrupació": groupingLabel(grouping),
+          "Cerca": query || "Sense filtre",
+          "Files exportades": rows.length,
+        },
+      ]);
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Vendes per franja");
+      XLSX.utils.book_append_sheet(workbook, filtersSheet, "Filtres");
+      const output = XLSX.write(workbook, { type: "array", bookType: "xlsx" });
+      downloadBlob(output, `${filename}.xlsx`, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    } finally {
+      setExporting(null);
+    }
+  };
 
   return (
     <section className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm sm:p-5">
@@ -223,9 +283,25 @@ export function ProductSalesExplorer({
               {timeline.length} files · imports sense IVA · els productes inclouen els seus extres
             </p>
           </div>
-          <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-500">
-            <Clock3 className="size-4" /> {fromSlot} - {toSlot}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mr-1 inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-500">
+              <Clock3 className="size-4" /> {fromSlot} - {toSlot}
+            </span>
+            <ExportButton
+              label="CSV"
+              icon={<Download className="size-4" />}
+              disabled={timeline.length === 0 || exporting !== null}
+              loading={exporting === "csv"}
+              onClick={() => void exportTimeline("csv")}
+            />
+            <ExportButton
+              label="Excel"
+              icon={<FileSpreadsheet className="size-4" />}
+              disabled={timeline.length === 0 || exporting !== null}
+              loading={exporting === "xlsx"}
+              onClick={() => void exportTimeline("xlsx")}
+            />
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-[860px] w-full text-left">
@@ -534,6 +610,32 @@ function ModeButton({ active, onClick, children }: { active: boolean; onClick: (
   );
 }
 
+function ExportButton({
+  label,
+  icon,
+  disabled,
+  loading,
+  onClick,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  disabled: boolean;
+  loading: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-[12px] font-bold text-slate-700 transition hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {icon}
+      {loading ? "Preparant..." : label}
+    </button>
+  );
+}
+
 function SelectField({
   label,
   value,
@@ -587,4 +689,46 @@ function number(value: number) {
 
 function euro(value: number) {
   return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(value);
+}
+
+function modeLabel(mode: AnalysisMode) {
+  if (mode === "flavors") return "Sabors";
+  if (mode === "toppings") return "Toppings i extres";
+  return "Productes complets";
+}
+
+function groupingLabel(grouping: TimeGrouping) {
+  if (grouping === "half-hour") return "30 minuts";
+  if (grouping === "hour") return "Hora";
+  return "Dia";
+}
+
+function roundExport(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function toCsv(rows: Array<Record<string, string | number>>) {
+  if (rows.length === 0) return "";
+  const headers = Object.keys(rows[0]);
+  const lines = [
+    headers.map(csvCell).join(";"),
+    ...rows.map((row) => headers.map((header) => csvCell(row[header])).join(";")),
+  ];
+  return `\uFEFF${lines.join("\r\n")}\r\n`;
+}
+
+function csvCell(value: string | number) {
+  const text = typeof value === "number" ? String(value).replace(".", ",") : String(value ?? "");
+  return /[";\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function downloadBlob(data: BlobPart, filename: string, type: string) {
+  const url = URL.createObjectURL(new Blob([data], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
