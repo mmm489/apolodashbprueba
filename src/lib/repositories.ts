@@ -1087,12 +1087,17 @@ export async function listCashClosings(from?: string, to?: string) {
   })) satisfies CashClosingRecord[];
 }
 
-export async function listPosOrderLines(from?: string, to?: string) {
+export async function listPosOrderLines(
+  from?: string,
+  to?: string,
+  options?: { includeAllBusinessUnits?: boolean },
+) {
   if (!hasDatabase() || !isPosDataSource()) {
     return [];
   }
 
   const sql = getSql();
+  const includeAllBusinessUnits = options?.includeAllBusinessUnits === true;
   await ensurePosBusinessUnitColumn(sql);
   await sql.query("ALTER TABLE pos.orders ADD COLUMN IF NOT EXISTS service_type TEXT NOT NULL DEFAULT 'dine_in'");
   const rows = from && to
@@ -1130,7 +1135,7 @@ export async function listPosOrderLines(from?: string, to?: string) {
         LEFT JOIN pos.employees e ON e.id = o.employee_id
         WHERE ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date >= ${from}::date
           AND ((o.created_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
-          AND COALESCE(o.business_unit, 'hicream') = 'hicream'
+          AND (${includeAllBusinessUnits}::boolean OR COALESCE(o.business_unit, 'hicream') = 'hicream')
         ORDER BY o.created_at DESC, oi.id ASC
       `
     : await sql`
@@ -1165,7 +1170,7 @@ export async function listPosOrderLines(from?: string, to?: string) {
         JOIN pos.products p ON p.id = oi.product_id
         LEFT JOIN pos.categories c ON c.id = p.category_id
         LEFT JOIN pos.employees e ON e.id = o.employee_id
-        WHERE COALESCE(o.business_unit, 'hicream') = 'hicream'
+        WHERE (${includeAllBusinessUnits}::boolean OR COALESCE(o.business_unit, 'hicream') = 'hicream')
         ORDER BY o.created_at DESC, oi.id ASC
         LIMIT 10000
       `;

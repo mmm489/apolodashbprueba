@@ -487,6 +487,40 @@ export interface HourlyProductSale {
   amount: number;
 }
 
+export type ProductSalesSliceKind = "product" | "flavor" | "topping";
+
+export interface ProductSalesSlice {
+  id: string;
+  businessDate: string;
+  timeSlot: string;
+  kind: ProductSalesSliceKind;
+  baseProductId: string;
+  baseProductName: string;
+  baseCategoryName: string;
+  itemProductId: string;
+  itemName: string;
+  itemCategoryName: string;
+  units: number;
+  amount: number;
+  grossAmount: number;
+  orderCount: number;
+  freeUnits: number;
+  paidUnits: number;
+}
+
+export interface ProductModifierCombination {
+  id: string;
+  businessDate: string;
+  timeSlot: string;
+  baseProductId: string;
+  baseProductName: string;
+  baseCategoryName: string;
+  combinationName: string;
+  flavors: string[];
+  toppings: string[];
+  units: number;
+}
+
 export interface ProductCost {
   id: string;
   productCode: string;

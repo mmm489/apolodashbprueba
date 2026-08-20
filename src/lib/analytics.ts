@@ -13,6 +13,8 @@ import {
   listInvoiceLines,
   listInvoices,
   listPayrolls,
+  listPosOrderLines,
+  listPosRefunds,
   listPosSalesThroughBusinessMinute,
   listProductSales,
   listSalesReports,
@@ -23,7 +25,7 @@ import { describeCalendarContext, getCalendarContext } from "@/lib/calendar";
 import { classifyFamily } from "@/lib/product-families";
 import { buildCanonicalSupplierNames, normalizeSupplierKey } from "@/lib/supplier-names";
 import { DASHBOARD_TIME_ZONE, toDashboardDateOnly } from "@/lib/timezone";
-import type { ChatAnswer, DailyCalendarNote, DailyDigest as DailyDigestType, DateFilter, DatePreset, DocumentRecord, Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleShift, FamilyMovement, FinancialWorkspace, HistoricalWeather, HourlyProductSale, HourlyProfitabilityProduct, HourlyProfitabilitySlot, HourlyProfitabilitySummary, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, PlannedLaborRecord, ProductCost, ProductCostHistoryEntry, ProductSaleRecord, SalesReport, SalesToTimeComparison } from "@/lib/types";
+import type { ChatAnswer, DailyCalendarNote, DailyDigest as DailyDigestType, DateFilter, DatePreset, DocumentRecord, Employee, EmployeeHourlyCostHistoryEntry, EmployeeScheduleShift, FamilyMovement, FinancialWorkspace, HistoricalWeather, HourlyProductSale, HourlyProfitabilityProduct, HourlyProfitabilitySlot, HourlyProfitabilitySummary, HourlySalesEntry, InvoiceLineRecord, InvoiceRecord, PeriodComparison, PeriodTotals, PlannedLaborRecord, PosOrderLineRecord, PosRefundRecord, ProductCost, ProductCostHistoryEntry, ProductModifierCombination, ProductSaleRecord, ProductSalesSlice, ProductSalesSliceKind, SalesReport, SalesToTimeComparison } from "@/lib/types";
 
 const BUSINESS_DAY_START_HOUR = 4;
 const BUSINESS_DAY_START_MINUTES = BUSINESS_DAY_START_HOUR * 60;
@@ -355,6 +357,8 @@ export interface SalesWorkspace {
   productSales: ProductSaleRecord[];
   hourlySales: HourlySalesEntry[];
   hourlyProductSales: HourlyProductSale[];
+  productSalesSlices: ProductSalesSlice[];
+  productModifierCombinations: ProductModifierCombination[];
   productCosts: ProductCost[];
   hourlyProfitability: HourlyProfitabilitySlot[];
   plannedLabor: PlannedLaborRecord[];
@@ -386,11 +390,13 @@ export async function getSalesWorkspace(input?: {
   to?: string;
 }): Promise<SalesWorkspace> {
   const filter = resolveDateFilter(input);
-  const [salesReports, productSales, hourlySales, hourlyProductSales, employees, employeeScheduleShifts, employeeCostHistory, productCosts, productCostHistory] = await Promise.all([
+  const [salesReports, productSales, hourlySales, hourlyProductSales, orderLines, refunds, employees, employeeScheduleShifts, employeeCostHistory, productCosts, productCostHistory] = await Promise.all([
     listSalesReports(filter.from, filter.to),
     listProductSales(filter.from, filter.to),
     listHourlySales(filter.from, filter.to),
     listHourlyProductSales(filter.from, filter.to),
+    listPosOrderLines(filter.from, filter.to, { includeAllBusinessUnits: true }),
+    listPosRefunds(filter.from, filter.to),
     listEmployees(),
     listEmployeeScheduleShifts(filter.from, filter.to),
     listAllEmployeeHourlyCostHistory(),
@@ -405,6 +411,7 @@ export async function getSalesWorkspace(input?: {
   const scopedProducts = productSales.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
   const scopedHourly = hourlySales.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
   const scopedHourlyProducts = hourlyProductSales.filter((item) => isDateInRange(item.businessDate, fromDate, toDate));
+  const detailedProductSales = buildDetailedProductSales(orderLines, refunds);
 
   const totalSales = scopedSales.reduce((sum, item) => sum + item.totalSales, 0);
   const totalOrders = scopedSales.reduce((sum, item) => sum + item.orderCount, 0);
@@ -477,6 +484,8 @@ export async function getSalesWorkspace(input?: {
     productSales: scopedProducts,
     hourlySales: scopedHourly,
     hourlyProductSales: scopedHourlyProducts,
+    productSalesSlices: detailedProductSales.slices,
+    productModifierCombinations: detailedProductSales.combinations,
     productCosts,
     hourlyProfitability,
     plannedLabor,
@@ -501,6 +510,243 @@ export async function getSalesWorkspace(input?: {
       productCostCoverage,
     },
   };
+}
+
+interface ProductSalesSliceAccumulator extends Omit<ProductSalesSlice, "orderCount"> {
+  orderIds: Set<string>;
+}
+
+type ProductCombinationAccumulator = ProductModifierCombination;
+
+function buildDetailedProductSales(
+  lines: PosOrderLineRecord[],
+  refunds: PosRefundRecord[],
+): { slices: ProductSalesSlice[]; combinations: ProductModifierCombination[] } {
+  const refundedQtyByItem = new Map<string, number>();
+  for (const refund of refunds) {
+    if (refund.status !== "completed") continue;
+    for (const item of refund.items) {
+      refundedQtyByItem.set(
+        item.orderItemId,
+        (refundedQtyByItem.get(item.orderItemId) ?? 0) + item.qty,
+      );
+    }
+  }
+
+  const validLines = lines.filter(
+    (line) => line.status !== "cancelled" && line.paymentMethod !== "parked",
+  );
+  const linesByOrder = new Map<string, PosOrderLineRecord[]>();
+  for (const line of validLines) {
+    const orderLines = linesByOrder.get(line.orderId) ?? [];
+    orderLines.push(line);
+    linesByOrder.set(line.orderId, orderLines);
+  }
+
+  const sliceMap = new Map<string, ProductSalesSliceAccumulator>();
+  const combinationMap = new Map<string, ProductCombinationAccumulator>();
+
+  for (const orderLines of linesByOrder.values()) {
+    const bases = orderLines.filter((line) => !salesModifierParent(line.notes));
+    const modifiers = orderLines.filter((line) => Boolean(salesModifierParent(line.notes)));
+    const baseByLineId = new Map(
+      bases
+        .map((line) => [salesNoteMarker(line.notes, "HC-LINE:"), line] as const)
+        .filter((entry): entry is [string, PosOrderLineRecord] => Boolean(entry[0])),
+    );
+    const modifiersByBase = new Map<string, PosOrderLineRecord[]>();
+
+    for (const modifier of modifiers) {
+      const parentLineId = salesNoteMarker(modifier.notes, "HC-PARENT-LINE:");
+      const parentName = salesModifierParent(modifier.notes);
+      const base =
+        (parentLineId ? baseByLineId.get(parentLineId) : undefined) ??
+        [...bases].reverse().find(
+          (candidate) => normalizeSalesText(candidate.productName) === normalizeSalesText(parentName),
+        );
+      if (!base) {
+        addProductSalesSlice(sliceMap, modifier, null, classifySalesModifier(modifier), refundedQtyByItem);
+        continue;
+      }
+      const linked = modifiersByBase.get(base.id) ?? [];
+      linked.push(modifier);
+      modifiersByBase.set(base.id, linked);
+      addProductSalesSlice(sliceMap, modifier, base, classifySalesModifier(modifier), refundedQtyByItem);
+    }
+
+    for (const base of bases) {
+      const effectiveBaseQty = effectiveLineQty(base, refundedQtyByItem);
+      if (effectiveBaseQty <= 0) continue;
+      addProductSalesSlice(sliceMap, base, base, "product", refundedQtyByItem);
+
+      const linkedModifiers = (modifiersByBase.get(base.id) ?? [])
+        .map((modifier) => ({
+          line: modifier,
+          kind: classifySalesModifier(modifier),
+          qty: effectiveLineQty(modifier, refundedQtyByItem),
+          name: salesDisplayLineName(modifier),
+        }))
+        .filter((modifier) => modifier.qty > 0);
+      if (linkedModifiers.length === 0) continue;
+
+      const flavors = linkedModifiers
+        .filter((modifier) => modifier.kind === "flavor")
+        .map((modifier) => quantityLabel(modifier.name, modifier.qty));
+      const toppings = linkedModifiers
+        .filter((modifier) => modifier.kind === "topping")
+        .map((modifier) => quantityLabel(modifier.name, modifier.qty));
+      const combinationName = [...flavors, ...toppings].sort((a, b) => a.localeCompare(b, "ca")).join(" + ");
+      const timeSlot = salesTimeSlot(base.orderTime);
+      const combinationKey = [
+        base.businessDate,
+        timeSlot,
+        base.productId,
+        normalizeSalesText(combinationName),
+      ].join("|");
+      const existing = combinationMap.get(combinationKey);
+      if (existing) {
+        existing.units += effectiveBaseQty;
+      } else {
+        combinationMap.set(combinationKey, {
+          id: `combination-${combinationKey}`,
+          businessDate: base.businessDate,
+          timeSlot,
+          baseProductId: base.productId,
+          baseProductName: salesDisplayLineName(base),
+          baseCategoryName: base.categoryName || "Sense categoria",
+          combinationName,
+          flavors,
+          toppings,
+          units: effectiveBaseQty,
+        });
+      }
+    }
+  }
+
+  const slices = [...sliceMap.values()]
+    .map(({ orderIds, ...slice }) => ({ ...slice, orderCount: orderIds.size }))
+    .sort((a, b) =>
+      b.businessDate.localeCompare(a.businessDate) ||
+      a.timeSlot.localeCompare(b.timeSlot) ||
+      a.baseProductName.localeCompare(b.baseProductName, "ca"),
+    );
+  const combinations = [...combinationMap.values()].sort(
+    (a, b) => b.units - a.units || a.combinationName.localeCompare(b.combinationName, "ca"),
+  );
+  return { slices, combinations };
+}
+
+function addProductSalesSlice(
+  target: Map<string, ProductSalesSliceAccumulator>,
+  line: PosOrderLineRecord,
+  base: PosOrderLineRecord | null,
+  kind: ProductSalesSliceKind,
+  refundedQtyByItem: Map<string, number>,
+) {
+  const units = effectiveLineQty(line, refundedQtyByItem);
+  if (units <= 0 || line.qty <= 0) return;
+  const ratio = Math.min(1, units / line.qty);
+  const timeSlot = salesTimeSlot(line.orderTime);
+  const baseProductId = base?.productId ?? `unlinked:${line.productId}`;
+  const baseProductName = base ? salesDisplayLineName(base) : "Sense producte vinculat";
+  const baseCategoryName = base?.categoryName || "Sense categoria";
+  const itemName = salesDisplayLineName(line);
+  const key = [
+    line.businessDate,
+    timeSlot,
+    kind,
+    baseProductId,
+    line.productId,
+    normalizeSalesText(itemName),
+  ].join("|");
+  const existing = target.get(key);
+  if (existing) {
+    existing.units += units;
+    existing.amount += line.lineBase * ratio;
+    existing.grossAmount += line.lineTotal * ratio;
+    existing.freeUnits += line.unitPrice <= 0 ? units : 0;
+    existing.paidUnits += line.unitPrice > 0 ? units : 0;
+    existing.orderIds.add(line.orderId);
+    return;
+  }
+  target.set(key, {
+    id: `product-slice-${key}`,
+    businessDate: line.businessDate,
+    timeSlot,
+    kind,
+    baseProductId,
+    baseProductName,
+    baseCategoryName,
+    itemProductId: line.productId,
+    itemName,
+    itemCategoryName: line.categoryName || "Sense categoria",
+    units,
+    amount: line.lineBase * ratio,
+    grossAmount: line.lineTotal * ratio,
+    freeUnits: line.unitPrice <= 0 ? units : 0,
+    paidUnits: line.unitPrice > 0 ? units : 0,
+    orderIds: new Set([line.orderId]),
+  });
+}
+
+function effectiveLineQty(line: PosOrderLineRecord, refundedQtyByItem: Map<string, number>) {
+  return Math.max(0, line.qty - (refundedQtyByItem.get(line.id) ?? 0));
+}
+
+function classifySalesModifier(line: PosOrderLineRecord): ProductSalesSliceKind {
+  const category = normalizeSalesText(line.categoryName);
+  const name = normalizeSalesText(salesDisplayLineName(line));
+  const isIceCreamBall = name.includes("bola gelat") || name.includes("bola helado");
+  if (!isIceCreamBall && (category.includes("sabor") || name.startsWith("sabor ") || name.startsWith("gelat "))) {
+    return "flavor";
+  }
+  return "topping";
+}
+
+function salesDisplayLineName(line: PosOrderLineRecord) {
+  const display = line.notes
+    ?.split(/\r?\n/)
+    .map((candidate) => candidate.trim())
+    .find((candidate) => candidate.toLowerCase().startsWith("nom:"))
+    ?.slice(4)
+    .trim();
+  return display || line.productName;
+}
+
+function salesModifierParent(notes: string | null) {
+  const first = notes?.split(/\r?\n/, 1)[0]?.trim() || "";
+  return first.toLowerCase().startsWith("per ") ? first.slice(4).trim() : null;
+}
+
+function salesNoteMarker(notes: string | null, marker: string) {
+  const lower = marker.toLowerCase();
+  const line = notes
+    ?.split(/\r?\n/)
+    .map((candidate) => candidate.trim())
+    .find((candidate) => candidate.toLowerCase().startsWith(lower));
+  return line?.slice(marker.length).trim() || null;
+}
+
+function salesTimeSlot(orderTime: string) {
+  const [hour = 0, minute = 0] = orderTime.split(":").map(Number);
+  const slotMinute = minute >= 30 ? 30 : 0;
+  return `${String(hour).padStart(2, "0")}:${String(slotMinute).padStart(2, "0")}`;
+}
+
+function quantityLabel(name: string, quantity: number) {
+  return quantity > 1 ? `${formatCompactNumber(quantity)}x ${name}` : name;
+}
+
+function formatCompactNumber(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function normalizeSalesText(value: string | null | undefined) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
 }
 
 /* ---------- Expenses workspace ---------- */

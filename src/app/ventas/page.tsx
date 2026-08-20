@@ -1,5 +1,6 @@
 import { AppFrame } from "@/components/app-frame";
 import { DateFilterBar } from "@/components/date-filter-bar";
+import { ProductSalesExplorer } from "@/components/product-sales-explorer";
 import { VendesDayList } from "@/components/vendes-day-list";
 import { VendesSummary } from "@/components/vendes-summary";
 import { getSalesWorkspace } from "@/lib/analytics";
@@ -20,7 +21,7 @@ export default async function VentasPage({
   });
   const readOnly = isPosDataSource();
 
-  const { dayStatuses, productSales, hourlySales, hourlyProductSales, productCosts, hourlyProfitability, plannedLabor, topProducts, totals, filter } = workspace;
+  const { dayStatuses, productSales, hourlySales, hourlyProductSales, productSalesSlices, productModifierCombinations, productCosts, hourlyProfitability, plannedLabor, topProducts, totals, filter } = workspace;
 
   return (
     <AppFrame
@@ -48,6 +49,10 @@ export default async function VentasPage({
       {/* Product & category summary for the period */}
       {productSales.length > 0 && (
         <VendesSummary productSales={productSales} topProducts={topProducts} productCosts={productCosts} />
+      )}
+
+      {productSalesSlices.length > 0 && (
+        <ProductSalesExplorer slices={productSalesSlices} combinations={productModifierCombinations} />
       )}
 
       {/* Day-by-day list */}
