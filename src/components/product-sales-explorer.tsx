@@ -10,7 +10,7 @@ import type {
 } from "@/lib/types";
 
 type AnalysisMode = "products" | "flavors" | "toppings";
-type TimeGrouping = "half-hour" | "hour" | "day";
+type TimeGrouping = "period" | "half-hour" | "hour" | "day";
 
 interface ProductRankingRow {
   id: string;
@@ -260,6 +260,7 @@ export function ProductSalesExplorer({
           {BUSINESS_SLOTS.map((slot) => <option key={slot} value={slot}>{slot}</option>)}
         </SelectField>
         <SelectField label="Agrupar" value={grouping} onChange={(value) => setGrouping(value as TimeGrouping)}>
+          <option value="period">Tot el període</option>
           <option value="half-hour">30 minuts</option>
           <option value="hour">Hora</option>
           <option value="day">Dia</option>
@@ -580,6 +581,7 @@ function buildCombinationRanking(
 }
 
 function timelinePeriod(date: string, slot: string, grouping: TimeGrouping) {
+  if (grouping === "period") return { key: "period", label: "Tot el període" };
   if (grouping === "day") return { key: date, label: shortDate(date) };
   if (grouping === "hour") {
     const hour = `${slot.slice(0, 2)}:00`;
@@ -698,6 +700,7 @@ function modeLabel(mode: AnalysisMode) {
 }
 
 function groupingLabel(grouping: TimeGrouping) {
+  if (grouping === "period") return "Tot el període";
   if (grouping === "half-hour") return "30 minuts";
   if (grouping === "hour") return "Hora";
   return "Dia";
