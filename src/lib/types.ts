@@ -45,6 +45,17 @@ export interface CashClosingRecord {
   firstInvoice: string | null;
   lastInvoice: string | null;
   employeeName: string | null;
+  reconciliation: {
+    totalSales: number;
+    totalCash: number;
+    totalCard: number;
+    ticketCount: number;
+    difference: number;
+    cashDifference: number;
+    cardDifference: number;
+    ticketDifference: number;
+    hasDifference: boolean;
+  };
 }
 
 export interface PosOrderLineRecord {

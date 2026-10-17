@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { cashClosingsQuery, mapCashClosing } from "@/lib/cash-closing-reconciliation";
 
 import { generateContractualSchedule } from "@/lib/contractual-schedule";
 import { getSql, hasDatabase, isPosDataSource } from "@/lib/db";
@@ -16,7 +17,6 @@ import {
 } from "@/lib/mock-data";
 import type {
   AlertRecord,
-  CashClosingRecord,
   CatalogChangeAction,
   CatalogDraftChange,
   CatalogChangeRecord,
@@ -974,117 +974,12 @@ export async function listProductSales(from?: string, to?: string) {
 }
 
 export async function listCashClosings(from?: string, to?: string) {
-  if (!hasDatabase() || !isPosDataSource()) {
-    return [];
-  }
-
+  if (!hasDatabase() || !isPosDataSource()) return [];
   const sql = getSql();
   await ensurePosBusinessUnitColumn(sql);
-  const rows = from && to
-    ? await sql`
-        SELECT c.id, c.z_number, c.z_label, c.opened_at, c.closed_at,
-               (COALESCE(payment_totals.total_cash, c.total_cash) - COALESCE(refund_totals.cash_amount, 0)) AS total_cash,
-               (COALESCE(payment_totals.total_card, c.total_card) - COALESCE(refund_totals.card_amount, 0)) AS total_card,
-               (COALESCE(payment_totals.total_sales, c.total_sales) - COALESCE(refund_totals.amount, 0)) AS total_sales,
-               COALESCE(payment_totals.ticket_count, c.ticket_count) AS ticket_count,
-               COALESCE(payment_totals.cash_count, c.cash_count) AS cash_count,
-               COALESCE(payment_totals.card_count, c.card_count) AS card_count,
-               c.cancelled_count, GREATEST(COALESCE(c.total_refunded, 0), COALESCE(refund_totals.amount, 0)) AS total_refunded,
-               c.first_invoice, c.last_invoice,
-               e.name AS employee_name
-        FROM pos.cash_closings c
-        LEFT JOIN pos.employees e ON e.id = c.employee_id
-        LEFT JOIN LATERAL (
-          SELECT
-            COALESCE(SUM(CASE WHEN o.payment_method = 'cash' THEN o.total END), 0)::float AS total_cash,
-            COALESCE(SUM(CASE WHEN o.payment_method IN ('card', 'manual') THEN o.total END), 0)::float AS total_card,
-            COALESCE(SUM(o.total), 0)::float AS total_sales,
-            COUNT(*)::int AS ticket_count,
-            COUNT(*) FILTER (WHERE o.payment_method = 'cash')::int AS cash_count,
-            COUNT(*) FILTER (WHERE o.payment_method IN ('card', 'manual'))::int AS card_count
-          FROM pos.orders o
-          WHERE o.created_at >= c.opened_at
-            AND o.created_at <= c.closed_at
-            AND o.status NOT IN ('pending', 'cancelled')
-            AND o.payment_method <> 'parked'
-            AND COALESCE(o.business_unit, 'hicream') = 'hicream'
-        ) payment_totals ON TRUE
-        LEFT JOIN LATERAL (
-          SELECT COALESCE(SUM(r.amount), 0)::float AS amount,
-                 COALESCE(SUM(CASE WHEN ro.payment_method = 'cash' THEN r.amount ELSE 0 END), 0)::float AS cash_amount,
-                 COALESCE(SUM(CASE WHEN ro.payment_method IN ('card', 'manual') THEN r.amount ELSE 0 END), 0)::float AS card_amount
-          FROM pos.refunds r
-          JOIN pos.orders ro ON ro.id = r.order_id
-          WHERE r.status = 'completed'
-            AND r.completed_at >= c.opened_at
-            AND r.completed_at <= c.closed_at
-            AND COALESCE(ro.business_unit, 'hicream') = 'hicream'
-        ) refund_totals ON to_regclass('pos.refunds') IS NOT NULL
-        WHERE ((c.closed_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date >= ${from}::date
-          AND ((c.closed_at AT TIME ZONE 'Europe/Madrid') - INTERVAL '4 hours')::date <= ${to}::date
-        ORDER BY c.closed_at DESC
-      `
-    : await sql`
-        SELECT c.id, c.z_number, c.z_label, c.opened_at, c.closed_at,
-               (COALESCE(payment_totals.total_cash, c.total_cash) - COALESCE(refund_totals.cash_amount, 0)) AS total_cash,
-               (COALESCE(payment_totals.total_card, c.total_card) - COALESCE(refund_totals.card_amount, 0)) AS total_card,
-               (COALESCE(payment_totals.total_sales, c.total_sales) - COALESCE(refund_totals.amount, 0)) AS total_sales,
-               COALESCE(payment_totals.ticket_count, c.ticket_count) AS ticket_count,
-               COALESCE(payment_totals.cash_count, c.cash_count) AS cash_count,
-               COALESCE(payment_totals.card_count, c.card_count) AS card_count,
-               c.cancelled_count, GREATEST(COALESCE(c.total_refunded, 0), COALESCE(refund_totals.amount, 0)) AS total_refunded,
-               c.first_invoice, c.last_invoice,
-               e.name AS employee_name
-        FROM pos.cash_closings c
-        LEFT JOIN pos.employees e ON e.id = c.employee_id
-        LEFT JOIN LATERAL (
-          SELECT
-            COALESCE(SUM(CASE WHEN o.payment_method = 'cash' THEN o.total END), 0)::float AS total_cash,
-            COALESCE(SUM(CASE WHEN o.payment_method IN ('card', 'manual') THEN o.total END), 0)::float AS total_card,
-            COALESCE(SUM(o.total), 0)::float AS total_sales,
-            COUNT(*)::int AS ticket_count,
-            COUNT(*) FILTER (WHERE o.payment_method = 'cash')::int AS cash_count,
-            COUNT(*) FILTER (WHERE o.payment_method IN ('card', 'manual'))::int AS card_count
-          FROM pos.orders o
-          WHERE o.created_at >= c.opened_at
-            AND o.created_at <= c.closed_at
-            AND o.status NOT IN ('pending', 'cancelled')
-            AND o.payment_method <> 'parked'
-            AND COALESCE(o.business_unit, 'hicream') = 'hicream'
-        ) payment_totals ON TRUE
-        LEFT JOIN LATERAL (
-          SELECT COALESCE(SUM(r.amount), 0)::float AS amount,
-                 COALESCE(SUM(CASE WHEN ro.payment_method = 'cash' THEN r.amount ELSE 0 END), 0)::float AS cash_amount,
-                 COALESCE(SUM(CASE WHEN ro.payment_method IN ('card', 'manual') THEN r.amount ELSE 0 END), 0)::float AS card_amount
-          FROM pos.refunds r
-          JOIN pos.orders ro ON ro.id = r.order_id
-          WHERE r.status = 'completed'
-            AND r.completed_at >= c.opened_at
-            AND r.completed_at <= c.closed_at
-            AND COALESCE(ro.business_unit, 'hicream') = 'hicream'
-        ) refund_totals ON to_regclass('pos.refunds') IS NOT NULL
-        ORDER BY c.closed_at DESC
-        LIMIT 200
-      `;
-
-  return rows.map((row) => ({
-    id: String(row.id),
-    zNumber: row.z_number == null ? null : Number(row.z_number),
-    zLabel: row.z_label ? String(row.z_label) : `Tancament ${row.id}`,
-    openedAt: new Date(String(row.opened_at)).toISOString(),
-    closedAt: new Date(String(row.closed_at)).toISOString(),
-    totalCash: toNumber(row.total_cash),
-    totalCard: toNumber(row.total_card),
-    totalSales: toNumber(row.total_sales),
-    ticketCount: toNumber(row.ticket_count),
-    cashCount: toNumber(row.cash_count),
-    cardCount: toNumber(row.card_count),
-    cancelledCount: toNumber(row.cancelled_count),
-    totalRefunded: toNumber(row.total_refunded),
-    firstInvoice: row.first_invoice ? String(row.first_invoice) : null,
-    lastInvoice: row.last_invoice ? String(row.last_invoice) : null,
-    employeeName: row.employee_name ? String(row.employee_name) : null,
-  })) satisfies CashClosingRecord[];
+  const query = cashClosingsQuery(from, to);
+  const rows = await sql.query(query.text, query.params);
+  return rows.map(mapCashClosing);
 }
 
 export async function listPosOrderLines(
