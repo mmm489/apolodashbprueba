@@ -52,6 +52,12 @@ function isPublic(pathname: string): boolean {
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // This exact route has independent Ed25519 authentication in its Node handler.
+  // Browser cookies do not grant access; all other routes keep their existing auth.
+  if (pathname === "/api/integrations/odoo/closings" && request.method === "GET") {
+    return NextResponse.next();
+  }
+
   if (!isAuthConfigured()) return NextResponse.next();
   if (isPublic(pathname)) return NextResponse.next();
 
