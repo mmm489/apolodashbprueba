@@ -45,6 +45,20 @@ export interface CashClosingRecord {
   firstInvoice: string | null;
   lastInvoice: string | null;
   employeeName: string | null;
+  adjustment?: {
+    id: string;
+    recordedAt: string;
+    recordedBy: string;
+    reason: string;
+    sourceMatches: boolean;
+    totalSales: number;
+    totalCash: number;
+    totalCard: number;
+    ticketCount: number;
+    firstInvoice: string | null;
+    lastInvoice: string | null;
+    evidence: { orderId: string; invoiceNumber: string; total: number; paymentMethod: string }[];
+  };
   reconciliation: {
     totalSales: number;
     totalCash: number;

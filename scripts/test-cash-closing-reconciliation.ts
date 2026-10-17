@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cashClosingsQuery, mapCashClosing } from "../src/lib/cash-closing-reconciliation";
+import { cashClosingsQuery, mapCashClosing, effectiveCashClosing } from "../src/lib/cash-closing-reconciliation";
 
 const original = {
   id: 1, z_number: 1, z_label: "Z-2026/000001", opened_at: "2026-01-01T02:00:00Z", closed_at: "2026-01-02T02:00:00Z",
@@ -41,4 +41,33 @@ test("date filters are parameterized and reconciliation is independent of KDS", 
   assert.doesNotMatch(query.text, /o\.status[^\n]*pending/);
   assert.match(cashClosingsQuery().text, /LIMIT 200/);
   assert.deepEqual(cashClosingsQuery().params, []);
+});
+
+const adjusted = () => ({ ...original, recorded_adjustment: {
+  id: "test-adjustment", recorded_at: "2026-01-03T12:00:00Z", recorded_by: "Test actor", reason: "Missing invoice",
+  original_snapshot: { ...original }, corrected_snapshot: { total_sales: 111.75, total_cash: 40, total_card: 71.75,
+    ticket_count: 11, first_invoice: original.first_invoice, last_invoice: "S-2026/000011" },
+  evidence: [{ id: 11, invoice_number: "S-2026/000011", total: 11.75, payment_method: "card" }],
+} });
+test("recorded correction is the main figure while preserving the original for audit", () => {
+  const c = mapCashClosing(adjusted()), e = effectiveCashClosing(c);
+  assert.equal(c.totalSales, 100); assert.equal(c.lastInvoice, "S-2026/000010");
+  assert.equal(e.totalSales, 111.75); assert.equal(e.ticketCount, 11); assert.equal(e.lastInvoice, "S-2026/000011");
+  assert.equal(e.hasDifference, false); assert.equal(c.adjustment?.evidence[0].invoiceNumber, "S-2026/000011");
+});
+test("new differences remain visible after a recorded correction", () => {
+  const c = mapCashClosing({ ...adjusted(), reconciled_sales: 115.75, reconciled_card: 75.75, reconciled_tickets: 12 });
+  const e = effectiveCashClosing(c);
+  assert.equal(e.totalSales, 111.75); assert.equal(e.difference, 4); assert.equal(e.ticketDifference, 1); assert.equal(e.hasDifference, true);
+});
+test("changed original snapshot is flagged and never silently receives an obsolete adjustment", () => {
+  for (const changes of [{ total_sales: 99 }, { last_invoice: "different" }, { closed_at: "2026-01-02T03:00:00Z" }]) {
+    const c = mapCashClosing({ ...adjusted(), ...changes });
+    assert.equal(c.adjustment?.sourceMatches, false); assert.equal(effectiveCashClosing(c).hasDifference, true);
+    assert.equal(effectiveCashClosing(c).totalSales, c.totalSales);
+  }
+});
+test("unadjusted closings keep the stored main figure, not the current recalculation", () => {
+  const e = effectiveCashClosing(mapCashClosing(original));
+  assert.equal(e.totalSales, 100); assert.equal(e.difference, 11.75); assert.equal(e.hasDifference, true);
 });
