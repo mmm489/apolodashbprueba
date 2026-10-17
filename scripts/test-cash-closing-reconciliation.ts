@@ -71,3 +71,12 @@ test("unadjusted closings keep the stored main figure, not the current recalcula
   const e = effectiveCashClosing(mapCashClosing(original));
   assert.equal(e.totalSales, 100); assert.equal(e.difference, 11.75); assert.equal(e.hasDifference, true);
 });
+test("PostgreSQL Date objects preserve the millisecond cutoff when matching the saved snapshot", () => {
+  const input = adjusted();
+  const opened = "2026-01-01T02:00:00.123Z", closed = "2026-01-02T02:00:00.810Z";
+  input.recorded_adjustment.original_snapshot.opened_at = opened;
+  input.recorded_adjustment.original_snapshot.closed_at = closed;
+  const c = mapCashClosing({ ...input, opened_at: new Date(opened), closed_at: new Date(closed) });
+  assert.equal(c.adjustment?.sourceMatches, true); assert.equal(effectiveCashClosing(c).totalSales, 111.75);
+  assert.equal(c.openedAt, opened); assert.equal(c.closedAt, closed);
+});

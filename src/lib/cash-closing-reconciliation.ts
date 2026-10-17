@@ -45,6 +45,9 @@ export function cashClosingsQuery(from?: string, to?: string) {
 const moneyDifference = (current: number, saved: number) =>
   (Math.round(current * 100) - Math.round(saved * 100)) / 100;
 
+// pg returns Date objects; String(date) would discard milliseconds from the Z cutoff.
+const timestamp = (value: unknown) => value instanceof Date ? value : new Date(String(value));
+
 export function mapCashClosing(row: Record<string, unknown>): CashClosingRecord {
   const totalSales = Number(row.total_sales ?? 0);
   const totalCash = Number(row.total_cash ?? 0);
@@ -64,14 +67,14 @@ export function mapCashClosing(row: Record<string, unknown>): CashClosingRecord 
   const sourceMatches = Boolean(original && String(original.id) === String(row.id)
     && ["total_sales", "total_cash", "total_card", "ticket_count", "cash_count", "card_count", "total_refunded"].every(key => Number(original[key]) === Number(row[key]))
     && ["first_invoice", "last_invoice", "z_label"].every(key => original[key] === row[key])
-    && ["opened_at", "closed_at"].every(key => new Date(String(original[key])).getTime() === new Date(String(row[key])).getTime()));
+    && ["opened_at", "closed_at"].every(key => timestamp(original[key]).getTime() === timestamp(row[key]).getTime()));
 
   // The original Z is immutable; current sales are a separate comparison, never a replacement.
   return {
     id: String(row.id), zNumber: row.z_number == null ? null : Number(row.z_number),
     zLabel: row.z_label ? String(row.z_label) : `Tancament ${row.id}`,
-    openedAt: new Date(String(row.opened_at)).toISOString(),
-    closedAt: new Date(String(row.closed_at)).toISOString(),
+    openedAt: timestamp(row.opened_at).toISOString(),
+    closedAt: timestamp(row.closed_at).toISOString(),
     totalSales, totalCash, totalCard, ticketCount,
     cashCount: Number(row.cash_count ?? 0), cardCount: Number(row.card_count ?? 0),
     cancelledCount: Number(row.cancelled_count ?? 0), totalRefunded: Number(row.total_refunded ?? 0),
@@ -79,7 +82,7 @@ export function mapCashClosing(row: Record<string, unknown>): CashClosingRecord 
     lastInvoice: row.last_invoice ? String(row.last_invoice) : null,
     employeeName: row.employee_name ? String(row.employee_name) : null,
     ...(adjustment && saved ? { adjustment: {
-      id: String(adjustment.id), recordedAt: new Date(String(adjustment.recorded_at)).toISOString(),
+      id: String(adjustment.id), recordedAt: timestamp(adjustment.recorded_at).toISOString(),
       recordedBy: String(adjustment.recorded_by), reason: String(adjustment.reason), sourceMatches,
       totalSales: Number(saved.total_sales), totalCash: Number(saved.total_cash), totalCard: Number(saved.total_card),
       ticketCount: Number(saved.ticket_count), firstInvoice: saved.first_invoice ? String(saved.first_invoice) : null,
